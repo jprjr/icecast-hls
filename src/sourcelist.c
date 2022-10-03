@@ -1,0 +1,271 @@
+#include "sourcelist.h"
+#include "source_sync.h"
+
+#include "destination.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+
+/* used when the global config is to allow all sources to finish */
+static void sourcelist_quit_self(const sourcelist* list, int status) {
+    (void)list;
+    (void)status;
+    return;
+}
+
+size_t sourcelist_length(const sourcelist* slist) {
+    return slist->len / sizeof(sourcelist_entry);
+}
+
+void sourcelist_init(sourcelist* slist) {
+    membuf_init(slist);
+}
+
+void sourcelist_entry_init(sourcelist_entry* entry) {
+    strbuf_init(&entry->id);
+    source_init(&entry->source);
+    membuf_init(&entry->destination_syncs);
+    thread_atomic_int_store(&entry->status, 0);
+    entry->quit = NULL;
+    entry->quit_userdata = NULL;
+}
+
+void sourcelist_entry_free(sourcelist_entry* entry) {
+    strbuf_free(&entry->id);
+    source_free(&entry->source);
+    membuf_free(&entry->destination_syncs);
+}
+
+void sourcelist_free(sourcelist* slist) {
+    size_t i;
+    size_t len;
+
+    sourcelist_entry* entry = (sourcelist_entry *)slist->x;
+    len = slist->len / sizeof(sourcelist_entry);
+
+    for(i=0;i<len;i++) {
+        sourcelist_entry_free(&entry[i]);
+    }
+
+    membuf_free(slist);
+}
+
+sourcelist_entry* sourcelist_find(const sourcelist* list, const strbuf* id) {
+    size_t i;
+    size_t len;
+
+    sourcelist_entry* entry = (sourcelist_entry *)list->x;
+    len = list->len / sizeof(sourcelist_entry);
+
+    for(i=0;i<len;i++) {
+        if(strbuf_equals(&entry[i].id,id)) return &entry[i];
+    }
+    return NULL;
+}
+
+sourcelist_entry* sourcelist_get(const sourcelist* list, size_t index) {
+    sourcelist_entry* entry = (sourcelist_entry *)list->x;
+    if(index < sourcelist_length(list)) {
+        return &entry[index];
+    }
+    return NULL;
+}
+
+int sourcelist_configure(const strbuf* id, const strbuf* key, const strbuf* value, sourcelist* list) {
+    int r;
+    sourcelist_entry empty;
+    sourcelist_entry* entry = sourcelist_find(list,id);
+
+    if(entry == NULL)  {
+        sourcelist_entry_init(&empty);
+        if( (r = strbuf_copy(&empty.id,id)) != 0 ) return r;
+        if( (r = membuf_append(list,&empty,sizeof(sourcelist_entry))) != 0) return r;
+        entry = sourcelist_find(list,id);
+        if(entry == NULL) abort();
+    }
+
+    return source_config(&entry->source,key,value);
+}
+
+int sourcelist_open(const sourcelist* list, uint8_t shortflag) {
+    int r;
+    size_t i;
+    size_t len;
+
+    sourcelist_entry* entry = (sourcelist_entry *)list->x;
+    len = list->len / sizeof(sourcelist_entry);
+
+    for(i=0;i<len;i++) {
+        if( (r = source_open(&entry[i].source)) != 0) {
+            fprintf(stderr,"[sourcelist] error opening source %.*s\n",
+              (int)entry[i].id.len, (char *)entry[i].id.x);
+            return r;
+        }
+
+        if(shortflag) {
+            entry[i].quit = (sourcelist_quit_func)sourcelist_quit;
+        } else {
+            entry[i].quit = (sourcelist_quit_func)sourcelist_quit_self;
+        }
+        entry[i].quit_userdata = (void *)list;
+    }
+    return 0;
+}
+
+/* tell all destination threads to flush and quit */
+static void sourcelist_entry_flush(sourcelist_entry* entry) {
+    size_t i;
+    size_t len;
+    source_sync sync;
+
+    destination_sync** dest_sync;
+
+    len = entry->destination_syncs.len / sizeof(destination_sync*);
+    dest_sync = (destination_sync**)entry->destination_syncs.x;
+
+    for(i=0;i<len;i++) {
+        sync.dest = dest_sync[i];
+        source_sync_eof(&sync);
+    }
+}
+
+static int sourcelist_entry_tag_handler(void* userdata, const taglist* tags) {
+    int r;
+    size_t i;
+    size_t len;
+    source_sync sync;
+
+    sourcelist_entry* entry = (sourcelist_entry *)userdata;
+    destination_sync** dest_sync;
+
+    len = entry->destination_syncs.len / sizeof(destination_sync*);
+    dest_sync = (destination_sync**)entry->destination_syncs.x;
+
+    /* if this is set it means somebody called quit, return with the
+     * status code given */
+    if( (r = thread_atomic_int_load(&entry->status)) != 0) {
+        sourcelist_entry_flush(entry);
+        return r;
+    }
+
+    for(i=0;i<len;i++) {
+        sync.dest = dest_sync[i];
+        if( (r = source_sync_tags(&sync,tags)) != 0) {
+            return r;
+        }
+    }
+    return 0;
+}
+
+static int sourcelist_entry_frame_handler(void* userdata, const frame* frame) {
+    int r;
+    size_t i;
+    size_t len;
+    source_sync sync;
+
+    sourcelist_entry* entry = (sourcelist_entry *)userdata;
+    destination_sync** dest_sync;
+
+    len = entry->destination_syncs.len / sizeof(destination_sync*);
+    dest_sync = (destination_sync**)entry->destination_syncs.x;
+
+    if( (r = thread_atomic_int_load(&entry->status)) != 0) {
+        sourcelist_entry_flush(entry);
+        return r;
+    }
+
+    for(i=0;i<len;i++) {
+        sync.dest = dest_sync[i];
+        if( (r = source_sync_frame(&sync,frame)) != 0) {
+            return r;
+        }
+    }
+    return 0;
+}
+
+static int sourcelist_entry_flush_handler(void* userdata) {
+    size_t i;
+    size_t len;
+    source_sync sync;
+
+    sourcelist_entry* entry = (sourcelist_entry *)userdata;
+    destination_sync** dest_sync;
+
+    len = entry->destination_syncs.len / sizeof(destination_sync*);
+    dest_sync = (destination_sync**)entry->destination_syncs.x;
+
+    for(i=0;i<len;i++) {
+        sync.dest = dest_sync[i];
+        source_sync_eof(&sync);
+    }
+
+    return 0;
+}
+
+static int sourcelist_entry_run(void *userdata) {
+    int r = 0;
+    sourcelist_entry* entry = (sourcelist_entry *)userdata;
+
+    tag_handler thdlr;
+    frame_handler fhdlr;
+
+    thdlr.cb = sourcelist_entry_tag_handler;
+    thdlr.userdata = entry;
+
+    fhdlr.cb = sourcelist_entry_frame_handler;
+    fhdlr.flush = sourcelist_entry_flush_handler;
+    fhdlr.userdata = entry;
+
+    source_set_tag_handler(&entry->source,&thdlr);
+    source_set_frame_handler(&entry->source,&fhdlr);
+
+    r = source_run(&entry->source);
+    /* make all other threads quit */
+    entry->quit(entry->quit_userdata,r == 0 ? 1 : -1);
+
+    thread_exit(r);
+    return r;
+}
+
+int sourcelist_start(const sourcelist* list) {
+    size_t i;
+    size_t len;
+
+    sourcelist_entry* entry = (sourcelist_entry *)list->x;
+    len = list->len / sizeof(sourcelist_entry);
+
+    for(i=0;i<len;i++) {
+        entry[i].thread = thread_create(sourcelist_entry_run, &entry[i], THREAD_STACK_SIZE_DEFAULT);
+    }
+
+    return 0;
+}
+
+int sourcelist_wait(const sourcelist* list) {
+    size_t i;
+    size_t len;
+    int r = 0;
+
+    sourcelist_entry* entry = (sourcelist_entry *)list->x;
+    len = list->len / sizeof(sourcelist_entry);
+
+    for(i=0;i<len;i++) {
+        if(thread_join(entry[i].thread) < 0) r = -1;
+    }
+
+    return r;
+}
+
+
+void sourcelist_quit(const sourcelist* list, int status) {
+    size_t i;
+    size_t len;
+
+    sourcelist_entry* entry = (sourcelist_entry *)list->x;
+    len = list->len / sizeof(sourcelist_entry);
+
+    for(i=0;i<len;i++) {
+        thread_atomic_int_store(&entry->status,status);
+    }
+}
+
