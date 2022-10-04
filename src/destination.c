@@ -6,13 +6,13 @@
 #define CONFIGURING_MUXER 3
 #define CONFIGURING_OUTPUT 4
 
-static strbuf DEFAULT_FILTER = { .a = 0, .len = 11, .x = (uint8_t*)"passthrough" };
+static strbuf DEFAULT_FILTER = { .a = 0, .len = 6, .x = (uint8_t*)"buffer" };
 static strbuf DEFAULT_ENCODER = { .a = 0, .len = 6, .x = (uint8_t*)"exhale" };
 static strbuf DEFAULT_MUXER = { .a = 0, .len = 4, .x = (uint8_t*)"fmp4" };
 
 int destination_global_init(void) {
     int r;
-    if( (r = filter_global_init()) != 0) return r;
+    /* filter global init was handled in the source global init */
     if( (r = encoder_global_init()) != 0) return r;
     if( (r = muxer_global_init()) != 0) return r;
     if( (r = output_global_init()) != 0) return r;
@@ -20,7 +20,7 @@ int destination_global_init(void) {
 }
 
 void destination_global_deinit(void) {
-    filter_global_deinit();
+    /* filter global deinit was handled in the source global init */
     encoder_global_deinit();
     muxer_global_deinit();
     output_global_deinit();
@@ -124,20 +124,20 @@ int destination_open(destination* dest, const ich_time* now) {
 
     /* set up our config forwarders */
     handler_output.userdata = &dest->output;
-    handler_output.submit   = output_open;
+    handler_output.submit   = (outputconfig_submit_callback)output_open;
     muxer_set_outputconfig_handler(&dest->muxer,&handler_output);
 
     handler_muxer.userdata = &dest->muxer;
-    handler_muxer.submit   = muxer_open;
-    handler_muxer.submit_dsi   = muxer_submit_dsi;
+    handler_muxer.submit   = (muxerconfig_handler_callback)muxer_open;
+    handler_muxer.submit_dsi   = (muxerconfig_dsi_callback)muxer_submit_dsi;
     encoder_set_muxerconfig_handler(&dest->encoder,&handler_muxer);
 
     handler_encoder.userdata = &dest->encoder;
-    handler_encoder.open     = encoder_open;
+    handler_encoder.open     = (audioconfig_open_callback)encoder_open;
     filter_set_audioconfig_handler(&dest->filter,&handler_encoder);
 
     handler_filter.userdata = &dest->filter;
-    handler_filter.open     = filter_open;
+    handler_filter.open     = (audioconfig_open_callback)filter_open;
 
     return source_open_dest(dest->source, &handler_filter);
 }

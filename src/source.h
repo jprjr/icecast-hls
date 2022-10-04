@@ -4,6 +4,7 @@
 #include "strbuf.h"
 #include "input.h"
 #include "decoder.h"
+#include "filter.h"
 #include "membuf.h"
 
 #include "tag.h"
@@ -14,6 +15,7 @@
 struct source {
     input input;
     decoder decoder;
+    filter filter;
     uint8_t configuring;
     tag_handler tag_handler;
     frame_handler frame_handler;

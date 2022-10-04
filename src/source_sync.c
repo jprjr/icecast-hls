@@ -13,8 +13,6 @@ void source_sync_free(source_sync* sync) {
 int source_sync_frame(source_sync* sync, const frame* frame) {
     int r;
 
-    /* before trying to send the frame make sure the status
-     * flag is OK */
     if( (r = thread_atomic_int_load(&sync->dest->status)) != 0) return r;
 
     thread_atomic_ptr_store(&sync->dest->data, (void*)frame);
@@ -36,10 +34,21 @@ int source_sync_tags(source_sync* sync, const taglist* tags) {
     return thread_atomic_int_load(&sync->dest->status);
 }
 
-void source_sync_eof(source_sync* sync) {
-    /* on EOF we don't wait for the destination threads to acknowledge */
+int source_sync_eof(source_sync* sync) {
+    int r;
+
+    if( (r = thread_atomic_int_load(&sync->dest->status)) != 0) return r;
     thread_atomic_ptr_store(&sync->dest->data, NULL);
     thread_atomic_int_store(&sync->dest->type, (int)DESTINATION_SYNC_EOF);
     thread_signal_raise(&sync->dest->ready);
+    thread_signal_wait(&sync->dest->consumed, THREAD_SIGNAL_WAIT_INFINITE);
+    return thread_atomic_int_load(&sync->dest->status);
 }
 
+/* in case of some kind of "you gotta quit right now emergency" */
+void source_sync_quit(source_sync* sync) {
+    /* on EOF we don't wait for the destination threads to acknowledge */
+    thread_atomic_ptr_store(&sync->dest->data, NULL);
+    thread_atomic_int_store(&sync->dest->type, (int)DESTINATION_SYNC_QUIT);
+    thread_signal_raise(&sync->dest->ready);
+}

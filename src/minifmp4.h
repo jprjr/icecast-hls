@@ -161,13 +161,14 @@ typedef enum fmp4_stream_type fmp4_stream_type;
 enum fmp4_object_type {
     FMP4_OBJECT_TYPE_FORBIDDEN = 0x00,
     FMP4_OBJECT_TYPE_AAC = 0x40, /* covers AAC, HE-AAC, xHE-AAC, etc */
+    FMP4_OBJECT_TYPE_MP3 = 0x6B,
 };
 
 typedef enum fmp4_object_type fmp4_object_type;
 
 enum fmp4_codec {
     FMP4_CODEC_UNDEFINED = 0x00000000,
-    FMP4_CODEC_MP4A = 0x6d703461, /* covers AAC, HE-AAC, xHE-AAC, etc */
+    FMP4_CODEC_MP4A = 0x6d703461, /* covers AAC, HE-AAC, xHE-AAC, MP3-in-MP4, etc */
     FMP4_CODEC_ALAC = 0x616c6163,
     FMP4_CODEC_FLAC = 0x664c6143,
 };
@@ -1771,11 +1772,13 @@ fmp4_box_trak(fmp4_mux* mux, const fmp4_track* track, uint32_t id) {
                                                 WRITE_UINT32(0); /* maxbitrate */
                                                 WRITE_UINT32(0); /* average bitrate bps */
 
+                                                if(track->dsi.len > 0) {
                                                 ES_TAG_BEGIN(0x05);
                                                 {
                                                     WRITE_DATA(track->dsi.x, track->dsi.len);
                                                 }
                                                 ES_TAG_END(0x05);
+                                                }
                                             }
                                             ES_TAG_END(0x04);
 
@@ -2439,6 +2442,7 @@ fmp4_track_validate_init(const fmp4_track* track) {
                 case FMP4_CODEC_UNDEFINED: return FMP4_CODECINVALID;
                 case FMP4_CODEC_MP4A:
                     if(track->object_type == FMP4_OBJECT_TYPE_FORBIDDEN) return FMP4_OBJECTINVALID;
+                    if(track->object_type == FMP4_OBJECT_TYPE_MP3) break; /* MP3 does not have DSI */
                     /* fall-through */
                 case FMP4_CODEC_ALAC: /* fall-through */
                 case FMP4_CODEC_FLAC: /* fall-through */

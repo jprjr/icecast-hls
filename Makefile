@@ -5,6 +5,8 @@ LDFLAGS =
 
 SOURCES = \
 	src/audioconfig.c \
+	src/avframe_utils.c \
+	src/avpacket_utils.c \
 	src/ini.c \
 	src/map.c \
 	src/membuf.c \
@@ -25,6 +27,7 @@ SOURCES = \
 	src/filter.c \
 	src/filter_plugin.c \
 	src/filter_plugin_avfilter.c \
+	src/filter_plugin_buffer.c \
 	src/filter_plugin_passthrough.c \
 	src/frame.c \
 	src/hls.c \
@@ -37,10 +40,12 @@ SOURCES = \
 	src/input_plugin_stdin.c \
 	src/muxer.c \
 	src/muxerconfig.c \
+	src/muxerinfo.c \
 	src/muxer_plugin.c \
 	src/muxer_plugin_fmp4.c \
 	src/output.c \
 	src/outputconfig.c \
+	src/outputinfo.c \
 	src/output_plugin.c \
 	src/output_plugin_file.c \
 	src/output_plugin_stdout.c \
@@ -78,6 +83,7 @@ REQUIRED_OBJS = \
 	src/encoder_plugin.o \
 	src/filter.o \
 	src/filter_plugin.o \
+	src/filter_plugin_buffer.o \
 	src/filter_plugin_passthrough.o \
 	src/frame.o \
 	src/hls.o \
@@ -144,6 +150,7 @@ ifeq ($(ENABLE_AVCODEC),1)
 ENCODER_PLUGIN_CFLAGS += -DENCODER_PLUGIN_AVCODEC=1
 REQUIRED_OBJS += src/encoder_plugin_avcodec.o
 AVFRAME_REQUIRED=1
+AVPACKET_REQUIRED=1
 AVUTIL_REQUIRED=1
 AVCODEC_REQUIRED=1
 endif
@@ -174,6 +181,10 @@ ifeq ($(AVFRAME_REQUIRED),1)
 REQUIRED_OBJS += src/avframe_utils.o
 endif
 
+ifeq ($(AVPACKET_REQUIRED),1)
+REQUIRED_OBJS += src/avpacket_utils.o
+endif
+
 all: icecast-hls
 
 clean:
@@ -187,6 +198,9 @@ src/encoder_plugin.o: src/encoder_plugin.c
 
 src/filter_plugin.o: src/filter_plugin.c
 	$(CC) $(CFLAGS) $(FILTER_PLUGIN_CFLAGS) -c -o $@ $<
+
+src/avpacket_utils.o: src/avpacket_utils.c
+	$(CC) $(CFLAGS) $(CFLAGS_AVCODEC) -c -o $@ $<
 
 src/avframe_utils.o: src/avframe_utils.c
 	$(CC) $(CFLAGS) $(CFLAGS_AVUTIL) -c -o $@ $<

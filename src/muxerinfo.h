@@ -25,7 +25,7 @@ typedef struct muxerinfo_handler muxerinfo_handler;
 extern "C" {
 #endif
 
-extern const muxerinfo_handler muxinfo_ignore;
+extern const muxerinfo_handler muxerinfo_ignore;
 int muxerinfo_null_submit(void*, const muxerinfo*);
 
 #ifdef __cplusplus

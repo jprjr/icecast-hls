@@ -31,6 +31,7 @@
 #include "tag.h"
 
 enum destination_sync_type {
+    DESTINATION_SYNC_QUIT    = -2,
     DESTINATION_SYNC_UNKNOWN = -1,
     DESTINATION_SYNC_EOF     =  0,
     DESTINATION_SYNC_FRAME   =  1,

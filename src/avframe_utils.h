@@ -1,5 +1,5 @@
-#ifndef AVFRAME_UTILS_H
-#define AVFRAME_UTILS_H
+#ifndef ICH_AVFRAME_UTILS_H
+#define ICH_AVFRAME_UTILS_H
 
 /* provides an object that can convert our internal frames into AVFrames, and vice-versa */
 

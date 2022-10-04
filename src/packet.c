@@ -4,6 +4,8 @@ void packet_init(packet* p) {
     membuf_init(&p->data);
     p->duration = 0;
     p->sync = 0;
+    p->sample_rate = 0;
+    p->pts = 0;
 }
 
 void packet_free(packet* p) {

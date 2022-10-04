@@ -24,7 +24,7 @@ void membuf_reset(membuf* m) {
 }
 
 void membuf_free(membuf* m) {
-    if(m->x != NULL) free(m->x);
+    if(m->a != 0) free(m->x);
     m->x = NULL;
     m->len = 0;
     m->a = 0;

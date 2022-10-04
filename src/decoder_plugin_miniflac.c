@@ -298,10 +298,13 @@ static int plugin_process_frame(plugin_userdata* userdata, const frame_handler* 
             channel[j] *= (1 << shift);
         }
     }
+
+    r = handler->cb(handler->userdata,&userdata->frame);
+
     userdata->frame.pts += userdata->m.flac.frame.header.block_size;
     if(userdata->frame.pts > INT64_MAX) userdata->frame.pts -= INT64_MAX;
 
-    return handler->cb(handler->userdata,&userdata->frame);
+    return r;
 }
 
 static int plugin_decode(void* ud, const tag_handler* tag_handler, const frame_handler* frame_handler) {

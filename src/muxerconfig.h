@@ -22,11 +22,13 @@ struct muxerconfig {
     unsigned int sample_rate;
     unsigned int frame_len;
     unsigned int sync_flag; /* if non-zero, all samples are sync samples */
+    unsigned int padding; /* number of samples that need to be discarded */
+    int roll_distance; /* number of frames that need to be discarded, -1 means 1 frame before current */
 };
 
 typedef struct muxerconfig muxerconfig;
 
-#define MUXERCONFIG_ZERO { .info = MUXERINFO_HANDLER_ZERO, .type = CODEC_TYPE_UNKNOWN, .channels = 0, .sample_rate = 0, .frame_len = 0, .sync_flag = 0 }
+#define MUXERCONFIG_ZERO { .info = MUXERINFO_HANDLER_ZERO, .type = CODEC_TYPE_UNKNOWN, .channels = 0, .sample_rate = 0, .frame_len = 0, .sync_flag = 0, .padding = 0, .roll_distance = 0 }
 
 typedef int (*muxerconfig_handler_callback)(void* userdata, const muxerconfig* config);
 

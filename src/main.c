@@ -225,7 +225,7 @@ int main(int argc, const char* argv[]) {
     }
 
     if( (r = destinationlist_open(&dlist,&now)) != 0) {
-        fprintf(stderr,"[main] error opening a source\n");
+        fprintf(stderr,"[main] error opening a destination\n");
         goto cleanup;
     }
 

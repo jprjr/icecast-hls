@@ -6,11 +6,22 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* used when the global config is to allow all sources to finish */
-static void sourcelist_quit_self(const sourcelist* list, int status) {
-    (void)list;
-    (void)status;
-    return;
+/* tell all destination threads to just quit, something has gone wrong */
+static void sourcelist_entry_quit(sourcelist_entry* entry, int status) {
+    size_t i;
+    size_t len;
+    source_sync sync;
+
+    destination_sync** dest_sync;
+
+    len = entry->destination_syncs.len / sizeof(destination_sync*);
+    dest_sync = (destination_sync**)entry->destination_syncs.x;
+
+    for(i=0;i<len;i++) {
+        sync.dest = dest_sync[i];
+        source_sync_quit(&sync);
+    }
+    (void) status;
 }
 
 size_t sourcelist_length(const sourcelist* slist) {
@@ -104,29 +115,13 @@ int sourcelist_open(const sourcelist* list, uint8_t shortflag) {
 
         if(shortflag) {
             entry[i].quit = (sourcelist_quit_func)sourcelist_quit;
+            entry[i].quit_userdata = (void *)list;
         } else {
-            entry[i].quit = (sourcelist_quit_func)sourcelist_quit_self;
+            entry[i].quit = (sourcelist_quit_func)sourcelist_entry_quit;
+            entry[i].quit_userdata = (void *)&entry[i];
         }
-        entry[i].quit_userdata = (void *)list;
     }
     return 0;
-}
-
-/* tell all destination threads to flush and quit */
-static void sourcelist_entry_flush(sourcelist_entry* entry) {
-    size_t i;
-    size_t len;
-    source_sync sync;
-
-    destination_sync** dest_sync;
-
-    len = entry->destination_syncs.len / sizeof(destination_sync*);
-    dest_sync = (destination_sync**)entry->destination_syncs.x;
-
-    for(i=0;i<len;i++) {
-        sync.dest = dest_sync[i];
-        source_sync_eof(&sync);
-    }
 }
 
 static int sourcelist_entry_tag_handler(void* userdata, const taglist* tags) {
@@ -144,7 +139,7 @@ static int sourcelist_entry_tag_handler(void* userdata, const taglist* tags) {
     /* if this is set it means somebody called quit, return with the
      * status code given */
     if( (r = thread_atomic_int_load(&entry->status)) != 0) {
-        sourcelist_entry_flush(entry);
+        sourcelist_entry_quit(entry,r);
         return r;
     }
 
@@ -170,7 +165,7 @@ static int sourcelist_entry_frame_handler(void* userdata, const frame* frame) {
     dest_sync = (destination_sync**)entry->destination_syncs.x;
 
     if( (r = thread_atomic_int_load(&entry->status)) != 0) {
-        sourcelist_entry_flush(entry);
+        sourcelist_entry_quit(entry,r);
         return r;
     }
 
@@ -184,6 +179,7 @@ static int sourcelist_entry_frame_handler(void* userdata, const frame* frame) {
 }
 
 static int sourcelist_entry_flush_handler(void* userdata) {
+    int r;
     size_t i;
     size_t len;
     source_sync sync;
@@ -194,12 +190,17 @@ static int sourcelist_entry_flush_handler(void* userdata) {
     len = entry->destination_syncs.len / sizeof(destination_sync*);
     dest_sync = (destination_sync**)entry->destination_syncs.x;
 
-    for(i=0;i<len;i++) {
-        sync.dest = dest_sync[i];
-        source_sync_eof(&sync);
+    if( (r = thread_atomic_int_load(&entry->status)) != 0) {
+        sourcelist_entry_quit(entry,r);
+        return r;
     }
 
-    return 0;
+    for(i=0;i<len;i++) {
+        sync.dest = dest_sync[i];
+        if( (r = source_sync_eof(&sync)) != 0) break;
+    }
+
+    return r;
 }
 
 static int sourcelist_entry_run(void *userdata) {
@@ -220,7 +221,7 @@ static int sourcelist_entry_run(void *userdata) {
     source_set_frame_handler(&entry->source,&fhdlr);
 
     r = source_run(&entry->source);
-    /* make all other threads quit */
+    /* (maybe) make all other threads quit */
     entry->quit(entry->quit_userdata,r == 0 ? 1 : -1);
 
     thread_exit(r);

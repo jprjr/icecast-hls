@@ -18,4 +18,5 @@ static int audioconfig_ignore_cb(void *ud, const audioconfig* c) {
 }
 
 const audioconfig_handler audioconfig_ignore = { .open = audioconfig_ignore_cb, .userdata = NULL };
+const audioconfig audioconfig_zero = AUDIOCONFIG_ZERO;
 

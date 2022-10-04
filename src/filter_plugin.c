@@ -8,12 +8,14 @@
 #include "filter_plugin_avfilter.h"
 #endif
 
+#include "filter_plugin_buffer.h"
 #include "filter_plugin_passthrough.h"
 
 const filter_plugin* filter_plugin_list[] = {
 #if FILTER_PLUGIN_AVFILTER
     &filter_plugin_avfilter,
 #endif
+    &filter_plugin_buffer,
     &filter_plugin_passthrough,
     NULL,
 };

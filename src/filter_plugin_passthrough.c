@@ -3,12 +3,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-/* this just buffers audio */
+/* this just passes audio straight through with no
+ * buffering, format conversion, etc. Used as the
+ * default filter in sources */
 
 struct plugin_userdata {
-    unsigned int frame_len;
-    frame buffer;
-    frame out;
+    unsigned int dummy;
 };
 
 typedef struct plugin_userdata plugin_userdata;
@@ -22,20 +22,11 @@ static void plugin_deinit(void) {
 }
 
 static void* plugin_create(void) {
-    plugin_userdata* userdata = (plugin_userdata*)malloc(sizeof(plugin_userdata));
-    if(userdata == NULL) return NULL;
-
-    userdata->frame_len = 0;
-    frame_init(&userdata->buffer);
-    frame_init(&userdata->out);
-    return userdata;
+    return malloc(sizeof(plugin_userdata));
 }
 
 static void plugin_close(void* ud) {
-    plugin_userdata* userdata = (plugin_userdata*)ud;
-    frame_free(&userdata->buffer);
-    frame_free(&userdata->out);
-    free(userdata);
+    free(ud);
 }
 
 static int plugin_config(void* ud, const strbuf* key, const strbuf* val) {
@@ -45,79 +36,18 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* val) {
     return 0;
 }
 
-static int plugin_handle_encoderinfo(void* ud, const encoderinfo* info) {
-    plugin_userdata* userdata = (plugin_userdata*)ud;
-    userdata->frame_len       = info->frame_len;
-
-    if(info->format != SAMPLEFMT_UNKNOWN) {
-        userdata->buffer.format      = info->format;
-        userdata->out.format      = info->format;
-    }
-
-    return 0;
-}
-
 static int plugin_open(void* ud, const audioconfig* config, const audioconfig_handler* handler) {
-    plugin_userdata* userdata = (plugin_userdata*)ud;
-    int r;
-    audioconfig oconfig = AUDIOCONFIG_ZERO;
-    encoderinfo info = ENCODERINFO_ZERO;
-
-    userdata->buffer.channels = config->channels;
-    userdata->buffer.format   = config->format;
-    userdata->buffer.sample_rate   = config->sample_rate;
-
-    userdata->out.channels = config->channels;
-    userdata->out.format   = config->format;
-    userdata->out.sample_rate   = config->sample_rate;
-
-    oconfig = *config;
-    oconfig.info.userdata = userdata;
-    oconfig.info.submit = plugin_handle_encoderinfo;
-
-    if( (r = handler->open(handler->userdata, &oconfig)) != 0) return r;
-
-    if( (r = frame_ready(&userdata->buffer)) != 0) return r;
-    if( (r = frame_ready(&userdata->out)) != 0) return r;
-
-    info.format = config->format;
-
-    return config->info.submit(config->info.userdata, &info);
-
-}
-
-static int plugin_drain_buffer(plugin_userdata* userdata, const frame_handler* handler) {
-    int r;
-    size_t len;
-
-    len = userdata->frame_len ? userdata->frame_len : userdata->buffer.duration;
-
-    while(userdata->buffer.duration >= len) {
-        if( (r = frame_move(&userdata->out, &userdata->buffer, len)) != 0) return r;
-        if( (r = handler->cb(handler->userdata,&userdata->out)) != 0) return r;
-    }
-
-    return 0;
+    (void)ud;
+    return handler->open(handler->userdata,config);
 }
 
 static int plugin_submit_frame(void* ud, const frame* f, const frame_handler* handler) {
-    plugin_userdata* userdata = (plugin_userdata*)ud;
-    int r;
-
-    if( (r = frame_append(&userdata->buffer,f)) != 0) {
-        fprintf(stderr,"[filter:passthrough] error appending frame data\n");
-        return r;
-    }
-
-    return plugin_drain_buffer(userdata,handler);
+    (void)ud;
+    return handler->cb(handler->userdata,f);
 }
 
 static int plugin_flush(void* ud, const frame_handler* handler) {
-    plugin_userdata* userdata = (plugin_userdata*)ud;
-    int r;
-
-    if( (r = plugin_drain_buffer(userdata,handler)) != 0) return r;
-
+    (void)ud;
     return handler->flush(handler->userdata);
 }
 

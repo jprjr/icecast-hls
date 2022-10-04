@@ -153,11 +153,12 @@ static int plugin_open(void* ud, const audioconfig* config, const muxerconfig_ha
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
     int r;
-    muxerconfig mconfig;
+    muxerconfig mconfig = MUXERCONFIG_ZERO;
     uint8_t usac_config[16];
-    uint32_t usac_config_size;
-    membuf dsi;
+    uint32_t usac_config_size = 0;
+    membuf dsi = STRBUF_ZERO;
     encoderinfo einfo = ENCODERINFO_ZERO;
+    memset(usac_config,0,sizeof(usac_config));
 
     if( (r = check_sample_rate(config->sample_rate)) < 0) {
         fprintf(stderr,"[encoder:exhale] unsupported sample rate %u\n",config->sample_rate);
@@ -176,9 +177,6 @@ static int plugin_open(void* ud, const audioconfig* config, const muxerconfig_ha
         fprintf(stderr,"[encoder:exhale] error configuring muxer\n");
         return r;
     }
-
-    memset(usac_config,0,sizeof(usac_config));
-    usac_config_size = 0;
 
     if(userdata->tune_in_period == 0) {
         /* default to a 1-second tune in period */
@@ -208,6 +206,9 @@ static int plugin_open(void* ud, const audioconfig* config, const muxerconfig_ha
 
     einfo.format = SAMPLEFMT_S32;
     einfo.frame_len = userdata->frame_len;
+
+    userdata->packet.sample_rate = config->sample_rate;
+
     return config->info.submit(config->info.userdata, &einfo);
 }
 
@@ -216,7 +217,7 @@ int plugin_flush(void* ud, const packet_handler* p) {
     return p->flush(p->userdata);
 }
 
-int plugin_submit_frame(void* ud, const frame* frame, const packet_handler* p) {
+static int plugin_submit_frame(void* ud, const frame* frame, const packet_handler* p) {
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
     unsigned int i = 0;
@@ -247,6 +248,9 @@ int plugin_submit_frame(void* ud, const frame* frame, const packet_handler* p) {
     if( ( r = p->cb(p->userdata, &userdata->packet)) != 0) {
         fprintf(stderr,"[encoder:exhale] error sending packet to muxer\n");
     }
+    userdata->packet.pts += userdata->frame_len;
+    if(userdata->packet.pts > INT64_MAX) userdata->packet.pts -= INT64_MAX;
+
     return r;
 }
 

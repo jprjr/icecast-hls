@@ -413,9 +413,12 @@ static size_t plugin_write_init_callback(const void* src, size_t len, void* user
 
 static int plugin_submit_dsi(void* ud, const membuf* data,const segment_handler* handler) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
-    if( fmp4_track_set_dsi(userdata->track, data->x, data->len) != FMP4_OK) {
-        fprintf(stderr,"[muxer:fmp4] error setting dsi\n");
-        return -1;
+
+    if(data->len > 0) {
+        if( fmp4_track_set_dsi(userdata->track, data->x, data->len) != FMP4_OK) {
+            fprintf(stderr,"[muxer:fmp4] error setting dsi\n");
+            return -1;
+        }
     }
 
     return fmp4_mux_write_init(&userdata->mux, plugin_write_init_callback, (void *)handler) == FMP4_OK ? 0 : -1;
@@ -455,6 +458,11 @@ static int plugin_open(void* ud, const muxerconfig *config, const outputconfig_h
             userdata->track->codec = FMP4_CODEC_FLAC;
             break;
         }
+        case CODEC_TYPE_MP3: {
+            userdata->track->codec = FMP4_CODEC_MP4A;
+            userdata->track->object_type = FMP4_OBJECT_TYPE_MP3;
+            break;
+        }
         default: {
             fprintf(stderr,"[muxer:fmp4] unsupported codec\n");
             return -1;
@@ -464,6 +472,8 @@ static int plugin_open(void* ud, const muxerconfig *config, const outputconfig_h
     fmp4_track_set_language(userdata->track,"und");
     userdata->track->time_scale = config->sample_rate;
     userdata->track->info.audio.channels = config->channels;
+    fmp4_track_set_roll_distance(userdata->track,config->roll_distance);
+    fmp4_track_set_encoder_delay(userdata->track,config->padding);
 
     fmp4_sample_info_init(&info);
     info.duration = config->frame_len;
@@ -487,8 +497,6 @@ static int plugin_open(void* ud, const muxerconfig *config, const outputconfig_h
      * the encoder our tune in period */
     minfo.packets_per_segment = userdata->segment_length * config->sample_rate / config->frame_len;
     userdata->samples_per_segment = minfo.packets_per_segment * config->frame_len;
-    fprintf(stderr,"[muxer:fmp4]: samples_per_segment = %u\n", userdata->samples_per_segment);
-    fprintf(stderr,"[muxer:fmp4]: packets_per_segment = %u\n", minfo.packets_per_segment);
 
     return config->info.submit(config->info.userdata, &minfo);
 

@@ -40,12 +40,15 @@ int destination_sync_run(destination_sync *sync) {
         thread_signal_wait(&sync->ready, THREAD_SIGNAL_WAIT_INFINITE);
         type = (destination_sync_type)thread_atomic_int_load(&sync->type);
         switch(type) {
+            case DESTINATION_SYNC_QUIT: {
+                ret = -2;
+                goto cleanup;
+            }
             case DESTINATION_SYNC_UNKNOWN: {
                 ret = -1;
                 goto cleanup;
             }
             case DESTINATION_SYNC_EOF: {
-                /* source thread does not wait for us to raise the consumed signal */
                 ret = sync->on_frame.flush(sync->on_frame.userdata);
                 goto cleanup;
             }
@@ -60,7 +63,6 @@ int destination_sync_run(destination_sync *sync) {
                 thread_signal_raise(&sync->consumed);
 
                 if(sync->on_frame.cb(sync->on_frame.userdata,&f) < 0) {
-                    fprintf(stderr,"dest sync got error\n");
                     ret = -1;
                     goto cleanup;
                 }
@@ -91,6 +93,7 @@ int destination_sync_run(destination_sync *sync) {
     }
 
     cleanup:
+
     /* store our final status in case the source thread
      * is still trying to push to us */
     thread_atomic_int_store(&sync->status,ret);

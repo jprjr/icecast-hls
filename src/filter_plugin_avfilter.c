@@ -27,6 +27,8 @@ struct plugin_userdata {
     strbuf filter_string;
     int64_t last_pts;
     int last_nb_samples;
+    audioconfig in_config;
+    audioconfig out_config;
 };
 
 typedef struct plugin_userdata plugin_userdata;
@@ -43,6 +45,7 @@ static void* plugin_create(void) {
     plugin_userdata* userdata = malloc(sizeof(plugin_userdata));
     if(userdata == NULL) return NULL;
 
+    userdata->graph = NULL;
     userdata->buffersrc = NULL;
     userdata->buffersink = NULL;
     userdata->inputs = NULL;
@@ -50,6 +53,10 @@ static void* plugin_create(void) {
     userdata->av_frame = NULL;
     userdata->last_pts = 0;
     userdata->last_nb_samples = 0;
+
+    userdata->in_config = audioconfig_zero;
+    userdata->out_config = audioconfig_zero;
+
     strbuf_init(&userdata->filter_string);
     frame_init(&userdata->frame);
 
@@ -83,44 +90,15 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* val) {
 static const char* default_in_name = "in";
 static const char* default_out_name = "out";
 
-static int plugin_handle_encoderinfo(void* ud, const encoderinfo *info) {
-    plugin_userdata* userdata = (plugin_userdata*)ud;
-
-    enum AVSampleFormat fmt;
-    if(info->format != SAMPLEFMT_UNKNOWN) {
-        fmt = samplefmt_to_avsampleformat(info->format);
-
-        if(av_opt_set_bin(userdata->buffersink, "sample_fmts",
-            (uint8_t*)&fmt,sizeof(fmt), AV_OPT_SEARCH_CHILDREN) < 0) {
-            fprintf(stderr,"[filter:avfilter] error setting buffersink format\n");
-            return -1;
-        }
-
-        if(avfilter_graph_config(userdata->graph,NULL) < 0) {
-            fprintf(stderr,"[filter:avfilter] unable to reconfigure graph\n");
-            return -1;
-        }
-    }
-
-    if(info->frame_len != 0) {
-        av_buffersink_set_frame_size(userdata->buffersink, info->frame_len);
-    }
-
-    return 0;
-}
-
-static int plugin_open(void* ud, const audioconfig* aconfig, const audioconfig_handler *ahdlr) {
-    plugin_userdata* userdata = (plugin_userdata*)ud;
-
+static int plugin_graph_open(plugin_userdata* userdata) {
     const AVFilter* buffer_filter = avfilter_get_by_name("abuffer");
     const AVFilter* buffersink_filter = avfilter_get_by_name("abuffersink");
     const char* in_name = NULL;
     const char* out_name = NULL;
-    audioconfig out_config;
-
     char args[512];
     char layout[64];
     AVChannelLayout ch_layout;
+    enum AVSampleFormat fmt;
 
     if(buffer_filter == NULL || buffersink_filter == NULL) {
         fprintf(stderr,"[filter:avfilter] unable to find abuffer and abuffersink filters\n");
@@ -133,14 +111,14 @@ static int plugin_open(void* ud, const audioconfig* aconfig, const audioconfig_h
         return -1;
     }
 
-    av_channel_layout_default(&ch_layout, aconfig->channels);
+    av_channel_layout_default(&ch_layout, userdata->in_config.channels);
     av_channel_layout_describe(&ch_layout, layout, sizeof(layout));
     av_channel_layout_uninit(&ch_layout);
 
     snprintf(args,sizeof(args),
       "time_base=%u/%u:sample_rate=%u:sample_fmt=%s:channel_layout=%s",
-        1, aconfig->sample_rate, aconfig->sample_rate,
-        av_get_sample_fmt_name(samplefmt_to_avsampleformat(aconfig->format)), layout);
+        1, userdata->in_config.sample_rate, userdata->in_config.sample_rate,
+        av_get_sample_fmt_name(samplefmt_to_avsampleformat(userdata->in_config.format)), layout);
 
     if(userdata->filter_string.len > 0) {
         if(avfilter_graph_parse_ptr(userdata->graph,(const char *)userdata->filter_string.x,
@@ -184,10 +162,58 @@ static int plugin_open(void* ud, const audioconfig* aconfig, const audioconfig_h
         }
     }
 
+    if(userdata->out_config.format != SAMPLEFMT_UNKNOWN) {
+        fmt = samplefmt_to_avsampleformat(userdata->out_config.format);
+
+        if(av_opt_set_bin(userdata->buffersink, "sample_fmts",
+            (uint8_t*)&fmt,sizeof(fmt), AV_OPT_SEARCH_CHILDREN) < 0) {
+            fprintf(stderr,"[filter:avfilter] error setting buffersink format\n");
+            return -1;
+        }
+    }
+
     if(avfilter_graph_config(userdata->graph,NULL) < 0) {
         fprintf(stderr,"[filter:avfilter] unable to configure graph\n");
         return -1;
     }
+
+    return 0;
+}
+
+static void plugin_graph_close(plugin_userdata* userdata) {
+    if(userdata->buffersrc != NULL) avfilter_free(userdata->buffersrc);
+    if(userdata->buffersink != NULL) avfilter_free(userdata->buffersink);
+    if(userdata->inputs != NULL) avfilter_inout_free(&userdata->inputs);
+    if(userdata->outputs != NULL) avfilter_inout_free(&userdata->outputs);
+    if(userdata->graph  != NULL) avfilter_graph_free(&userdata->graph);
+}
+
+static int plugin_handle_encoderinfo(void* ud, const encoderinfo *info) {
+    plugin_userdata* userdata = (plugin_userdata*)ud;
+    int r;
+
+    if(info->format != userdata->out_config.format) {
+        plugin_graph_close(userdata);
+
+        userdata->out_config.format = info->format;
+        if( (r = plugin_graph_open(userdata)) != 0) {
+            fprintf(stderr,"[filter:avfilter] error re-opening graph\n");
+            return r;
+        }
+    }
+
+    if(info->frame_len != 0) {
+        av_buffersink_set_frame_size(userdata->buffersink, info->frame_len);
+    }
+
+    return 0;
+}
+
+static int plugin_open(void* ud, const audioconfig* aconfig, const audioconfig_handler *ahdlr) {
+    plugin_userdata* userdata = (plugin_userdata*)ud;
+    AVChannelLayout ch_layout;
+
+    userdata->in_config = *aconfig;
 
     userdata->av_frame = av_frame_alloc();
     if(userdata->av_frame == NULL) {
@@ -195,15 +221,20 @@ static int plugin_open(void* ud, const audioconfig* aconfig, const audioconfig_h
         return -1;
     }
 
+    if(plugin_graph_open(userdata) != 0) {
+        fprintf(stderr,"[filter:avfilter] error opening graph\n");
+        return -1;
+    }
+
     if(av_buffersink_get_ch_layout(userdata->buffersink, &ch_layout) < 0) return -1;
 
-    out_config.sample_rate = av_buffersink_get_sample_rate(userdata->buffersink);
-    out_config.channels = ch_layout.nb_channels;
-    out_config.format = avsampleformat_to_samplefmt(av_buffersink_get_format(userdata->buffersink));
-    out_config.info.userdata = userdata;
-    out_config.info.submit = plugin_handle_encoderinfo;
+    userdata->out_config.sample_rate = av_buffersink_get_sample_rate(userdata->buffersink);
+    userdata->out_config.channels = ch_layout.nb_channels;
+    userdata->out_config.format = avsampleformat_to_samplefmt(av_buffersink_get_format(userdata->buffersink));
+    userdata->out_config.info.userdata = userdata;
+    userdata->out_config.info.submit = plugin_handle_encoderinfo;
 
-    return ahdlr->open(ahdlr->userdata,&out_config);
+    return ahdlr->open(ahdlr->userdata,&userdata->out_config);
 }
 
 static int plugin_run(plugin_userdata* userdata, const frame_handler* handler) {
@@ -253,12 +284,8 @@ static int plugin_submit_frame(void* ud, const frame* frame, const frame_handler
 
 static void plugin_close(void* ud) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
-    if(userdata->buffersrc != NULL) avfilter_free(userdata->buffersrc);
-    if(userdata->buffersink != NULL) avfilter_free(userdata->buffersink);
-    if(userdata->inputs != NULL) avfilter_inout_free(&userdata->inputs);
-    if(userdata->outputs != NULL) avfilter_inout_free(&userdata->outputs);
-    if(userdata->graph  != NULL) avfilter_graph_free(&userdata->graph);
     if(userdata->av_frame != NULL) av_frame_free(&userdata->av_frame);
+    plugin_graph_close(userdata);
     frame_free(&userdata->frame);
     strbuf_free(&userdata->filter_string);
     free(userdata);

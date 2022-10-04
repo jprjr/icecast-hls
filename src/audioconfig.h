@@ -18,7 +18,7 @@ struct audioconfig {
 
 typedef struct audioconfig audioconfig;
 
-#define AUDIOCONFIG_ZERO { .info = ENCODERINFO_HANDLER_ZERO, .format = SAMPLEFMT_UNKNOWN, .channels = 0, .sample_rate = 0 };
+#define AUDIOCONFIG_ZERO { .info = ENCODERINFO_HANDLER_ZERO, .format = SAMPLEFMT_UNKNOWN, .channels = 0, .sample_rate = 0 }
 
 typedef int(*audioconfig_open_callback)(void* userdata, const audioconfig* config);
 
@@ -36,6 +36,7 @@ extern "C" {
 #endif
 
 extern const audioconfig_handler audioconfig_ignore;
+extern const audioconfig audioconfig_zero;
 int audioconfig_null_open(void*, const audioconfig*);
 
 #ifdef __cplusplus

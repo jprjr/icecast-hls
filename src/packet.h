@@ -7,6 +7,8 @@ struct packet {
     membuf data;
     size_t duration;
     uint8_t sync; /* 1 if the packet is a sync packet */
+    unsigned int sample_rate;
+    uint64_t pts;
 };
 
 typedef struct packet packet;
