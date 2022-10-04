@@ -29,6 +29,7 @@ int strbuf_sprintf(strbuf* d, const char *fmt, ...);
 
 /* add a terminator to a strbuf */
 int strbuf_term(strbuf* d);
+int strbuf_unterm(strbuf* d);
 
 /* like strchr strrchr - returns a pointer inside of strbuf */
 char* strbuf_chr(const strbuf* s, char c);

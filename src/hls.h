@@ -22,6 +22,7 @@
 
 #include "strbuf.h"
 #include "segment.h"
+#include "outputconfig.h"
 #include "ich_time.h"
 
 typedef int(*hls_write_callback)(void* userdata, const strbuf* filename, const membuf* data, const strbuf* mime);
@@ -67,6 +68,11 @@ struct hls {
     strbuf txt; /* stores the actual, generated playlist */
     strbuf header; /* stores the header-type info */
     strbuf fmt; /* generated snprintf-style format string */
+    strbuf init_filename;
+    strbuf init_mime;  /* the mimetype to use on init segments */
+    strbuf media_ext;   /* the file extension to use on media segments */
+    strbuf media_mime;  /* the mimetype to use on media segments */
+
     hls_playlist playlist;
     hls_segment segment;
     hls_callback_handler callbacks;
@@ -77,10 +83,6 @@ struct hls {
     size_t counter;
     unsigned int version;         /* reported HLS playlist version */
     ich_time now;
-    const strbuf* init_filename; /* the file name to use on init segments */
-    const strbuf* init_mime;  /* the mimetype to use on init segments */
-    const strbuf* media_ext;   /* the file extension to use on media segments */
-    const strbuf* media_mime;  /* the mimetype to use on media segments */
 };
 
 typedef struct hls hls;
@@ -121,7 +123,8 @@ hls_segment_meta* hls_playlist_get(hls_playlist*, size_t index);
 void hls_init(hls*);
 void hls_free(hls*);
 
-int hls_open(hls*);
+int hls_configure(hls*, const strbuf* key, const strbuf* val);
+int hls_open(hls*, const outputconfig* config);
 
 /* buffers a segment and maybe triggers writing callbacks */
 int hls_add_segment(hls*, const segment* seg);

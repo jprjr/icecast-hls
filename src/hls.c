@@ -2,6 +2,12 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <errno.h>
+
+#define LOG0(fmt)     fprintf(stderr,"[hls] "fmt"\n")
+#define LOG1(fmt,a)   fprintf(stderr,"[hls] "fmt"\n",(a))
+#define LOG2(fmt,a,b) fprintf(stderr,"[hls] "fmt"\n",(a),(b))
+#define LOGS(fmt,s) LOG2(fmt, ((int)(s)->len), ((const char*)(s)->x) )
 
 static STRBUF_CONST(mime_m3u8,"application/iso-whatever-playlisything");
 static STRBUF_CONST(filename_m3u8,"stream.m3u8");
@@ -9,7 +15,7 @@ static STRBUF_CONST(filename_m3u8,"stream.m3u8");
 static int hls_delete_default_callback(void* userdata, const strbuf* filename) {
     (void)userdata;
     (void)filename;
-    fprintf(stderr,"[hls] delete callback not set\n");
+    LOG0("delete callback not set");
     return -1;
 }
 
@@ -18,7 +24,7 @@ static int hls_write_default_callback(void* userdata, const strbuf* filename, co
     (void)filename;
     (void)data;
     (void)mime;
-    fprintf(stderr,"[hls] write callback not set\n");
+    LOG0("write callback not set");
     return -1;
 }
 
@@ -136,23 +142,23 @@ void hls_init(hls* h) {
     strbuf_init(&h->txt);
     strbuf_init(&h->header);
     strbuf_init(&h->fmt);
+    strbuf_init(&h->init_filename);
+    strbuf_init(&h->init_mime);
+    strbuf_init(&h->media_ext);
+    strbuf_init(&h->media_mime);
     hls_playlist_init(&h->playlist);
     hls_segment_init(&h->segment);
     h->callbacks.delete = hls_delete_default_callback;
     h->callbacks.write = hls_write_default_callback;
     h->callbacks.userdata = NULL;
     h->time_base = 0;
-    h->target_duration = 0;
-    h->playlist_length = 0;
+    h->target_duration = 2;
+    h->playlist_length = 60 * 15;
     h->media_sequence = 1;
     h->counter = 0;
     h->version = 7;
     h->now.seconds = 0;
     h->now.nanoseconds = 0;
-    h->init_filename = NULL;
-    h->init_mime = NULL;
-    h->media_ext = NULL;
-    h->media_mime = NULL;
 }
 
 void hls_free(hls* h) {
@@ -166,10 +172,41 @@ void hls_free(hls* h) {
 
 #define TRY(x) if( (r = (x)) != 0 ) return r;
 
-int hls_open(hls* h) {
+int hls_open(hls* h, const outputconfig* config) {
     int r;
-    unsigned int playlist_segments = (h->playlist_length / h->target_duration) + 1;
+    unsigned int playlist_segments;
+    outputinfo info = OUTPUTINFO_ZERO;
 
+    h->time_base  = config->time_base;
+
+    if(config->media_mime != NULL) {
+        if(strbuf_copy(&h->media_mime,config->media_mime) != 0) return -1;
+    }
+
+    if(config->media_ext != NULL) {
+        if(strbuf_copy(&h->media_ext,config->media_ext) != 0) return -1;
+    }
+
+    if(config->init_mime != NULL) {
+        if(strbuf_copy(&h->init_mime,config->init_mime) != 0) return -1;
+    }
+
+    if(config->init_ext != NULL) {
+
+        if(h->init_filename.len == 0) {
+            if(strbuf_append_cstr(&h->init_filename,"init") != 0) {
+                LOG0("out of memory");
+                return -1;
+            }
+        }
+
+        if(strbuf_cat(&h->init_filename,config->init_ext) != 0) {
+            LOG0("out of memory");
+            return -1;
+        }
+    }
+
+    playlist_segments = (h->playlist_length / h->target_duration) + 1;
     TRY(hls_playlist_open(&h->playlist, playlist_segments))
 
     TRY(strbuf_sprintf(&h->header,
@@ -180,10 +217,12 @@ int hls_open(hls* h) {
       h->version))
 
     TRY(strbuf_sprintf(&h->fmt,"%%08u%.*s",
-      (int)h->media_ext->len,(char *)h->media_ext->x));
+      (int)h->media_ext.len,(char *)h->media_ext.x));
     TRY(strbuf_term(&h->fmt));
 
-    return 0;
+    info.segment_length = h->target_duration;
+
+    return config->info.submit(config->info.userdata,&info);
 }
 
 static int hls_update_playlist(hls* h) {
@@ -233,7 +272,7 @@ static int hls_flush_segment(hls* h) {
       (((double)h->segment.samples) / ((double)h->time_base)),
       (int)t->filename.len, (const char*)t->filename.x))
 
-    TRY(h->callbacks.write(h->callbacks.userdata,&t->filename, &h->segment.data, h->media_mime));
+    TRY(h->callbacks.write(h->callbacks.userdata,&t->filename, &h->segment.data, &h->media_mime));
 
     f.num = h->segment.samples;
     f.den = h->time_base;
@@ -253,11 +292,11 @@ int hls_add_segment(hls* h, const segment* s) {
     if(s->type == SEGMENT_TYPE_INIT) {
         TRY(strbuf_sprintf(&h->header,
           "#EXT-X-MAP:URI=\"%.*s\"\n",
-          (int)h->init_filename->len,
-          (char*)h->init_filename->x));
+          (int)h->init_filename.len,
+          (char*)h->init_filename.x));
         tmp.x = (void*)s->data;
         tmp.len = s->len;
-        return h->callbacks.write(h->callbacks.userdata,h->init_filename,&tmp,h->init_mime);
+        return h->callbacks.write(h->callbacks.userdata,&h->init_filename,&tmp,&h->init_mime);
     }
 
     if( (h->segment.samples + s->samples) / h->time_base >= h->target_duration) { /* time to flush! */
@@ -285,4 +324,46 @@ int hls_flush(hls* h) {
 
 const strbuf* hls_get_playlist(const hls* h) {
     return &h->txt;
+}
+
+int hls_configure(hls* h, const strbuf* key, const strbuf* value) {
+    if(strbuf_equals_cstr(key,"hls-target-duration")) {
+        errno = 0;
+        h->target_duration = strbuf_strtoul(value,10);
+        if(errno != 0) {
+            LOGS("error parsing target-duration value %.*s",value);
+            return -1;
+        }
+        if(h->target_duration == 0) {
+            fprintf(stderr,"[hls] invalid target-duration %.*s\n",
+              (int)value->len,(char *)value->x);
+            return -1;
+        }
+        return 0;
+    }
+
+    if(strbuf_equals_cstr(key,"hls-playlist-length")) {
+        errno = 0;
+        h->playlist_length = strbuf_strtoul(value,10);
+        if(errno != 0) {
+            LOGS("error parsing playlist-length value %.*s",value);
+            return -1;
+        }
+        if(h->playlist_length == 0) {
+            LOGS("invalid playlist-length %.*s",value);
+            return -1;
+        }
+        return 0;
+    }
+
+    if(strbuf_equals_cstr(key,"hls-init-basename")) {
+        if(strbuf_copy(&h->init_filename,value) != 0) {
+            LOG0("out of memory");
+            return -1;
+        }
+        return 0;
+    }
+
+    LOGS("unknown key %.*s", key);
+    return -1;
 }

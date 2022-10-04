@@ -19,6 +19,8 @@
 #include <io.h>
 #include <fcntl.h>
 #else
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -37,6 +39,34 @@ struct plugin_userdata {
 
 typedef struct plugin_userdata plugin_userdata;
 
+static int directory_create(const strbuf* foldername) {
+#ifdef DR_WINDOWS
+    DWORD last_error;
+    int r = -1;
+    strbuf w = STRBUF_ZERO;
+    if(strbuf_wide(&w,foldername) != 0) goto cleanup;
+    r = CreateDirectoryW((wchar_t*)w.x,NULL) ? 0 : -1;
+    if(r == -1) {
+        last_error = GetLastError();
+        if(last_error == ERROR_ALREADY_EXISTS) r = 0;
+    }
+    cleanup:
+    strbuf_free(&w);
+    return r;
+#else
+    int r;
+    errno = 0;
+    r = mkdir((const char *)foldername->x,S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP | S_IROTH | S_IXOTH);
+    if(r == -1) {
+        if(errno == EEXIST) {
+            r = 0;
+            errno = 0;
+        }
+    }
+    return r;
+#endif
+}
+
 static int file_delete(const strbuf* filename) {
 #ifdef DR_WINDOWS
     int r = -1;
@@ -45,8 +75,10 @@ static int file_delete(const strbuf* filename) {
     r = DeleteFileW((wchar_t*)w.x) ? 0 : -1;
     cleanup:
     strbuf_free(&w);
-#endif
+    return r;
+#else
     return unlink((const char*)filename->x);
+#endif
 }
 
 static FILE* file_open(const strbuf* filename) {
@@ -97,26 +129,16 @@ static void plugin_deinit(void) {
 static int plugin_open(void* ud, const outputconfig *config) {
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
-    outputinfo info = OUTPUTINFO_ZERO;
+    strbuf tmp = STRBUF_ZERO;
 
     if(userdata->foldername.len == 0) return -1;
-    if(userdata->initname.len == 0) {
-        if(strbuf_append(&userdata->initname,"init",4) != 0) return -1;
-    }
 
-    userdata->hls.time_base  = config->time_base;
-    userdata->hls.media_mime = config->media_mime;
-    userdata->hls.media_ext  = config->media_ext;
-    if(config->init_ext != NULL) {
-        if( (r = strbuf_cat(&userdata->initname,config->init_ext)) != 0) return r;
-        userdata->hls.init_filename = &userdata->initname;
-        userdata->hls.init_mime = config->init_mime;
-    }
+    if( (r = strbuf_append(&tmp,(char *)userdata->foldername.x,userdata->foldername.len-1)) != 0) return -1;
+    if( (r = strbuf_term(&tmp)) != 0) return -1;
+    if(directory_create(&tmp) != 0) return r;
+    strbuf_free(&tmp);
 
-    info.segment_length = userdata->hls.target_duration;
-    if( (r = config->info.submit(config->info.userdata,&info)) != 0) return r;
-
-    return hls_open(&userdata->hls);
+    return hls_open(&userdata->hls, config);
 }
 
 static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
@@ -142,37 +164,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
         return 0;
     }
 
-    if(strbuf_equals_cstr(key,"segment-length")) {
-        errno = 0;
-        userdata->hls.target_duration = strbuf_strtoul(value,10);
-        if(errno != 0) {
-            fprintf(stderr,"[output:folder] error parsing segment-length value %.*s\n",
-              (int)value->len,(char *)value->x);
-            return -1;
-        }
-        if(userdata->hls.target_duration == 0) {
-            fprintf(stderr,"[output:folder] invalid segment-length %.*s\n",
-              (int)value->len,(char *)value->x);
-            return -1;
-        }
-        return 0;
-    }
-
-    if(strbuf_equals_cstr(key,"playlist-length")) {
-        errno = 0;
-        userdata->hls.playlist_length = strbuf_strtoul(value,10);
-        if(errno != 0) {
-            fprintf(stderr,"[output:folder] error parsing playlist-length value %.*s\n",
-              (int)value->len,(char *)value->x);
-            return -1;
-        }
-        if(userdata->hls.playlist_length == 0) {
-            fprintf(stderr,"[output:folder] invalid playlist-length %.*s\n",
-              (int)value->len,(char *)value->x);
-            return -1;
-        }
-        return 0;
-    }
+    if(strbuf_begins_cstr(key,"hls-")) return hls_configure(&userdata->hls,key,value);
 
     fprintf(stderr,"[output:folder] unknown key \"%.*s\"\n",(int)key->len,(const char *)key->x);
     return -1;
@@ -295,11 +287,11 @@ static void* plugin_create(void) {
     strbuf_init(&userdata->foldername);
     strbuf_init(&userdata->initname);
     hls_init(&userdata->hls);
-    userdata->hls.target_duration = 2;
-    userdata->hls.playlist_length = 60 * 15;
+
     userdata->hls.callbacks.write  = plugin_hls_write;
     userdata->hls.callbacks.delete = plugin_hls_delete;
     userdata->hls.callbacks.userdata = userdata;
+
     return userdata;
 }
 
