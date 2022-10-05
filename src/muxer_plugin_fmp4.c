@@ -387,7 +387,7 @@ static int plugin_submit_packet(void* ud, const packet* packet, const segment_re
     fmp4_sample_info info;
 
     /* see if we need to flush the current segment */
-    if(userdata->track->trun_sample_count + packet->duration > userdata->samples_per_segment) {
+    if(userdata->track->trun_sample_count > 0 && (userdata->track->trun_sample_count + packet->duration > userdata->samples_per_segment)) {
         if( (r = plugin_muxer_flush(userdata,dest)) != 0) return r;
     }
 
@@ -457,6 +457,10 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
         }
         case CODEC_TYPE_FLAC: {
             userdata->track->codec = FMP4_CODEC_FLAC;
+            break;
+        }
+        case CODEC_TYPE_OPUS: {
+            userdata->track->codec = FMP4_CODEC_OPUS;
             break;
         }
         case CODEC_TYPE_MP3: {

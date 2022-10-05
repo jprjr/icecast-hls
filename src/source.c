@@ -77,6 +77,7 @@ void source_init(source* s) {
 void source_free(source* s) {
     input_free(&s->input);
     decoder_free(&s->decoder);
+    filter_free(&s->filter);
     taglist_free(&s->tagcache);
 }
 

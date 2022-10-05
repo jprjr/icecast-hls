@@ -1,16 +1,29 @@
 #include "hls.h"
+#include "thread.h"
 
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
+#include <string.h>
+
+#define OUTOFMEM "out of memory"
 
 #define LOG0(fmt)     fprintf(stderr,"[hls] "fmt"\n")
 #define LOG1(fmt,a)   fprintf(stderr,"[hls] "fmt"\n",(a))
 #define LOG2(fmt,a,b) fprintf(stderr,"[hls] "fmt"\n",(a),(b))
-#define LOGS(fmt,s) LOG2(fmt, ((int)(s)->len), ((const char*)(s)->x) )
+#define LOG3(fmt,a,b,c) fprintf(stderr,"[hls] "fmt"\n",(a),(b),(c))
+#define LOGS(fmt,s) LOG2(fmt, (int)s.len, (char *)s.x)
 
-static STRBUF_CONST(mime_m3u8,"application/iso-whatever-playlisything");
-static STRBUF_CONST(filename_m3u8,"stream.m3u8");
+#define TRY0(exp, act) if( (r = (exp)) != 0 ) { act; goto cleanup; }
+#define TRYS(exp) TRY0(exp, LOG0(OUTOFMEM); abort())
+
+/* keep a global counter for writing out picture files. We could
+ * have multiple file destinations going to the same folder,
+ * this ensures multiple threads don't stop on each other */
+
+static thread_atomic_uint_t counter;
+
+static STRBUF_CONST(mime_m3u8,"application/vnd.apple.mpegurl");
 
 static int hls_delete_default_callback(void* userdata, const strbuf* filename) {
     (void)userdata;
@@ -44,6 +57,7 @@ void hls_segment_meta_reset(hls_segment_meta *m) {
 }
 
 void hls_segment_init(hls_segment* s) {
+    strbuf_init(&s->expired_files);
     membuf_init(&s->data);
     s->samples = 0;
 }
@@ -53,6 +67,7 @@ void hls_segment_free(hls_segment* s) {
 }
 
 void hls_segment_reset(hls_segment* s) {
+    strbuf_init(&s->expired_files);
     membuf_reset(&s->data);
     s->samples = 0;
 }
@@ -139,10 +154,12 @@ hls_segment_meta* hls_playlist_shift(hls_playlist* b) {
 
 
 void hls_init(hls* h) {
+    thread_atomic_uint_store(&counter,0);
     strbuf_init(&h->txt);
     strbuf_init(&h->header);
     strbuf_init(&h->fmt);
     strbuf_init(&h->init_filename);
+    strbuf_init(&h->playlist_filename);
     strbuf_init(&h->init_mime);
     strbuf_init(&h->media_ext);
     strbuf_init(&h->media_mime);
@@ -152,6 +169,7 @@ void hls_init(hls* h) {
     h->callbacks.write = hls_write_default_callback;
     h->callbacks.userdata = NULL;
     h->time_base = 0;
+    h->target_samples = 0;
     h->target_duration = 2;
     h->playlist_length = 60 * 15;
     h->media_sequence = 1;
@@ -166,11 +184,15 @@ void hls_free(hls* h) {
     strbuf_free(&h->header);
     strbuf_free(&h->fmt);
     membuf_free(&h->segment.data);
+    strbuf_free(&h->segment.expired_files);
+    strbuf_free(&h->init_filename);
+    strbuf_free(&h->playlist_filename);
+    strbuf_free(&h->init_mime);
+    strbuf_free(&h->media_ext);
+    strbuf_free(&h->media_mime);
     hls_playlist_free(&h->playlist);
     hls_init(h);
 }
-
-#define TRY(x) if( (r = (x)) != 0 ) return r;
 
 int hls_open(hls* h, const segment_source* source) {
     int r;
@@ -178,51 +200,53 @@ int hls_open(hls* h, const segment_source* source) {
     segment_source_params params = SEGMENT_SOURCE_PARAMS_ZERO;
 
     h->time_base  = source->time_base;
+    h->target_samples = source->time_base * h->target_duration;
 
     if(source->media_mime != NULL) {
-        if(strbuf_copy(&h->media_mime,source->media_mime) != 0) return -1;
+        TRYS(strbuf_copy(&h->media_mime,source->media_mime));
     }
 
     if(source->media_ext != NULL) {
-        if(strbuf_copy(&h->media_ext,source->media_ext) != 0) return -1;
+        TRYS(strbuf_copy(&h->media_ext,source->media_ext))
     }
 
     if(source->init_mime != NULL) {
-        if(strbuf_copy(&h->init_mime,source->init_mime) != 0) return -1;
+        TRYS(strbuf_copy(&h->init_mime,source->init_mime))
     }
 
     if(source->init_ext != NULL) {
 
         if(h->init_filename.len == 0) {
-            if(strbuf_append_cstr(&h->init_filename,"init") != 0) {
-                LOG0("out of memory");
-                return -1;
-            }
+            TRYS(strbuf_append_cstr(&h->init_filename,"init"))
         }
 
-        if(strbuf_cat(&h->init_filename,source->init_ext) != 0) {
-            LOG0("out of memory");
-            return -1;
-        }
+        TRYS(strbuf_cat(&h->init_filename,source->init_ext))
+    }
+
+    if(h->playlist_filename.len == 0) {
+        TRYS(strbuf_append_cstr(&h->playlist_filename,"stream.m3u8"));
     }
 
     playlist_segments = (h->playlist_length / h->target_duration) + 1;
-    TRY(hls_playlist_open(&h->playlist, playlist_segments))
+    TRYS(hls_playlist_open(&h->playlist, playlist_segments))
 
-    TRY(strbuf_sprintf(&h->header,
+    TRY0(strbuf_sprintf(&h->header,
       "#EXTM3U\n"
       "#EXT-X-TARGETDURATION:%u\n"
       "#EXT-X-VERSION:%u\n",
       h->target_duration,
-      h->version))
+      h->version),LOG0("out of memory"));
 
-    TRY(strbuf_sprintf(&h->fmt,"%%08u%.*s",
-      (int)h->media_ext.len,(char *)h->media_ext.x));
-    TRY(strbuf_term(&h->fmt));
+    TRYS(strbuf_sprintf(&h->fmt,"%%08u%.*s",
+      (int)h->media_ext.len,(char *)h->media_ext.x))
+    TRYS(strbuf_term(&h->fmt));
 
     params.segment_length = h->target_duration;
 
-    return source->set_params(source->handle, &params);
+    r = source->set_params(source->handle, &params);
+
+    cleanup:
+    return r;
 }
 
 static int hls_update_playlist(hls* h) {
@@ -234,16 +258,18 @@ static int hls_update_playlist(hls* h) {
     strbuf_reset(&h->txt);
     len = hls_playlist_used(&h->playlist);
 
-    TRY(strbuf_cat(&h->txt,&h->header));
-    TRY(strbuf_sprintf(&h->txt,
+    TRYS(strbuf_cat(&h->txt,&h->header));
+    TRYS(strbuf_sprintf(&h->txt,
       "#EXT-X-MEDIA_SEQUENCE:%u\n\n",
       h->media_sequence))
 
     for(i=0;i<len;i++) {
         s = hls_playlist_get(&h->playlist,i);
-        TRY(strbuf_cat(&h->txt,&s->tags))
+        TRYS(strbuf_cat(&h->txt,&s->tags))
     }
-    return 0;
+
+    cleanup:
+    return r;
 }
 
 static int hls_flush_segment(hls* h) {
@@ -251,28 +277,44 @@ static int hls_flush_segment(hls* h) {
     hls_segment_meta* t;
     ich_tm tm;
     ich_frac f;
+    strbuf stmp = STRBUF_ZERO;
+
+    size_t len;
 
     if(hls_playlist_isfull(&h->playlist)) {
         t = hls_playlist_shift(&h->playlist);
         h->callbacks.delete(h->callbacks.userdata, &t->filename);
         h->media_sequence++;
+        if(t->expired_files.len > 0) {
+            stmp.x = (uint8_t*)t->expired_files.x;
+            len = t->expired_files.len;
+            while(len) {
+                stmp.len = strlen((char*)stmp.x);
+                h->callbacks.delete(h->callbacks.userdata,&stmp);
+                stmp.x += stmp.len + 1;
+                len    -= stmp.len + 1;
+            }
+            strbuf_free(&t->expired_files);
+        }
     }
 
     t = hls_playlist_push(&h->playlist);
     hls_segment_meta_reset(t);
 
-    TRY(strbuf_sprintf(&t->filename,(char*)h->fmt.x,++(h->counter)));
+    t->expired_files = h->segment.expired_files;
+    TRYS(strbuf_sprintf(&t->filename,(char*)h->fmt.x,++(h->counter)));
 
     ich_time_to_tm(&tm,&h->now);
-    TRY(strbuf_sprintf(&t->tags,
+    TRYS(strbuf_sprintf(&t->tags,
       "#EXT-X-PROGRAM-DATE-TIME:%04u-%02u-%02uT%02u:%02u:%02u.%03uZ\n"
       "#EXTINF:%f,\n"
       "%.*s\n\n",
       tm.year,tm.month,tm.day,tm.hour,tm.min,tm.sec,tm.mill,
       (((double)h->segment.samples) / ((double)h->time_base)),
-      (int)t->filename.len, (const char*)t->filename.x))
+      (int)t->filename.len, (const char*)t->filename.x));
 
-    TRY(h->callbacks.write(h->callbacks.userdata,&t->filename, &h->segment.data, &h->media_mime));
+    TRY0(h->callbacks.write(h->callbacks.userdata,&t->filename, &h->segment.data, &h->media_mime),
+      LOGS("error writing file %.*s", t->filename));
 
     f.num = h->segment.samples;
     f.den = h->time_base;
@@ -280,8 +322,10 @@ static int hls_flush_segment(hls* h) {
 
     hls_segment_reset(&h->segment);
 
-    TRY(hls_update_playlist(h))
-    return 0;
+    TRYS(hls_update_playlist(h));
+
+    cleanup:
+    return r;
 }
 
 
@@ -290,7 +334,7 @@ int hls_add_segment(hls* h, const segment* s) {
     membuf tmp = MEMBUF_ZERO;
 
     if(s->type == SEGMENT_TYPE_INIT) {
-        TRY(strbuf_sprintf(&h->header,
+        TRYS(strbuf_sprintf(&h->header,
           "#EXT-X-MAP:URI=\"%.*s\"\n",
           (int)h->init_filename.len,
           (char*)h->init_filename.x));
@@ -299,15 +343,18 @@ int hls_add_segment(hls* h, const segment* s) {
         return h->callbacks.write(h->callbacks.userdata,&h->init_filename,&tmp,&h->init_mime);
     }
 
-    if( (h->segment.samples + s->samples) / h->time_base >= h->target_duration) { /* time to flush! */
-        TRY(hls_flush_segment(h));
-        TRY(h->callbacks.write(h->callbacks.userdata,&filename_m3u8,&h->txt,&mime_m3u8));
+
+
+    if( (h->segment.samples > 0) && (h->segment.samples + s->samples >= h->target_samples)) { /* time to flush! */
+        TRY0(hls_flush_segment(h),LOG0("error flushing segment"));
+        TRY0(h->callbacks.write(h->callbacks.userdata,&h->playlist_filename,&h->txt,&mime_m3u8),LOGS("error writing file %.*s",h->playlist_filename));
     }
 
-    TRY(membuf_append(&h->segment.data,s->data,s->len));
+    TRYS(membuf_append(&h->segment.data,s->data,s->len));
     h->segment.samples += s->samples;
 
-    return 0;
+    cleanup:
+    return r;
 
 }
 
@@ -315,11 +362,15 @@ int hls_flush(hls* h) {
     int r;
 
     if(h->segment.samples != 0) {
-        TRY(hls_flush_segment(h));
+        TRY0(hls_flush_segment(h),LOG0("hls_flush: error flushing segment"));
     }
 
-    TRY(strbuf_append_cstr(&h->txt,"#EXT-X-ENDLIST\n"));
-    return h->callbacks.write(h->callbacks.userdata,&filename_m3u8,&h->txt,&mime_m3u8);
+    TRYS(strbuf_append_cstr(&h->txt,"#EXT-X-ENDLIST\n"));
+
+    r = h->callbacks.write(h->callbacks.userdata,&h->playlist_filename,&h->txt,&mime_m3u8);
+
+    cleanup:
+    return r;
 }
 
 const strbuf* hls_get_playlist(const hls* h) {
@@ -327,36 +378,35 @@ const strbuf* hls_get_playlist(const hls* h) {
 }
 
 int hls_configure(hls* h, const strbuf* key, const strbuf* value) {
-    if(strbuf_equals_cstr(key,"hls-target-duration")) {
+    if(strbuf_ends_cstr(key,"target-duration")) {
         errno = 0;
         h->target_duration = strbuf_strtoul(value,10);
         if(errno != 0) {
-            LOGS("error parsing target-duration value %.*s",value);
+            LOGS("error parsing target-duration value %.*s",(*value));
             return -1;
         }
         if(h->target_duration == 0) {
-            fprintf(stderr,"[hls] invalid target-duration %.*s\n",
-              (int)value->len,(char *)value->x);
+            LOGS("invalid target-duration %.*s",(*value));
             return -1;
         }
         return 0;
     }
 
-    if(strbuf_equals_cstr(key,"hls-playlist-length")) {
+    if(strbuf_ends_cstr(key,"playlist-length")) {
         errno = 0;
         h->playlist_length = strbuf_strtoul(value,10);
         if(errno != 0) {
-            LOGS("error parsing playlist-length value %.*s",value);
+            LOGS("error parsing playlist-length value %.*s",(*value));
             return -1;
         }
         if(h->playlist_length == 0) {
-            LOGS("invalid playlist-length %.*s",value);
+            LOGS("invalid playlist-length %.*s",(*value));
             return -1;
         }
         return 0;
     }
 
-    if(strbuf_equals_cstr(key,"hls-init-basename")) {
+    if(strbuf_ends_cstr(key,"init-basename")) {
         if(strbuf_copy(&h->init_filename,value) != 0) {
             LOG0("out of memory");
             return -1;
@@ -364,6 +414,77 @@ int hls_configure(hls* h, const strbuf* key, const strbuf* value) {
         return 0;
     }
 
-    LOGS("unknown key %.*s", key);
+    if(strbuf_ends_cstr(key,"playlist-filename")) {
+        if(strbuf_copy(&h->playlist_filename,value) != 0) {
+            LOG0("out of memory");
+            return -1;
+        }
+        return 0;
+    }
+
+    LOGS("unknown key %.*s", (*key));
     return -1;
 }
+
+/* used by the outputs when we're trying to move a picture out-of-band,
+ * write the picture out via callback, return picture URL in out */
+int hls_submit_picture(hls* h, const picture* src, picture* out) {
+    int r;
+    strbuf dest_filename = STRBUF_ZERO;
+    strbuf mime = STRBUF_ZERO;
+    int picture_id;
+    const char *fmt_str;
+
+    picture_id = thread_atomic_uint_inc(&counter) % 100000000;
+
+    if(strbuf_ends_cstr(&src->mime,"/png")) {
+        fmt_str = "%08u.png";
+        mime = src->mime;
+    } else if(strbuf_ends_cstr(&src->mime,"/jpg") | strbuf_ends_cstr(&src->mime,"jpeg")) {
+        fmt_str = "%08u.jpg";
+        mime = src->mime;
+    } else if(strbuf_ends_cstr(&src->mime,"/gif")) {
+        fmt_str = "%08u.gif";
+        mime = src->mime;
+    } else if(strbuf_ends_cstr(&src->mime,"/webp")) {
+        fmt_str = "%08u.webp";
+        mime = src->mime;
+    } else if(strbuf_equals_cstr(&src->mime,"image/")) {
+        fmt_str = "%08u.jpg";
+        mime.x = (uint8_t*)"image/jpg";
+        mime.len = 0;
+    } else {
+        /* we just return 0 and clean up so the caller
+         * just strips the image */
+        LOGS("WARNING: unknown image mime type %.*s",src->mime);
+        r = 0; goto cleanup;
+    }
+
+    TRYS(strbuf_sprintf(&dest_filename,fmt_str,picture_id));
+    TRYS(h->callbacks.write(h->callbacks.userdata, &dest_filename, &src->data, &mime));
+
+    LOG3("segment %lu: wrote picture %.*s",
+      h->counter+1,(int)dest_filename.len,(char *)dest_filename.x);
+
+    TRYS(strbuf_append(&out->mime,"-->",3));
+    TRYS(strbuf_copy(&out->desc,&src->desc));
+    TRYS(strbuf_copy(&out->data,&dest_filename));
+    r = 0;
+
+    cleanup:
+    strbuf_free(&dest_filename);
+    return r;
+}
+
+int hls_expire_file(hls* h, const strbuf* filename) {
+    int r;
+
+    TRYS(strbuf_cat(&h->segment.expired_files,filename));
+    TRYS(strbuf_term(&h->segment.expired_files));
+    LOG3("segment %lu: marking file as expired %.*s",
+      h->counter+1,(int)filename->len,(char *)filename->x);
+
+    cleanup:
+    return r;
+}
+

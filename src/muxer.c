@@ -19,7 +19,7 @@ void muxer_init(muxer* m) {
     m->segment_receiver = segment_receiver_zero;
     m->picture_handler.cb = muxer_default_picture_handler;
     m->picture_handler.userdata = NULL;
-    m->inband_images = 0;
+    m->image_mode = 0;
 }
 
 void muxer_free(muxer* m) {
@@ -87,7 +87,12 @@ int muxer_submit_tags(const muxer* m, const taglist* tags) {
     const tag* t;
     tag tmp_tag;
 
-    if( (apic_idx = taglist_find_cstr(tags,"APIC",0)) == taglist_len(tags) || m->inband_images) {
+    apic_idx = taglist_find_cstr(tags,"APIC",0);
+    /* if there's no APIC there's nothing to do */
+    if(apic_idx == taglist_len(tags)) return m->plugin->submit_tags(m->userdata, tags, &m->segment_receiver);
+
+    /* if we're keeping and keeping in-band, nothing to do */
+    if( (m->image_mode & IMAGE_MODE_KEEP) && (m->image_mode & IMAGE_MODE_INBAND)) {
         return m->plugin->submit_tags(m->userdata, tags, &m->segment_receiver);
     }
 
@@ -96,6 +101,14 @@ int muxer_submit_tags(const muxer* m, const taglist* tags) {
     /* NOTE list has to be freed now! */
 
     taglist_remove_tag(&list,apic_idx);
+
+    if(! (m->image_mode & IMAGE_MODE_KEEP)) {
+        r = m->plugin->submit_tags(m->userdata,&list, &m->segment_receiver);
+        taglist_shallow_free(&list);
+        return r;
+    }
+
+    /* (maybe) move image out-of-band */
     t = taglist_get_tag(tags,apic_idx);
 
     /* let's get our meta-info from the picture */
@@ -105,6 +118,12 @@ int muxer_submit_tags(const muxer* m, const taglist* tags) {
 
     src.mime.x = &t->value.x[8];
     src.mime.len = mime_len;
+
+    if(strbuf_equals_cstr(&src.mime, "-->")) {
+        /* image is already a link! */
+        taglist_shallow_free(&list);
+        return m->plugin->submit_tags(m->userdata, tags, &m->segment_receiver);
+    }
 
     src.desc.x = &t->value.x[8 + mime_len + 4];
     src.desc.len = desc_len;
@@ -145,15 +164,10 @@ int muxer_submit_tags(const muxer* m, const taglist* tags) {
         tmp_tag.value.len = 32 + dest.mime.len + dest.desc.len + dest.data.len;
     }
 
-    if( (r = taglist_add_tag(&list,&tmp_tag)) != 0) {
-        taglist_shallow_free(&list);
-        strbuf_free(&dest.mime);
-        strbuf_free(&dest.desc);
-        strbuf_free(&dest.data);
-        strbuf_free(&tmp_tag.value);
-    }
-
+    if( (r = taglist_add_tag(&list,&tmp_tag)) != 0) goto cleanup;
     r = m->plugin->submit_tags(m->userdata,&list, &m->segment_receiver);
+
+    cleanup:
 
     taglist_shallow_free(&list);
     strbuf_free(&dest.mime);

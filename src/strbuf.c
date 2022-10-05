@@ -102,6 +102,44 @@ int strbuf_ends(const strbuf* s, const strbuf *q) {
     return strbuf_cmp(&t,q) == 0;
 }
 
+int strbuf_contains(const strbuf* s1, const strbuf* s2) {
+    strbuf t = STRBUF_ZERO;
+    t.len = s1->len;
+    t.x = s1->x;
+    while(t.len >= s2->len) {
+        if(strbuf_begins(&t,s2)) return 1;
+        t.len--;
+        t.x++;
+    }
+    return 0;
+}
+
+int strbuf_casecontains(const strbuf* s1, const strbuf* s2) {
+    strbuf t = STRBUF_ZERO;
+    t.len = s1->len;
+    t.x = s1->x;
+    while(t.len >= s2->len) {
+        if(strbuf_casebegins(&t,s2)) return 1;
+        t.len--;
+        t.x++;
+    }
+    return 0;
+}
+
+int strbuf_contains_cstr(const strbuf* s1, const char* s) {
+    strbuf s2 = STRBUF_ZERO;
+    s2.x = (uint8_t*)s;
+    s2.len = strlen(s);
+    return strbuf_contains(s1,&s2);
+}
+
+int strbuf_casecontains_cstr(const strbuf* s1, const char* s) {
+    strbuf s2 = STRBUF_ZERO;
+    s2.x = (uint8_t*)s;
+    s2.len = strlen(s);
+    return strbuf_casecontains(s1,&s2);
+}
+
 int strbuf_casecmp(const strbuf* s1, const strbuf* s2) {
     size_t i = 0;
     uint8_t c1 = 0;

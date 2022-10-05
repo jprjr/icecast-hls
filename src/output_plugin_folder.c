@@ -24,17 +24,14 @@
 #include <unistd.h>
 #endif
 
-/* keep a global counter for writing out picture files. We could
- * have multiple file destinations going to the same folder,
- * this ensures multiple threads don't stop on each other */
-
-static thread_atomic_uint_t counter;
 
 struct plugin_userdata {
     hls hls;
     strbuf foldername;
     strbuf initname;
+    strbuf picture_filename; /* used to track the current out-of-band picture */
     uint8_t init;
+    int pictureflag;
 };
 
 typedef struct plugin_userdata plugin_userdata;
@@ -68,6 +65,7 @@ static int directory_create(const strbuf* foldername) {
 }
 
 static int file_delete(const strbuf* filename) {
+    fprintf(stderr,"deleting file: %s\n",filename->x);
 #ifdef DR_WINDOWS
     int r = -1;
     strbuf w = STRBUF_ZERO;
@@ -113,12 +111,12 @@ static void plugin_close(void* userdata) {
     plugin_userdata* ud = (plugin_userdata*)userdata;
     strbuf_free(&ud->foldername);
     strbuf_free(&ud->initname);
+    strbuf_free(&ud->picture_filename);
     hls_free(&ud->hls);
     free(ud);
 }
 
 static int plugin_init(void) {
-    thread_atomic_uint_store(&counter,0);
     return 0;
 }
 
@@ -178,8 +176,21 @@ static int plugin_hls_write(void* ud, const strbuf* filename, const membuf* data
 
     (void)mime;
 
+    fprintf(stderr,"folder: writing %lu byte file %.*s\n",
+      data->len,filename->len,filename->x);
+
+    if(data->len == 0) abort();
+
+
 #define TRY(x) if(!(x)) goto cleanup;
 #define TRYS(x) TRY( (r = (x)) == 0 )
+    if(userdata->pictureflag) {
+        if(userdata->picture_filename.len > 0) {
+            TRYS(hls_expire_file(&userdata->hls,&userdata->picture_filename));
+        }
+        TRYS(strbuf_copy(&userdata->picture_filename,filename));
+    }
+
     TRYS(strbuf_copy(&path,&userdata->foldername));
     TRYS(strbuf_cat(&path,filename));
     TRYS(strbuf_term(&path))
@@ -228,54 +239,11 @@ static int plugin_flush(void* ud) {
 static int plugin_submit_picture(void* ud, const picture* src, picture* out) {
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
-    strbuf dest_filename = STRBUF_ZERO;
-    int picture_id;
-    const char *fmt_str;
-    FILE* f = NULL;
 
-    picture_id = thread_atomic_uint_inc(&counter) % 100000000;
+    userdata->pictureflag = 1;
+    r = hls_submit_picture(&userdata->hls,src,out);
+    userdata->pictureflag = 0;
 
-#define TRY(x) if( (r = (x)) != 0 ) goto cleanup
-
-    TRY(strbuf_cat(&dest_filename,&userdata->foldername));
-
-    TRY(strbuf_readyplus(&dest_filename,13));
-
-    if(strbuf_ends_cstr(&src->mime,"/png")) {
-        fmt_str = "%08u.png";
-    } else if(strbuf_ends_cstr(&src->mime,"/jpg") | strbuf_ends_cstr(&src->mime,"jpeg")) {
-        fmt_str = "%08u.jpg";
-    } else if(strbuf_ends_cstr(&src->mime,"/gif")) {
-        fmt_str = "%08u.gif";
-    } else {
-        fprintf(stderr,"[output:folder] unknown image mime type %.*s\n",
-          (int)src->mime.len,(char*)src->mime.x);
-        r = 0; goto cleanup;
-    }
-
-    snprintf((char *)&dest_filename.x[userdata->foldername.len],13,fmt_str,picture_id);
-    dest_filename.len += 13;
-    /* snprintf terminated the string so we won't manually terminate it */
-
-    f = file_open(&dest_filename);
-    if(f == NULL) {
-        r = -1;
-        goto cleanup;
-    }
-    if(fwrite(src->data.x,1,src->data.len,f) != src->data.len) {
-        r = -1;
-        goto cleanup;
-    }
-
-    TRY(membuf_append(&out->mime,"-->",3));
-    TRY(strbuf_copy(&out->desc,&src->desc));
-    TRY(membuf_append(&out->data,&dest_filename.x[userdata->foldername.len],12));
-    r = 0;
-#undef TRY
-
-    cleanup:
-    if(f != NULL) fclose(f);
-    strbuf_free(&dest_filename);
     return r;
 }
 
@@ -286,7 +254,9 @@ static void* plugin_create(void) {
 
     strbuf_init(&userdata->foldername);
     strbuf_init(&userdata->initname);
+    strbuf_init(&userdata->picture_filename);
     hls_init(&userdata->hls);
+    userdata->pictureflag = 0;
 
     userdata->hls.callbacks.write  = plugin_hls_write;
     userdata->hls.callbacks.delete = plugin_hls_delete;

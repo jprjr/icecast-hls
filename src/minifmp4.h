@@ -171,6 +171,7 @@ enum fmp4_codec {
     FMP4_CODEC_MP4A = 0x6d703461, /* covers AAC, HE-AAC, xHE-AAC, MP3-in-MP4, etc */
     FMP4_CODEC_ALAC = 0x616c6163,
     FMP4_CODEC_FLAC = 0x664c6143,
+    FMP4_CODEC_OPUS = 0x4f707573,
 };
 
 typedef enum fmp4_codec fmp4_codec;
@@ -1120,6 +1121,8 @@ enum fmp4_box_id {
     BOX_elst = BOX_ID('e','l','s','t'),
     BOX_sgpd = BOX_ID('s','g','p','d'),
     BOX_sbgp = BOX_ID('s','b','g','p'),
+    BOX_Opus = BOX_ID('O','p','u','s'),
+    BOX_dOps = BOX_ID('d','O','p','s'),
 };
 
 typedef enum fmp4_box_id fmp4_box_id;
@@ -1799,6 +1802,10 @@ fmp4_box_trak(fmp4_mux* mux, const fmp4_track* track, uint32_t id) {
                                     BOX_BEGIN_FULL(BOX_dfLa, 0, 0);
                                     WRITE_DATA(track->dsi.x, track->dsi.len);
                                     BOX_END(BOX_dfLa);
+                                } else if(track->codec == FMP4_CODEC_OPUS) {
+                                    BOX_BEGIN(BOX_dOps);
+                                    WRITE_DATA(track->dsi.x, track->dsi.len);
+                                    BOX_END(BOX_dOps);
                                 }
                             }
                         }
@@ -2446,6 +2453,7 @@ fmp4_track_validate_init(const fmp4_track* track) {
                     /* fall-through */
                 case FMP4_CODEC_ALAC: /* fall-through */
                 case FMP4_CODEC_FLAC: /* fall-through */
+                case FMP4_CODEC_OPUS: /* fall-through */
                 default: {
                     if(track->dsi.len == 0) return FMP4_MISSINGDSI;
                     break;

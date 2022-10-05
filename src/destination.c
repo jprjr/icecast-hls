@@ -39,7 +39,7 @@ void destination_init(destination* dest) {
     dest->configuring = 0;
     dest->map_flags.mergemode = TAGMAP_MERGE_IGNORE;
     dest->map_flags.unknownmode = TAGMAP_UNKNOWN_IGNORE;
-    dest->inband_images = 0;
+    dest->image_mode = 0;
 }
 
 void destination_free(destination* dest) {
@@ -118,7 +118,7 @@ int destination_open(destination* dest, const ich_time* now) {
     dest->muxer.segment_receiver.flush            = (segment_receiver_flush_cb)output_flush;
     dest->muxer.segment_receiver.handle           = &dest->output;
 
-    dest->muxer.inband_images = dest->inband_images;
+    dest->muxer.image_mode = dest->image_mode;
 
     dest->muxer.picture_handler.cb       = (picture_handler_callback)output_submit_picture;
     dest->muxer.picture_handler.userdata = &dest->output;
@@ -136,6 +136,7 @@ int destination_open(destination* dest, const ich_time* now) {
 int destination_config(destination* dest, const strbuf* key, const strbuf* val) {
     strbuf tmp;
     int r = -1;
+    int f;
 
     strbuf_init(&tmp);
 
@@ -149,15 +150,50 @@ int destination_config(destination* dest, const strbuf* key, const strbuf* val) 
         r = 0; goto cleanup;
     }
 
-    if(strbuf_equals_cstr(key,"inband-images") || strbuf_equals_cstr(key,"inband images")) {
-        if(strbuf_truthy(val)) {
-            dest->inband_images = 1;
+    if(strbuf_equals_cstr(key,"images")) {
+        f = 0;
+        fprintf(stderr,"images, val=%.*s\n",(int)val->len,(char*)val->x);
+        if(strbuf_casecontains_cstr(val,"keep")) {
+            printf("keep: yes\n");
+            dest->image_mode |= IMAGE_MODE_KEEP;
+            f++;
+        }
+
+        if(strbuf_casecontains_cstr(val,"inband")) {
+            printf("inband: yes\n");
+            dest->image_mode |= IMAGE_MODE_INBAND;
+            f++;
+        }
+
+        if(strbuf_casecontains_cstr(val,"in-band")) {
+            dest->image_mode |= IMAGE_MODE_INBAND;
+            f++;
+        }
+
+        if(strbuf_casecontains_cstr(val,"out-of-band")) {
+            dest->image_mode &= ~IMAGE_MODE_INBAND;
+            f++;
+        }
+
+        if(strbuf_casecontains_cstr(val,"oob")) {
+            dest->image_mode &= ~IMAGE_MODE_INBAND;
+            f++;
+        }
+
+        if(strbuf_casecontains_cstr(val,"outofband")) {
+            dest->image_mode &= ~IMAGE_MODE_INBAND;
+            f++;
+        }
+
+        if(strbuf_casecontains_cstr(val,"remove")) {
+            dest->image_mode = 0;
+            f++;
+        }
+
+        if(f > 0) {
             r = 0; goto cleanup;
         }
-        if(strbuf_falsey(val)) {
-            dest->inband_images = 0;
-            r = 0; goto cleanup;
-        }
+
         fprintf(stderr,"[destination] unknown configuration value %.*s for option %.*s\n",
           (int)val->len,(const char *)val->x,
           (int)key->len,(const char *)key->x);

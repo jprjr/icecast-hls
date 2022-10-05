@@ -5,13 +5,14 @@
 #include "picture.h"
 #include "codecs.h"
 #include "tag.h"
+#include "imagemode.h"
 
 struct muxer {
     void* userdata;
     const muxer_plugin* plugin;
     segment_receiver segment_receiver;
     picture_handler picture_handler;
-    uint8_t inband_images;
+    image_mode image_mode;
 };
 
 typedef struct muxer muxer;

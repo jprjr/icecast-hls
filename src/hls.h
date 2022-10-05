@@ -22,6 +22,7 @@
 
 #include "strbuf.h"
 #include "segment.h"
+#include "picture.h"
 #include "ich_time.h"
 
 typedef int(*hls_write_callback)(void* userdata, const strbuf* filename, const membuf* data, const strbuf* mime);
@@ -33,6 +34,8 @@ struct hls_segment_meta {
     strbuf tags; /* stores everything like #EXTINF, #PROGRAMDATETIME and
                  the actual filename portion, which may be prefixed
                  with a URL or something */
+    strbuf expired_files; /* stores a list of strings that are considered expired when this chunk expires,
+                             this is a list of NULL-separated c strings */
 };
 
 typedef struct hls_segment_meta hls_segment_meta;
@@ -41,6 +44,7 @@ typedef struct hls_segment_meta hls_segment_meta;
 struct hls_segment {
     membuf data;
     unsigned int samples;
+    strbuf expired_files;
 };
 
 typedef struct hls_segment hls_segment;
@@ -67,6 +71,7 @@ struct hls {
     strbuf txt; /* stores the actual, generated playlist */
     strbuf header; /* stores the header-type info */
     strbuf fmt; /* generated snprintf-style format string */
+    strbuf playlist_filename;
     strbuf init_filename;
     strbuf init_mime;  /* the mimetype to use on init segments */
     strbuf media_ext;   /* the file extension to use on media segments */
@@ -78,6 +83,7 @@ struct hls {
     unsigned int time_base;
     unsigned int target_duration; /* in seconds */
     unsigned int playlist_length; /* in seconds */
+    size_t target_samples; /* target duration in samples */
     size_t media_sequence;        /* current media sequence number */
     size_t counter;
     unsigned int version;         /* reported HLS playlist version */
@@ -128,11 +134,19 @@ int hls_open(hls*, const segment_source* source);
 /* buffers a segment and maybe triggers writing callbacks */
 int hls_add_segment(hls*, const segment* seg);
 
+/* mark a file as expired whenever the current segment expires,
+ * to issue a delete callback */
+int hls_expire_file(hls*, const strbuf* filename);
+
 /* writes out a partial segment if it exists */
 int hls_flush(hls*);
 
 /* flushes the last segment, adds #EXT-X-ENDLIST to the playlist, writes it */
 int hls_close(hls*);
+
+/* used by the outputs when we're trying to move a picture out-of-band,
+ * write the picture out via callback, return picture URL in out */
+int hls_submit_picture(hls*, const picture* src, picture* out);
 
 const strbuf* hls_get_playlist(const hls* h);
 

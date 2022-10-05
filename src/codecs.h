@@ -8,6 +8,7 @@ enum codec_type {
     CODEC_TYPE_FLAC = 3,
     CODEC_TYPE_USAC = 4,
     CODEC_TYPE_MP3  = 5,
+    CODEC_TYPE_OPUS = 6,
 };
 
 typedef enum codec_type codec_type;

@@ -26,9 +26,9 @@
 #include "muxer.h"
 #include "output.h"
 #include "tagmap.h"
+#include "imagemode.h"
 #include "ich_time.h"
 #include <stdint.h>
-
 
 struct destination {
     strbuf source_id; /* used during the configure phase */
@@ -46,7 +46,7 @@ struct destination {
      * the sample rate and channels */
     uint8_t configuring;
     taglist_map_flags map_flags;
-    uint8_t inband_images;
+    image_mode image_mode;
 };
 
 typedef struct destination destination;

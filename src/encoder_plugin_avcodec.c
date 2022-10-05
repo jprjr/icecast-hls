@@ -8,6 +8,9 @@
 #include <libavutil/dict.h>
 
 #include "pack_u32be.h"
+#include "pack_u16be.h"
+#include "unpack_u32le.h"
+#include "unpack_u16le.h"
 
 #include <stdlib.h>
 
@@ -17,7 +20,6 @@
 
 #define TRY0(exp, act) if( (r = (exp)) != 0 ) { act; goto cleanup; }
 #define TRY(exp, act) if(!(exp)) { act; r = -1; goto cleanup; }
-
 
 struct plugin_userdata {
     const AVCodec* codec;
@@ -200,10 +202,37 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
             break;
         }
 
+        case AV_CODEC_ID_OPUS: {
+            me.codec = CODEC_TYPE_OPUS;
+            /* opus specs states you need (at least) 80ms of preroll,
+             * which is 3840 samples @48kHz */
+            me.roll_distance = -3840 / userdata->ctx->frame_size;
+
+            /* the extradata from avcodec is the pull header packet including OpusHead,
+             * so we just copy it in and swap a few bytes (OpusHead uses little-endian,
+             * mp4 uses big-endian */
+
+            TRY(userdata->ctx->extradata_size > 8,
+                LOG1("opus extradatasize is %u, expected at least 9",
+                  userdata->ctx->extradata_size));
+            TRY0(membuf_ready(&dsi,userdata->ctx->extradata_size-8), LOG0("out of memory"));
+            memcpy(dsi.x,&userdata->ctx->extradata[8],userdata->ctx->extradata_size-8);
+            dsi.len = userdata->ctx->extradata_size-8;
+
+            dsi.x[0] = 0x00;
+            pack_u16be(&dsi.x[2],unpack_u16le(&dsi.x[2]));
+            pack_u32be(&dsi.x[4],unpack_u32le(&dsi.x[4]));
+            pack_u16be(&dsi.x[8],unpack_u16le(&dsi.x[8]));
+            break;
+        }
+
         default: {
             TRY(0, LOG0("unsupported codec type"));
         }
     }
+
+    params.format   = avsampleformat_to_samplefmt(find_best_format(userdata->codec,samplefmt_to_avsampleformat(source->format)));
+    params.duration = userdata->ctx->frame_size;
 
     me.channels = source->channels;
     me.sample_rate = source->sample_rate;
@@ -219,14 +248,11 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     TRY( (userdata->avframe = av_frame_alloc()) != NULL, LOG0("out of memory"));
     TRY( (userdata->avpacket = av_packet_alloc()) != NULL, LOG0("out of memory"));
 
+    TRY0(source->set_params(source->handle, &params),LOG0("error setting source params"));
+
     cleanup:
     membuf_free(&dsi);
-    if(r != 0) return r;
-
-    params.format   = avsampleformat_to_samplefmt(find_best_format(userdata->codec,samplefmt_to_avsampleformat(source->format)));
-    params.duration = userdata->ctx->frame_size;
-
-    return source->set_params(source->handle, &params);
+    return r;
 
 }
 

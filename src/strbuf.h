@@ -49,6 +49,9 @@ int strbuf_equals(const strbuf* s1, const strbuf* s2);
 int strbuf_begins(const strbuf* s, const strbuf* q);
 int strbuf_ends(const strbuf* s, const strbuf* q);
 
+int strbuf_contains(const strbuf* s1, const strbuf* s2);
+int strbuf_contains_cstr(const strbuf* s1, const char* s);
+
 int strbuf_equals_cstr(const strbuf* s1, const char* s2);
 int strbuf_begins_cstr(const strbuf* s, const char* q);
 int strbuf_ends_cstr(const strbuf* s, const char* q);
@@ -59,6 +62,9 @@ int strbuf_casecmp(const strbuf* s1, const strbuf* s2);
 int strbuf_caseequals(const strbuf* s1, const strbuf* s2);
 int strbuf_casebegins(const strbuf* s, const strbuf* q);
 int strbuf_caseends(const strbuf* s, const strbuf* q);
+
+int strbuf_casecontains(const strbuf* s1, const strbuf* s2);
+int strbuf_casecontains_cstr(const strbuf* s1, const char*s );
 
 /* lazy wrapper for dealing with regular strings */
 int strbuf_equal(const strbuf* s, const char* q, size_t len);
