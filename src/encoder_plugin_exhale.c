@@ -249,7 +249,6 @@ static int plugin_submit_frame(void* ud, const frame* frame, const packet_receiv
         fprintf(stderr,"[encoder:exhale] error sending packet to muxer\n");
     }
     userdata->packet.pts += userdata->frame_len;
-    if(userdata->packet.pts > INT64_MAX) userdata->packet.pts -= INT64_MAX;
 
     return r;
 }

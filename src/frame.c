@@ -248,7 +248,6 @@ int frame_move(frame* dest, frame* src, size_t len) {
 
     src->duration -= len;
     src->pts += len;
-    if(src->pts > INT64_MAX) src->pts -= INT64_MAX;
     return 0;
 }
 

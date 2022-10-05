@@ -218,7 +218,7 @@ static int sourcelist_entry_run(void *userdata) {
     receiver.handle       = entry;
 
     entry->source.tag_handler = thdlr;
-    entry->source.frame_receiver = receiver;
+    entry->source.frame_destination = receiver;
 
     r = source_run(&entry->source);
     /* (maybe) make all other threads quit */

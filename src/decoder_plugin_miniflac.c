@@ -314,7 +314,6 @@ static int plugin_process_frame(plugin_userdata* userdata, const frame_receiver*
     r = dest->submit_frame(dest->handle,&userdata->frame);
 
     userdata->frame.pts += userdata->m.flac.frame.header.block_size;
-    if(userdata->frame.pts > INT64_MAX) userdata->frame.pts -= INT64_MAX;
 
     return r;
 }

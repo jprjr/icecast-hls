@@ -32,12 +32,12 @@ static int source_tag_handler_wrapper(void* ud, const taglist* tags) {
 
 static int source_submit_frame_wrapper(void* ud, const frame* frame) {
     source *s = (source *)ud;
-    return s->frame_receiver.submit_frame(s->frame_receiver.handle, frame);
+    return s->frame_destination.submit_frame(s->frame_destination.handle, frame);
 }
 
 static int source_flush_wrapper(void* ud) {
     source *s = (source *)ud;
-    return s->frame_receiver.flush(s->frame_receiver.handle);
+    return s->frame_destination.flush(s->frame_destination.handle);
 }
 
 int source_open_dest(const source* s, const frame_receiver* dest) {
@@ -69,7 +69,7 @@ void source_init(source* s) {
     s->tag_handler.cb = source_default_tag_handler;
     s->tag_handler.userdata = s;
 
-    s->frame_receiver = frame_receiver_zero;
+    s->frame_destination = frame_receiver_zero;
 
     s->configuring = CONFIGURING_UNKNOWN;
 }
@@ -153,11 +153,6 @@ int source_open(source* s) {
 
 int source_set_tag_handler(source* s, const tag_handler* thandler) {
     memcpy(&s->tag_handler,thandler,sizeof(tag_handler));
-    return 0;
-}
-
-int source_set_frame_receiver(source* s, const frame_receiver* freceiver) {
-    memcpy(&s->frame_receiver,freceiver,sizeof(frame_receiver));
     return 0;
 }
 

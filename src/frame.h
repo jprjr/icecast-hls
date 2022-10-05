@@ -16,9 +16,9 @@ struct frame {
     unsigned int sample_rate;
 
     /* note - this is an unsigned type but ffmpeg uses a signed type,
-     * I think to signal things like encoder delay? Either way,
-     * when setting/updating a frame PTS, check if it's over INT64_MAX
-     * and subract INT64_MAX, if so */
+     * I think to signal things like encoder delay? Either way, we just
+     * case into an int64_t if we need to, from my testing, that's how
+     * avcodec/etc handles stuff with > int64_t timestamps anyway */
     uint64_t pts;
 };
 typedef struct frame frame;

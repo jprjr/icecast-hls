@@ -17,7 +17,7 @@ struct source {
     filter filter;
     uint8_t configuring;
     tag_handler tag_handler;
-    frame_receiver frame_receiver;
+    frame_receiver frame_destination;
     taglist tagcache; /* to hold tags that we find during open, but before run */
     frame_source frame_source; /* during open, the decoder/filter will "open" on a dummy
     destination that just copies the source info, which is used during source_open_dest */
