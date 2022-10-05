@@ -208,17 +208,17 @@ static int sourcelist_entry_run(void *userdata) {
     sourcelist_entry* entry = (sourcelist_entry *)userdata;
 
     tag_handler thdlr;
-    frame_handler fhdlr;
+    frame_receiver receiver = FRAME_RECEIVER_ZERO;
 
     thdlr.cb = sourcelist_entry_tag_handler;
     thdlr.userdata = entry;
 
-    fhdlr.cb = sourcelist_entry_frame_handler;
-    fhdlr.flush = sourcelist_entry_flush_handler;
-    fhdlr.userdata = entry;
+    receiver.submit_frame = sourcelist_entry_frame_handler;
+    receiver.flush        = sourcelist_entry_flush_handler;
+    receiver.handle       = entry;
 
-    source_set_tag_handler(&entry->source,&thdlr);
-    source_set_frame_handler(&entry->source,&fhdlr);
+    entry->source.tag_handler = thdlr;
+    entry->source.frame_receiver = receiver;
 
     r = source_run(&entry->source);
     /* (maybe) make all other threads quit */

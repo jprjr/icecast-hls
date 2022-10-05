@@ -2,8 +2,6 @@
 #define OUTPUT_H
 
 #include "output_plugin.h"
-#include "segment.h"
-#include "strbuf.h"
 
 struct output {
     void* userdata; /* plugin-specific userdata */
@@ -27,7 +25,7 @@ int output_create(output *, const strbuf* plugin_name);
 
 int output_config(const output*, const strbuf* name, const strbuf* value);
 
-int output_open(const output*, const outputconfig*);
+int output_open(const output*, const segment_source* source);
 
 int output_set_time(const output*, const ich_time*);
 

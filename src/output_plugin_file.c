@@ -91,8 +91,8 @@ static void* plugin_create(void) {
     return userdata;
 }
 
-static int plugin_open(void* ud, const outputconfig* config) {
-    outputinfo info = OUTPUTINFO_ZERO;
+static int plugin_open(void* ud, const segment_source* source) {
+    segment_source_params params = SEGMENT_SOURCE_PARAMS_ZERO;
     strbuf tmp = STRBUF_ZERO;
 #if defined(_WIN32) || defined(_WIN64) || defined(_MSC_VER)
     strbuf tmp2 = STRBUF_ZERO;
@@ -116,7 +116,7 @@ static int plugin_open(void* ud, const outputconfig* config) {
         if(membuf_append(&userdata->basename,userdata->filename.x,userdata->filename.len - t->len + 1) != 0) return -1;
     }
 
-    return config->info.submit(config->info.userdata, &info);
+    return source->set_params(source->handle, &params);
 }
 
 static int plugin_config(void* ud, const strbuf* key, const strbuf* val) {

@@ -94,11 +94,22 @@ static size_t plugin_mflac_read(uint8_t* buffer, size_t len, void* ud) {
     return input_read(userdata->input, buffer, len);
 }
 
-static int plugin_open(void* ud, const input* in, const audioconfig_handler* ahdlr) {
+static int plugin_handle_source_params(void* ud, const frame_source_params* params) {
+    (void)ud;
+    switch(params->format) {
+        case SAMPLEFMT_UNKNOWN: /* fall-through */
+        case SAMPLEFMT_S32P: return 0;
+        default: break;
+    }
+    fprintf(stderr,"[decoder:miniflac] an upstream source is trying to change our format\n");
+    return -1;
+}
+
+static int plugin_open(void* ud, const input* in, const frame_receiver* dest) {
     MFLAC_RESULT res;
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
-    audioconfig aconfig = AUDIOCONFIG_ZERO;
+    frame_source me = FRAME_SOURCE_ZERO;
 
     userdata->input = in;
 
@@ -129,12 +140,13 @@ static int plugin_open(void* ud, const input* in, const audioconfig_handler* ahd
         return -1;
     }
 
-    aconfig.channels = userdata->channels;
-    aconfig.sample_rate = userdata->sample_rate;
-    aconfig.format = SAMPLEFMT_S32P;
-    aconfig.info = encoderinfo_ignore;
+    me.channels = userdata->channels;
+    me.sample_rate = userdata->sample_rate;
+    me.format = SAMPLEFMT_S32P;
+    me.handle = userdata;
+    me.set_params = plugin_handle_source_params;
 
-    if(ahdlr->open(ahdlr->userdata,&aconfig) != 0) {
+    if(dest->open(dest->handle,&me) != 0) {
         fprintf(stderr,"[decoder:miniflac] error opening audio destination\n");
         return -1;
     }
@@ -255,7 +267,7 @@ static int plugin_process_metadata(plugin_userdata *userdata) {
     return 0;
 }
 
-static int plugin_process_frame(plugin_userdata* userdata, const frame_handler* handler) {
+static int plugin_process_frame(plugin_userdata* userdata, const frame_receiver* dest) {
     int r;
     unsigned int i, j;
     uint32_t shift;
@@ -263,7 +275,7 @@ static int plugin_process_frame(plugin_userdata* userdata, const frame_handler* 
     int32_t* ptrs[MAX_FLAC_CHANNELS];
     MFLAC_RESULT res;
 
-    if(handler == NULL || handler->cb == NULL) return 0;
+    if(dest == NULL || dest->submit_frame == NULL) return 0;
 
     /* sanity checks */
     if(userdata->sample_rate != userdata->m.flac.frame.header.sample_rate) {
@@ -299,7 +311,7 @@ static int plugin_process_frame(plugin_userdata* userdata, const frame_handler* 
         }
     }
 
-    r = handler->cb(handler->userdata,&userdata->frame);
+    r = dest->submit_frame(dest->handle,&userdata->frame);
 
     userdata->frame.pts += userdata->m.flac.frame.header.block_size;
     if(userdata->frame.pts > INT64_MAX) userdata->frame.pts -= INT64_MAX;
@@ -307,7 +319,7 @@ static int plugin_process_frame(plugin_userdata* userdata, const frame_handler* 
     return r;
 }
 
-static int plugin_decode(void* ud, const tag_handler* tag_handler, const frame_handler* frame_handler) {
+static int plugin_decode(void* ud, const tag_handler* tag_handler, const frame_receiver* frame_dest) {
     MFLAC_RESULT res;
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
@@ -327,7 +339,7 @@ static int plugin_decode(void* ud, const tag_handler* tag_handler, const frame_h
         }
 
         if(userdata->m.flac.state == MINIFLAC_FRAME) {
-            if( (r = plugin_process_frame(userdata, frame_handler)) != 0) return r;
+            if( (r = plugin_process_frame(userdata, frame_dest)) != 0) return r;
         }
     }
 
@@ -338,7 +350,7 @@ static int plugin_decode(void* ud, const tag_handler* tag_handler, const frame_h
         return -1;
     }
 
-    return frame_handler->flush(frame_handler->userdata);
+    return frame_dest->flush(frame_dest->handle);
 }
 
 

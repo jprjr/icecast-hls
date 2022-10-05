@@ -27,8 +27,8 @@ struct plugin_userdata {
     strbuf filter_string;
     int64_t last_pts;
     int last_nb_samples;
-    audioconfig in_config;
-    audioconfig out_config;
+    frame_source src_config;
+    frame_source dest_config;
 };
 
 typedef struct plugin_userdata plugin_userdata;
@@ -54,8 +54,8 @@ static void* plugin_create(void) {
     userdata->last_pts = 0;
     userdata->last_nb_samples = 0;
 
-    userdata->in_config = audioconfig_zero;
-    userdata->out_config = audioconfig_zero;
+    userdata->src_config = frame_source_zero;
+    userdata->dest_config = frame_source_zero;
 
     strbuf_init(&userdata->filter_string);
     frame_init(&userdata->frame);
@@ -111,14 +111,14 @@ static int plugin_graph_open(plugin_userdata* userdata) {
         return -1;
     }
 
-    av_channel_layout_default(&ch_layout, userdata->in_config.channels);
+    av_channel_layout_default(&ch_layout, userdata->src_config.channels);
     av_channel_layout_describe(&ch_layout, layout, sizeof(layout));
     av_channel_layout_uninit(&ch_layout);
 
     snprintf(args,sizeof(args),
       "time_base=%u/%u:sample_rate=%u:sample_fmt=%s:channel_layout=%s",
-        1, userdata->in_config.sample_rate, userdata->in_config.sample_rate,
-        av_get_sample_fmt_name(samplefmt_to_avsampleformat(userdata->in_config.format)), layout);
+        1, userdata->src_config.sample_rate, userdata->src_config.sample_rate,
+        av_get_sample_fmt_name(samplefmt_to_avsampleformat(userdata->src_config.format)), layout);
 
     if(userdata->filter_string.len > 0) {
         if(avfilter_graph_parse_ptr(userdata->graph,(const char *)userdata->filter_string.x,
@@ -162,8 +162,8 @@ static int plugin_graph_open(plugin_userdata* userdata) {
         }
     }
 
-    if(userdata->out_config.format != SAMPLEFMT_UNKNOWN) {
-        fmt = samplefmt_to_avsampleformat(userdata->out_config.format);
+    if(userdata->dest_config.format != SAMPLEFMT_UNKNOWN) {
+        fmt = samplefmt_to_avsampleformat(userdata->dest_config.format);
 
         if(av_opt_set_bin(userdata->buffersink, "sample_fmts",
             (uint8_t*)&fmt,sizeof(fmt), AV_OPT_SEARCH_CHILDREN) < 0) {
@@ -188,32 +188,32 @@ static void plugin_graph_close(plugin_userdata* userdata) {
     if(userdata->graph  != NULL) avfilter_graph_free(&userdata->graph);
 }
 
-static int plugin_handle_encoderinfo(void* ud, const encoderinfo *info) {
+static int plugin_handle_frame_source_params(void* ud, const frame_source_params *params) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
 
-    if(info->format != userdata->out_config.format) {
+    if(params->format != userdata->dest_config.format) {
         plugin_graph_close(userdata);
 
-        userdata->out_config.format = info->format;
+        userdata->dest_config.format = params->format;
         if( (r = plugin_graph_open(userdata)) != 0) {
             fprintf(stderr,"[filter:avfilter] error re-opening graph\n");
             return r;
         }
     }
 
-    if(info->frame_len != 0) {
-        av_buffersink_set_frame_size(userdata->buffersink, info->frame_len);
+    if(params->duration != 0) {
+        av_buffersink_set_frame_size(userdata->buffersink, params->duration);
     }
 
     return 0;
 }
 
-static int plugin_open(void* ud, const audioconfig* aconfig, const audioconfig_handler *ahdlr) {
+static int plugin_open(void* ud, const frame_source* source, const frame_receiver *dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     AVChannelLayout ch_layout;
 
-    userdata->in_config = *aconfig;
+    userdata->src_config = *source;
 
     userdata->av_frame = av_frame_alloc();
     if(userdata->av_frame == NULL) {
@@ -228,16 +228,16 @@ static int plugin_open(void* ud, const audioconfig* aconfig, const audioconfig_h
 
     if(av_buffersink_get_ch_layout(userdata->buffersink, &ch_layout) < 0) return -1;
 
-    userdata->out_config.sample_rate = av_buffersink_get_sample_rate(userdata->buffersink);
-    userdata->out_config.channels = ch_layout.nb_channels;
-    userdata->out_config.format = avsampleformat_to_samplefmt(av_buffersink_get_format(userdata->buffersink));
-    userdata->out_config.info.userdata = userdata;
-    userdata->out_config.info.submit = plugin_handle_encoderinfo;
+    userdata->dest_config.sample_rate = av_buffersink_get_sample_rate(userdata->buffersink);
+    userdata->dest_config.channels = ch_layout.nb_channels;
+    userdata->dest_config.format = avsampleformat_to_samplefmt(av_buffersink_get_format(userdata->buffersink));
+    userdata->dest_config.handle = userdata;
+    userdata->dest_config.set_params = plugin_handle_frame_source_params;
 
-    return ahdlr->open(ahdlr->userdata,&userdata->out_config);
+    return dest->open(dest->handle,&userdata->dest_config);
 }
 
-static int plugin_run(plugin_userdata* userdata, const frame_handler* handler) {
+static int plugin_run(plugin_userdata* userdata, const frame_receiver* dest) {
     int r;
     int rr;
 
@@ -245,28 +245,28 @@ static int plugin_run(plugin_userdata* userdata, const frame_handler* handler) {
         if( (rr = avframe_to_frame(&userdata->frame,userdata->av_frame)) < 0) return rr;
         av_frame_unref(userdata->av_frame);
 
-        if( (rr = handler->cb(handler->userdata, &userdata->frame)) < 0) return rr;
+        if( (rr = dest->submit_frame(dest->handle, &userdata->frame)) < 0) return rr;
     }
 
     if( r == AVERROR(EAGAIN) ) return 0;
 
     if( r == AVERROR_EOF) {
-        return handler->flush(handler->userdata);
+        return dest->flush(dest->handle);
     }
 
     return r;
 }
 
-static int plugin_flush(void* ud, const frame_handler* handler) {
+static int plugin_flush(void* ud, const frame_receiver* dest) {
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
     if( (r = av_buffersrc_close(userdata->buffersrc,userdata->last_pts + userdata->last_nb_samples, 0)) < 0) return r;
 
-    return plugin_run(userdata,handler);
+    return plugin_run(userdata,dest);
 }
 
-static int plugin_submit_frame(void* ud, const frame* frame, const frame_handler* handler) {
+static int plugin_submit_frame(void* ud, const frame* frame, const frame_receiver* dest) {
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
@@ -279,7 +279,7 @@ static int plugin_submit_frame(void* ud, const frame* frame, const frame_handler
     av_frame_unref(userdata->av_frame);
     if(r < 0) return r;
 
-    return plugin_run(userdata,handler);
+    return plugin_run(userdata,dest);
 }
 
 static void plugin_close(void* ud) {

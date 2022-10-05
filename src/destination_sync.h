@@ -47,7 +47,7 @@ struct destination_sync {
     thread_signal_t consumed;
     thread_atomic_ptr_t data;
     tag_handler on_tags;
-    frame_handler on_frame;
+    frame_receiver frame_receiver;
     const taglist* tagmap;
     const taglist_map_flags* map_flags;
 };

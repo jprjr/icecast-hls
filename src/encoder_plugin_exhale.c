@@ -143,56 +143,56 @@ static void plugin_close(void* ud) {
     free(userdata);
 }
 
-static int plugin_handle_muxerinfo(void* ud, const muxerinfo* info) {
+static int plugin_handle_packet_source_params(void* ud, const packet_source_params* params) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
-    userdata->tune_in_period = info->packets_per_segment;
+    userdata->tune_in_period = params->packets_per_segment;
     return 0;
 }
 
-static int plugin_open(void* ud, const audioconfig* config, const muxerconfig_handler* m) {
+static int plugin_open(void* ud, const frame_source* source, const packet_receiver* dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
     int r;
-    muxerconfig mconfig = MUXERCONFIG_ZERO;
     uint8_t usac_config[16];
     uint32_t usac_config_size = 0;
     membuf dsi = STRBUF_ZERO;
-    encoderinfo einfo = ENCODERINFO_ZERO;
+    packet_source me = PACKET_SOURCE_ZERO;
+    frame_source_params params = FRAME_SOURCE_PARAMS_ZERO;
     memset(usac_config,0,sizeof(usac_config));
 
-    if( (r = check_sample_rate(config->sample_rate)) < 0) {
-        fprintf(stderr,"[encoder:exhale] unsupported sample rate %u\n",config->sample_rate);
+    if( (r = check_sample_rate(source->sample_rate)) < 0) {
+        fprintf(stderr,"[encoder:exhale] unsupported sample rate %u\n",source->sample_rate);
         return r;
     }
 
-    mconfig.type        = CODEC_TYPE_USAC;
-    mconfig.channels    = config->channels;
-    mconfig.sample_rate = config->sample_rate;
-    mconfig.frame_len   = userdata->frame_len;
-    mconfig.sync_flag   = 0;
-    mconfig.info.userdata = userdata;
-    mconfig.info.submit = plugin_handle_muxerinfo;
+    me.codec       = CODEC_TYPE_USAC;
+    me.channels    = source->channels;
+    me.sample_rate = source->sample_rate;
+    me.frame_len   = userdata->frame_len;
+    me.sync_flag   = 0;
+    me.handle      = userdata;
+    me.set_params  = plugin_handle_packet_source_params;
 
-    if(( r = m->submit(m->userdata,&mconfig)) != 0) {
-        fprintf(stderr,"[encoder:exhale] error configuring muxer\n");
+    if(( r = dest->open(dest->handle, &me)) != 0) {
+        fprintf(stderr,"[encoder:exhale] error opening muxer\n");
         return r;
     }
 
     if(userdata->tune_in_period == 0) {
         /* default to a 1-second tune in period */
-        userdata->tune_in_period = ((uint64_t)config->sample_rate) / ((uint64_t)userdata->frame_len);
+        userdata->tune_in_period = ((uint64_t)source->sample_rate) / ((uint64_t)userdata->frame_len);
     }
 
-    userdata->samples = (int32_t*)malloc(sizeof(int32_t) * userdata->frame_len * config->channels);
+    userdata->samples = (int32_t*)malloc(sizeof(int32_t) * userdata->frame_len * source->channels);
     if(userdata->samples == NULL) return -1;
-    memset(userdata->samples,0,sizeof(int32_t)*userdata->frame_len*config->channels);
+    memset(userdata->samples,0,sizeof(int32_t)*userdata->frame_len*source->channels);
 
-    if( (r = membuf_ready(&userdata->packet.data,sizeof(uint8_t) * (6144/8) * config->channels)) != 0)
+    if( (r = membuf_ready(&userdata->packet.data,sizeof(uint8_t) * (6144/8) * source->channels)) != 0)
         return r;
-    memset(userdata->packet.data.x,0,sizeof(uint8_t) * (6144/8) * config->channels);
+    memset(userdata->packet.data.x,0,sizeof(uint8_t) * (6144/8) * source->channels);
 
     userdata->exhale = exhaleCreate(userdata->samples,userdata->packet.data.x,
-      config->sample_rate, config->channels, userdata->frame_len,
+      source->sample_rate, source->channels, userdata->frame_len,
       userdata->tune_in_period, userdata->vbr, userdata->noise_filling, 0);
     if(userdata->exhale == NULL) return -1;
 
@@ -202,22 +202,22 @@ static int plugin_open(void* ud, const audioconfig* config, const muxerconfig_ha
     dsi.len = usac_config_size;
     dsi.a = 0;
 
-    if( (r = m->submit_dsi(m->userdata,&dsi)) != 0) return r;
+    if( (r = dest->submit_dsi(dest->handle,&dsi)) != 0) return r;
 
-    einfo.format = SAMPLEFMT_S32;
-    einfo.frame_len = userdata->frame_len;
+    params.format   = SAMPLEFMT_S32;
+    params.duration = userdata->frame_len;
 
-    userdata->packet.sample_rate = config->sample_rate;
+    userdata->packet.sample_rate = source->sample_rate;
 
-    return config->info.submit(config->info.userdata, &einfo);
+    return source->set_params(source->handle, &params);
 }
 
-int plugin_flush(void* ud, const packet_handler* p) {
+int plugin_flush(void* ud, const packet_receiver* dest) {
     (void)ud;
-    return p->flush(p->userdata);
+    return dest->flush(dest->handle);
 }
 
-static int plugin_submit_frame(void* ud, const frame* frame, const packet_handler* p) {
+static int plugin_submit_frame(void* ud, const frame* frame, const packet_receiver* dest) {
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
     unsigned int i = 0;
@@ -245,7 +245,7 @@ static int plugin_submit_frame(void* ud, const frame* frame, const packet_handle
 
     if(userdata->packetno == userdata->tune_in_period) userdata->packetno = 0;
 
-    if( ( r = p->cb(p->userdata, &userdata->packet)) != 0) {
+    if( ( r = dest->submit_packet(dest->handle, &userdata->packet)) != 0) {
         fprintf(stderr,"[encoder:exhale] error sending packet to muxer\n");
     }
     userdata->packet.pts += userdata->frame_len;

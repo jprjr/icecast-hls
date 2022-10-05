@@ -5,15 +5,6 @@
 #include <stdio.h>
 #include <string.h>
 
-/* provide a default segment handler that just makes everything quit */
-static int muxer_default_segment_handler(void* userdata, const segment* seg) {
-    (void)userdata;
-    (void)seg;
-    fprintf(stderr,"[muxer] segment handler not set\n");
-    return -1;
-}
-
-
 static int muxer_default_picture_handler(void* userdata, const picture* src, picture* out) {
     (void)userdata;
     (void)src;
@@ -22,37 +13,12 @@ static int muxer_default_picture_handler(void* userdata, const picture* src, pic
     return -1;
 }
 
-static int muxer_default_outputconfig_handler(void* userdata, const outputconfig* c) {
-    (void)userdata;
-    (void)c;
-    fprintf(stderr,"[muxer] outputconfig handler not set\n");
-    return -1;
-}
-
-int muxer_set_segment_handler(muxer* m, const segment_handler* s) {
-    m->segment_handler = *s;
-    return 0;
-}
-
-int muxer_set_picture_handler(muxer* m, const picture_handler* p) {
-    m->picture_handler = *p;
-    return 0;
-}
-
-int muxer_set_outputconfig_handler(muxer* m, const outputconfig_handler* o) {
-    m->outputconfig_handler = *o;
-    return 0;
-}
-
 void muxer_init(muxer* m) {
     m->userdata = NULL;
     m->plugin = NULL;
-    m->segment_handler.cb = muxer_default_segment_handler;
-    m->segment_handler.userdata = NULL;
+    m->segment_receiver = segment_receiver_zero;
     m->picture_handler.cb = muxer_default_picture_handler;
     m->picture_handler.userdata = NULL;
-    m->outputconfig_handler.submit = muxer_default_outputconfig_handler;
-    m->outputconfig_handler.userdata = NULL;
     m->inband_images = 0;
 }
 
@@ -80,12 +46,12 @@ int muxer_create(muxer* m, const strbuf* name) {
     return 0;
 }
 
-int muxer_open(const muxer* m, const muxerconfig* c) {
+int muxer_open(const muxer* m, const packet_source* source) {
     if(m->plugin == NULL || m->userdata == NULL) {
         fprintf(stderr,"[muxer] unable to open: plugin not selected\n");
         return -1;
     }
-    return m->plugin->open(m->userdata, c, &m->outputconfig_handler);
+    return m->plugin->open(m->userdata, source, &m->segment_receiver);
 }
 
 int muxer_config(const muxer* m, const strbuf* name, const strbuf* value) {
@@ -101,11 +67,11 @@ void muxer_global_deinit(void) {
 }
 
 int muxer_submit_dsi(const muxer* m, const membuf* dsi) {
-    return m->plugin->submit_dsi(m->userdata, dsi, &m->segment_handler);
+    return m->plugin->submit_dsi(m->userdata, dsi, &m->segment_receiver);
 }
 
 int muxer_submit_packet(const muxer* m, const packet* p) {
-    return m->plugin->submit_packet(m->userdata, p, &m->segment_handler);
+    return m->plugin->submit_packet(m->userdata, p, &m->segment_receiver);
 }
 
 int muxer_submit_tags(const muxer* m, const taglist* tags) {
@@ -122,7 +88,7 @@ int muxer_submit_tags(const muxer* m, const taglist* tags) {
     tag tmp_tag;
 
     if( (apic_idx = taglist_find_cstr(tags,"APIC",0)) == taglist_len(tags) || m->inband_images) {
-        return m->plugin->submit_tags(m->userdata,tags);
+        return m->plugin->submit_tags(m->userdata, tags, &m->segment_receiver);
     }
 
     taglist_init(&list);
@@ -187,7 +153,7 @@ int muxer_submit_tags(const muxer* m, const taglist* tags) {
         strbuf_free(&tmp_tag.value);
     }
 
-    r = m->plugin->submit_tags(m->userdata,&list);
+    r = m->plugin->submit_tags(m->userdata,&list, &m->segment_receiver);
 
     taglist_shallow_free(&list);
     strbuf_free(&dest.mime);
@@ -199,6 +165,6 @@ int muxer_submit_tags(const muxer* m, const taglist* tags) {
 }
 
 int muxer_flush(const muxer* m) {
-    return m->plugin->flush(m->userdata, &m->segment_handler);
+    return m->plugin->flush(m->userdata, &m->segment_receiver);
 }
 

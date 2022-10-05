@@ -27,8 +27,6 @@ int input_create(input *in, const strbuf* plugin_name);
 
 int input_config(const input* in, const strbuf* name, const strbuf* value);
 
-int input_set_tag_handler(input* in, const tag_handler*);
-
 /* try to open the input */
 int input_open(const input* in);
 

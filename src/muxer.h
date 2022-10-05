@@ -9,9 +9,8 @@
 struct muxer {
     void* userdata;
     const muxer_plugin* plugin;
-    segment_handler segment_handler;
+    segment_receiver segment_receiver;
     picture_handler picture_handler;
-    outputconfig_handler outputconfig_handler;
     uint8_t inband_images;
 };
 
@@ -32,11 +31,7 @@ void muxer_free(muxer*);
 int muxer_create(muxer*, const strbuf* plugin_name);
 int muxer_config(const muxer*, const strbuf* name, const strbuf* value);
 
-int muxer_set_segment_handler(muxer*, const segment_handler*);
-int muxer_set_picture_handler(muxer*, const picture_handler*);
-int muxer_set_outputconfig_handler(muxer*, const outputconfig_handler*);
-
-int muxer_open(const muxer*, const muxerconfig*);
+int muxer_open(const muxer*, const packet_source* source);
 
 /* dsi will trigger writing an init segment, if appropriate */
 int muxer_submit_dsi(const muxer* m, const membuf* dsi);

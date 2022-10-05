@@ -5,8 +5,6 @@
 #include "codecs.h"
 #include "packet.h"
 #include "segment.h"
-#include "muxerconfig.h"
-#include "outputconfig.h"
 #include "tag.h"
 
 typedef int (*muxer_plugin_init)(void);
@@ -16,14 +14,14 @@ typedef void* (*muxer_plugin_create)(void);
 
 typedef int (*muxer_plugin_config)(void* userdata, const strbuf* key, const strbuf* value);
 
-typedef int (*muxer_plugin_open)(void* userdata, const muxerconfig* config, const outputconfig_handler* ohdlr);
+typedef int (*muxer_plugin_open)(void* userdata, const packet_source* source, const segment_receiver* dest);
 
 typedef void (*muxer_plugin_close)(void* userdata);
 
-typedef int (*muxer_plugin_submit_dsi)(void* userdata, const membuf* data, const segment_handler* handler);
-typedef int (*muxer_plugin_submit_packet)(void* userdata, const packet* packet, const segment_handler* handler);
-typedef int (*muxer_plugin_submit_tags)(void* userdata, const taglist* tags);
-typedef int (*muxer_plugin_flush)(void* userdata, const segment_handler* handler);
+typedef int (*muxer_plugin_submit_dsi)(void* userdata, const membuf* data, const segment_receiver* dest);
+typedef int (*muxer_plugin_submit_packet)(void* userdata, const packet* packet, const segment_receiver* dest);
+typedef int (*muxer_plugin_submit_tags)(void* userdata, const taglist* tags, const segment_receiver* dest);
+typedef int (*muxer_plugin_flush)(void* userdata, const segment_receiver* dest);
 
 struct muxer_plugin {
     const strbuf name;

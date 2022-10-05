@@ -281,7 +281,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
 }
 
 struct segment_wrapper {
-    const segment_handler* handler;
+    const segment_receiver* dest;
     int samples;
     int time_base;
 };
@@ -298,14 +298,15 @@ static size_t plugin_write_segment_callback(const void* src, size_t len, void* u
     s.len = len;
     s.samples = wrapper->samples;
 
-    r = wrapper->handler->cb(wrapper->handler->userdata,&s);
+    r = wrapper->dest->submit_segment(wrapper->dest->handle,&s);
     return r == 0 ? len : 0;
 }
 
-static int plugin_submit_tags(void* ud, const taglist* tags) {
+static int plugin_submit_tags(void* ud, const taglist* tags, const segment_receiver* dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
-
     uint32_t id = 0;
+
+    (void)dest; /* sendng tags is delayed until we write the segment */
 
     id3_reset(&userdata->id3);
     if(id3_add_taglist(&userdata->id3,tags) < 0) {
@@ -345,11 +346,11 @@ static int plugin_submit_tags(void* ud, const taglist* tags) {
 
 /* used in both the flush and submit packet functions. The flush function
  * just also calls the segment_handler's flush */
-static int plugin_muxer_flush(plugin_userdata* userdata, const segment_handler* handler) {
+static int plugin_muxer_flush(plugin_userdata* userdata, const segment_receiver* dest) {
     fmp4_result res;
     segment_wrapper wrapper;
 
-    wrapper.handler = handler;
+    wrapper.dest = dest;
     wrapper.samples = userdata->track->trun_sample_count;
     wrapper.time_base = userdata->track->time_scale;
 
@@ -371,23 +372,23 @@ static int plugin_muxer_flush(plugin_userdata* userdata, const segment_handler* 
     return 0;
 }
 
-static int plugin_flush(void* ud, const segment_handler* handler) {
+static int plugin_flush(void* ud, const segment_receiver* dest) {
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
     if(userdata->track->trun_sample_count > 0) {
-        if( (r = plugin_muxer_flush(userdata,handler)) != 0) return r;
+        if( (r = plugin_muxer_flush(userdata,dest)) != 0) return r;
     }
-    return handler->flush(handler->userdata);
+    return dest->flush(dest->handle);
 }
 
-static int plugin_submit_packet(void* ud, const packet* packet, const segment_handler* handler) {
+static int plugin_submit_packet(void* ud, const packet* packet, const segment_receiver* dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
     fmp4_sample_info info;
 
     /* see if we need to flush the current segment */
     if(userdata->track->trun_sample_count + packet->duration > userdata->samples_per_segment) {
-        if( (r = plugin_muxer_flush(userdata,handler)) != 0) return r;
+        if( (r = plugin_muxer_flush(userdata,dest)) != 0) return r;
     }
 
     fmp4_sample_info_init(&info);
@@ -401,17 +402,17 @@ static int plugin_submit_packet(void* ud, const packet* packet, const segment_ha
 }
 
 static size_t plugin_write_init_callback(const void* src, size_t len, void* userdata) {
-    const segment_handler* handler = (const segment_handler*)userdata;
+    const segment_receiver* dest = (const segment_receiver*)userdata;
     segment s;
 
     s.type = SEGMENT_TYPE_INIT;
     s.data = src;
     s.len = len;
 
-    return handler->cb(handler->userdata,&s) == 0 ? len : 0;
+    return dest->submit_segment(dest->handle,&s) == 0 ? len : 0;
 }
 
-static int plugin_submit_dsi(void* ud, const membuf* data,const segment_handler* handler) {
+static int plugin_submit_dsi(void* ud, const membuf* data,const segment_receiver* dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
     if(data->len > 0) {
@@ -421,29 +422,29 @@ static int plugin_submit_dsi(void* ud, const membuf* data,const segment_handler*
         }
     }
 
-    return fmp4_mux_write_init(&userdata->mux, plugin_write_init_callback, (void *)handler) == FMP4_OK ? 0 : -1;
+    return fmp4_mux_write_init(&userdata->mux, plugin_write_init_callback, (void *)dest) == FMP4_OK ? 0 : -1;
 }
 
-static int plugin_outinfo_cb(void* ud, const outputinfo* info) {
+static int plugin_receive_params(void* ud, const segment_source_params* params) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
-    userdata->segment_length = info->segment_length;
+    userdata->segment_length = params->segment_length;
     if(userdata->segment_length == 0) userdata->segment_length = 1;
     return 0;
 }
 
 
-static int plugin_open(void* ud, const muxerconfig *config, const outputconfig_handler* handler) {
+static int plugin_open(void* ud, const packet_source* source, const segment_receiver* dest) {
     int r;
     fmp4_sample_info info;
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
-    outputconfig oconfig = OUTPUTCONFIG_ZERO;
-    muxerinfo minfo = MUXERINFO_ZERO;
+    segment_source me = SEGMENT_SOURCE_ZERO;
+    packet_source_params params = PACKET_SOURCE_PARAMS_ZERO;
 
     userdata->track->stream_type = FMP4_STREAM_TYPE_AUDIO;
 
-    switch(config->type) {
+    switch(source->codec) {
         case CODEC_TYPE_USAC: /* fall-through */
         case CODEC_TYPE_AAC: {
             userdata->track->codec = FMP4_CODEC_MP4A;
@@ -470,35 +471,35 @@ static int plugin_open(void* ud, const muxerconfig *config, const outputconfig_h
     }
 
     fmp4_track_set_language(userdata->track,"und");
-    userdata->track->time_scale = config->sample_rate;
-    userdata->track->info.audio.channels = config->channels;
-    fmp4_track_set_roll_distance(userdata->track,config->roll_distance);
-    fmp4_track_set_encoder_delay(userdata->track,config->padding);
+    userdata->track->time_scale = source->sample_rate;
+    userdata->track->info.audio.channels = source->channels;
+    fmp4_track_set_roll_distance(userdata->track,source->roll_distance);
+    fmp4_track_set_encoder_delay(userdata->track,source->padding);
 
     fmp4_sample_info_init(&info);
-    info.duration = config->frame_len;
-    info.flags.is_non_sync = config->sync_flag == 0;
+    info.duration = source->frame_len;
+    info.flags.is_non_sync = source->sync_flag == 0;
 
     fmp4_track_set_default_sample_info(userdata->track, &info);
 
     /* let the output plugin know what we're doing */
-    oconfig.init_ext   = &ext_mp4;
-    oconfig.media_ext  = &ext_m4s;
-    oconfig.init_mime  = &mime_mp4;
-    oconfig.media_mime = &mime_m4s;
-    oconfig.time_base  = config->sample_rate;
+    me.init_ext   = &ext_mp4;
+    me.media_ext  = &ext_m4s;
+    me.init_mime  = &mime_mp4;
+    me.media_mime = &mime_m4s;
+    me.time_base  = source->sample_rate;
 
-    oconfig.info.userdata = userdata;
-    oconfig.info.submit = plugin_outinfo_cb;
+    me.handle = userdata;
+    me.set_params = plugin_receive_params;
 
-    if( (r = handler->submit(handler->userdata, &oconfig)) != 0) return r;
+    if( (r = dest->open(dest->handle, &me)) != 0) return r;
 
     /* now we have the frame length and a segment length set, tell
      * the encoder our tune in period */
-    minfo.packets_per_segment = userdata->segment_length * config->sample_rate / config->frame_len;
-    userdata->samples_per_segment = minfo.packets_per_segment * config->frame_len;
+    params.packets_per_segment = userdata->segment_length * source->sample_rate / source->frame_len;
+    userdata->samples_per_segment = params.packets_per_segment * source->frame_len;
 
-    return config->info.submit(config->info.userdata, &minfo);
+    return source->set_params(source->handle, &params);
 
 }
 

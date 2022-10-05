@@ -11,29 +11,16 @@
 
 static strbuf DEFAULT_FILTER = { .a = 0, .len = 11, .x = (uint8_t*)"passthrough" };
 
-static int source_default_frame_handler(void* ud, const frame *frame) {
-    (void)ud;
-    (void)frame;
-    fprintf(stderr,"[source] frame handler not set\n");
-    return -1;
-}
-
-static int source_default_flush_handler(void* ud) {
-    (void)ud;
-    fprintf(stderr,"[source] flush handler not set\n");
-    return -1;
-}
-
 static int source_default_tag_handler(void* ud, const taglist* tags) {
     source *s = (source *)ud;
     return taglist_deep_copy(&s->tagcache,tags);
 }
 
-static int source_default_audioconfig_handler(void* ud, const audioconfig* config) {
+static int source_open_intercept(void* ud, const frame_source* fsource) {
     source *s = (source *)ud;
-    encoderinfo einfo = ENCODERINFO_ZERO;
-    s->aconfig = *config;
-    return config->info.submit(config->info.userdata, &einfo);
+    frame_source_params params = FRAME_SOURCE_PARAMS_ZERO;
+    s->frame_source = *fsource;
+    return fsource->set_params(fsource->handle, &params);
 }
 
 /* wrappers to forward calls from the input/decoder to whatever the
@@ -43,20 +30,20 @@ static int source_tag_handler_wrapper(void* ud, const taglist* tags) {
     return s->tag_handler.cb(s->tag_handler.userdata, tags);
 }
 
-static int source_frame_handler_wrapper(void* ud, const frame* frame) {
+static int source_submit_frame_wrapper(void* ud, const frame* frame) {
     source *s = (source *)ud;
-    return s->frame_handler.cb(s->frame_handler.userdata, frame);
+    return s->frame_receiver.submit_frame(s->frame_receiver.handle, frame);
 }
 
-static int source_flush_handler_wrapper(void* ud) {
+static int source_flush_wrapper(void* ud) {
     source *s = (source *)ud;
-    return s->frame_handler.flush(s->frame_handler.userdata);
+    return s->frame_receiver.flush(s->frame_receiver.handle);
 }
 
-int source_open_dest(const source* s, const audioconfig_handler* handler) {
-    audioconfig config = s->aconfig;
-    config.info = encoderinfo_ignore;
-    return handler->open(handler->userdata,&config);
+int source_open_dest(const source* s, const frame_receiver* dest) {
+    frame_source me = s->frame_source;
+    me.set_params = frame_source_set_params_ignore;
+    return dest->open(dest->handle,&me);
 }
 
 int source_global_init(void) {
@@ -82,9 +69,7 @@ void source_init(source* s) {
     s->tag_handler.cb = source_default_tag_handler;
     s->tag_handler.userdata = s;
 
-    s->frame_handler.cb = source_default_frame_handler;
-    s->frame_handler.flush = source_default_flush_handler;
-    s->frame_handler.userdata = NULL;
+    s->frame_receiver = frame_receiver_zero;
 
     s->configuring = CONFIGURING_UNKNOWN;
 }
@@ -131,9 +116,6 @@ int source_config(source* s, const strbuf* key, const strbuf* val) {
 int source_open(source* s) {
     int r;
 
-    audioconfig_handler ahdlr_filter;
-    audioconfig_handler ahdlr_decoder;
-
     if(s->filter.plugin == NULL) {
         if( (r = filter_create(&s->filter, &DEFAULT_FILTER)) != 0) {
             fprintf(stderr,"[source] unable to create filter plugin\n");
@@ -147,13 +129,15 @@ int source_open(source* s) {
      *   decoder frames -> filter
      *   filter frames -> source */
 
-    s->filter.frame_handler.cb    = (frame_handler_callback) source_frame_handler_wrapper;
-    s->filter.frame_handler.flush = (frame_handler_flush_callback) source_flush_handler_wrapper;
-    s->filter.frame_handler.userdata = s;
+    s->filter.frame_receiver.open = (frame_receiver_open_cb) source_open_intercept;
+    s->filter.frame_receiver.submit_frame = (frame_receiver_submit_frame_cb) source_submit_frame_wrapper;
+    s->filter.frame_receiver.flush = (frame_receiver_flush_cb) source_flush_wrapper;
+    s->filter.frame_receiver.handle = s;
 
-    s->decoder.frame_handler.cb    = (frame_handler_callback) filter_submit_frame;
-    s->decoder.frame_handler.flush = (frame_handler_flush_callback) filter_flush;
-    s->decoder.frame_handler.userdata = &s->filter;
+    s->decoder.frame_receiver.open = (frame_receiver_open_cb) filter_open;
+    s->decoder.frame_receiver.submit_frame = (frame_receiver_submit_frame_cb) filter_submit_frame;
+    s->decoder.frame_receiver.flush        = (frame_receiver_flush_cb) filter_flush;
+    s->decoder.frame_receiver.handle       = &s->filter;
 
     s->decoder.tag_handler.cb       = source_tag_handler_wrapper;
     s->decoder.tag_handler.userdata = s;
@@ -161,16 +145,8 @@ int source_open(source* s) {
     s->input.tag_handler.cb = source_tag_handler_wrapper;
     s->input.tag_handler.userdata = s;
 
-    /* setup the config forwarders */
-    ahdlr_filter.userdata = s;
-    ahdlr_filter.open = source_default_audioconfig_handler;
-    filter_set_audioconfig_handler(&s->filter, &ahdlr_filter);
-
-    ahdlr_decoder.userdata = &s->filter;
-    ahdlr_decoder.open     = (audioconfig_open_callback)filter_open;
-
     if( (r = input_open(&s->input)) != 0) return r;
-    if( (r = decoder_open(&s->decoder,&s->input, &ahdlr_decoder)) != 0) return r;
+    if( (r = decoder_open(&s->decoder,&s->input)) != 0) return r;
 
     return 0;
 }
@@ -180,8 +156,8 @@ int source_set_tag_handler(source* s, const tag_handler* thandler) {
     return 0;
 }
 
-int source_set_frame_handler(source* s, const frame_handler* fhandler) {
-    memcpy(&s->frame_handler,fhandler,sizeof(frame_handler));
+int source_set_frame_receiver(source* s, const frame_receiver* freceiver) {
+    memcpy(&s->frame_receiver,freceiver,sizeof(frame_receiver));
     return 0;
 }
 

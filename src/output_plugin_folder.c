@@ -126,7 +126,7 @@ static void plugin_deinit(void) {
     return;
 }
 
-static int plugin_open(void* ud, const outputconfig *config) {
+static int plugin_open(void* ud, const segment_source* source) {
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
     strbuf tmp = STRBUF_ZERO;
@@ -138,7 +138,7 @@ static int plugin_open(void* ud, const outputconfig *config) {
     if(directory_create(&tmp) != 0) return r;
     strbuf_free(&tmp);
 
-    return hls_open(&userdata->hls, config);
+    return hls_open(&userdata->hls, source);
 }
 
 static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {

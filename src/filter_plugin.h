@@ -4,7 +4,6 @@
 #include "strbuf.h"
 #include "frame.h"
 #include "samplefmt.h"
-#include "audioconfig.h"
 #include <stddef.h>
 
 typedef int (*filter_plugin_init)(void);
@@ -14,11 +13,11 @@ typedef void* (*filter_plugin_create)(void);
 
 typedef int (*filter_plugin_config)(void* userdata, const strbuf* key, const strbuf* value);
 
-typedef int (*filter_plugin_open)(void* userdata, const audioconfig*, const audioconfig_handler* handler);
+typedef int (*filter_plugin_open)(void* userdata, const frame_source*, const frame_receiver* dest);
 typedef void (*filter_plugin_close)(void* userdata);
 
-typedef int (*filter_plugin_submit_frame)(void* userdata, const frame*, const frame_handler* handler);
-typedef int (*filter_plugin_flush)(void* userdata, const frame_handler* handler);
+typedef int (*filter_plugin_submit_frame)(void* userdata, const frame*, const frame_receiver* handler);
+typedef int (*filter_plugin_flush)(void* userdata, const frame_receiver* handler);
 
 struct filter_plugin {
     const strbuf name;

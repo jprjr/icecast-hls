@@ -22,7 +22,6 @@
 
 #include "strbuf.h"
 #include "segment.h"
-#include "outputconfig.h"
 #include "ich_time.h"
 
 typedef int(*hls_write_callback)(void* userdata, const strbuf* filename, const membuf* data, const strbuf* mime);
@@ -124,7 +123,7 @@ void hls_init(hls*);
 void hls_free(hls*);
 
 int hls_configure(hls*, const strbuf* key, const strbuf* val);
-int hls_open(hls*, const outputconfig* config);
+int hls_open(hls*, const segment_source* source);
 
 /* buffers a segment and maybe triggers writing callbacks */
 int hls_add_segment(hls*, const segment* seg);

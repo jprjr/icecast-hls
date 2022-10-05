@@ -5,7 +5,6 @@
 #include "segment.h"
 #include "picture.h"
 #include "ich_time.h"
-#include "outputconfig.h"
 
 /* perform global-init/deinit type stuff on a plugin */
 typedef int (*output_plugin_init)(void);
@@ -15,7 +14,7 @@ typedef void* (*output_plugin_create)(void);
 typedef void (*output_plugin_close)(void* userdata);
 
 typedef int (*output_plugin_config)(void* userdata, const strbuf* key, const strbuf* value);
-typedef int (*output_plugin_open)(void* userdata, const outputconfig* conf);
+typedef int (*output_plugin_open)(void* userdata, const segment_source* source);
 
 typedef int (*output_plugin_submit_segment)(void* userdata, const segment* segment);
 typedef int (*output_plugin_submit_picture)(void* userdata, const picture* src, picture* out);

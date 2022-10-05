@@ -101,9 +101,9 @@ static int destinationlist_entry_run(void *userdata) {
     int r;
     destinationlist_entry* entry = (destinationlist_entry*)userdata;
 
-    entry->sync.on_frame.cb       = (frame_handler_callback)destination_submit_frame;
-    entry->sync.on_frame.flush    = (frame_handler_flush_callback)destination_flush;
-    entry->sync.on_frame.userdata = &entry->destination;
+    entry->sync.frame_receiver.submit_frame = (frame_receiver_submit_frame_cb)destination_submit_frame;
+    entry->sync.frame_receiver.flush        = (frame_receiver_flush_cb)destination_flush;
+    entry->sync.frame_receiver.handle       = &entry->destination;
     entry->sync.on_tags.cb        = (tag_handler_callback)destination_submit_tags;
     entry->sync.on_tags.userdata  = &entry->destination;
     entry->sync.tagmap            = entry->destination.tagmap;

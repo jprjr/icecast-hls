@@ -4,7 +4,6 @@ CFLAGS = -Wall -Wextra -g -O3
 LDFLAGS = 
 
 SOURCES = \
-	src/audioconfig.c \
 	src/avframe_utils.c \
 	src/avpacket_utils.c \
 	src/ini.c \
@@ -20,7 +19,6 @@ SOURCES = \
 	src/destinationlist.c \
 	src/destination_sync.c \
 	src/encoder.c \
-	src/encoderinfo.c \
 	src/encoder_plugin.c \
 	src/encoder_plugin_avcodec.c \
 	src/encoder_plugin_exhale.c \
@@ -39,19 +37,16 @@ SOURCES = \
 	src/input_plugin_http.c \
 	src/input_plugin_stdin.c \
 	src/muxer.c \
-	src/muxerconfig.c \
-	src/muxerinfo.c \
 	src/muxer_plugin.c \
 	src/muxer_plugin_fmp4.c \
 	src/output.c \
-	src/outputconfig.c \
-	src/outputinfo.c \
 	src/output_plugin.c \
 	src/output_plugin_file.c \
 	src/output_plugin_stdout.c \
 	src/output_plugin_folder.c \
 	src/packet.c \
 	src/samplefmt.c \
+	src/segment.c \
 	src/source.c \
 	src/sourcelist.c \
 	src/source_sync.c \
@@ -65,7 +60,6 @@ SOURCES = \
 OBJS = $(SOURCES:%.c=%.o)
 
 REQUIRED_OBJS = \
-	src/audioconfig.o \
 	src/ini.o \
 	src/map.o \
 	src/main.o \
@@ -79,7 +73,6 @@ REQUIRED_OBJS = \
 	src/destinationlist.o \
 	src/destination_sync.o \
 	src/encoder.o \
-	src/encoderinfo.o \
 	src/encoder_plugin.o \
 	src/filter.o \
 	src/filter_plugin.o \
@@ -95,19 +88,16 @@ REQUIRED_OBJS = \
 	src/input_plugin_http.o \
 	src/input_plugin_stdin.o \
 	src/muxer.o \
-	src/muxerconfig.o \
-	src/muxerinfo.o \
 	src/muxer_plugin.o \
 	src/muxer_plugin_fmp4.o \
 	src/output.o \
-	src/outputconfig.o \
-	src/outputinfo.o \
 	src/output_plugin.o \
 	src/output_plugin_file.o \
 	src/output_plugin_stdout.o \
 	src/output_plugin_folder.o \
 	src/packet.o \
 	src/samplefmt.o \
+	src/segment.c \
 	src/source.o \
 	src/sourcelist.o \
 	src/source_sync.o \

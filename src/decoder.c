@@ -6,29 +6,6 @@
 #include <stdio.h>
 #include <string.h>
 
-int decoder_set_frame_handler(decoder* dec, const frame_handler* f) {
-    dec->frame_handler = *f;
-    return 0;
-}
-
-int decoder_set_tag_handler(decoder* dec, const tag_handler* t) {
-    dec->tag_handler = *t;
-    return 0;
-}
-
-static int decoder_default_frame_handler(void* userdata, const frame *frame) {
-    (void)userdata;
-    (void)frame;
-    fprintf(stderr,"[decoder] frame handler not set\n");
-    return -1;
-}
-
-static int decoder_default_flush_handler(void* userdata) {
-    (void)userdata;
-    fprintf(stderr,"[decoder] flush handler not set\n");
-    return -1;
-}
-
 static int decoder_default_tag_handler(void* userdata, const taglist* tags) {
     (void)userdata;
     (void)tags;
@@ -39,9 +16,7 @@ static int decoder_default_tag_handler(void* userdata, const taglist* tags) {
 void decoder_init(decoder* dec) {
     dec->userdata = NULL;
     dec->plugin = NULL;
-    dec->frame_handler.cb = decoder_default_frame_handler;
-    dec->frame_handler.flush = decoder_default_flush_handler;
-    dec->frame_handler.userdata = NULL;
+    dec->frame_receiver = frame_receiver_zero;
     dec->tag_handler.cb = decoder_default_tag_handler;
     dec->tag_handler.userdata = NULL;
 }
@@ -71,12 +46,12 @@ int decoder_create(decoder* dec, const strbuf* name) {
 }
 
 
-int decoder_open(const decoder* dec, const input* in, const audioconfig_handler* ahdlr) {
+int decoder_open(const decoder* dec, const input* in) {
     if(dec->plugin == NULL || dec->userdata == NULL) {
         fprintf(stderr,"[decoder] unable to open: no plugin selected\n");
         return -1;
     }
-    return dec->plugin->open(dec->userdata, in, ahdlr);
+    return dec->plugin->open(dec->userdata, in, &dec->frame_receiver);
 }
 
 int decoder_config(const decoder* dec, const strbuf* name, const strbuf* value) {
@@ -92,5 +67,5 @@ void decoder_global_deinit(void) {
 }
 
 int decoder_decode(const decoder* dec) {
-    return dec->plugin->decode(dec->userdata, &dec->tag_handler, &dec->frame_handler);
+    return dec->plugin->decode(dec->userdata, &dec->tag_handler, &dec->frame_receiver);
 }

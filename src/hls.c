@@ -172,26 +172,26 @@ void hls_free(hls* h) {
 
 #define TRY(x) if( (r = (x)) != 0 ) return r;
 
-int hls_open(hls* h, const outputconfig* config) {
+int hls_open(hls* h, const segment_source* source) {
     int r;
     unsigned int playlist_segments;
-    outputinfo info = OUTPUTINFO_ZERO;
+    segment_source_params params = SEGMENT_SOURCE_PARAMS_ZERO;
 
-    h->time_base  = config->time_base;
+    h->time_base  = source->time_base;
 
-    if(config->media_mime != NULL) {
-        if(strbuf_copy(&h->media_mime,config->media_mime) != 0) return -1;
+    if(source->media_mime != NULL) {
+        if(strbuf_copy(&h->media_mime,source->media_mime) != 0) return -1;
     }
 
-    if(config->media_ext != NULL) {
-        if(strbuf_copy(&h->media_ext,config->media_ext) != 0) return -1;
+    if(source->media_ext != NULL) {
+        if(strbuf_copy(&h->media_ext,source->media_ext) != 0) return -1;
     }
 
-    if(config->init_mime != NULL) {
-        if(strbuf_copy(&h->init_mime,config->init_mime) != 0) return -1;
+    if(source->init_mime != NULL) {
+        if(strbuf_copy(&h->init_mime,source->init_mime) != 0) return -1;
     }
 
-    if(config->init_ext != NULL) {
+    if(source->init_ext != NULL) {
 
         if(h->init_filename.len == 0) {
             if(strbuf_append_cstr(&h->init_filename,"init") != 0) {
@@ -200,7 +200,7 @@ int hls_open(hls* h, const outputconfig* config) {
             }
         }
 
-        if(strbuf_cat(&h->init_filename,config->init_ext) != 0) {
+        if(strbuf_cat(&h->init_filename,source->init_ext) != 0) {
             LOG0("out of memory");
             return -1;
         }
@@ -220,9 +220,9 @@ int hls_open(hls* h, const outputconfig* config) {
       (int)h->media_ext.len,(char *)h->media_ext.x));
     TRY(strbuf_term(&h->fmt));
 
-    info.segment_length = h->target_duration;
+    params.segment_length = h->target_duration;
 
-    return config->info.submit(config->info.userdata,&info);
+    return source->set_params(source->handle, &params);
 }
 
 static int hls_update_playlist(hls* h) {

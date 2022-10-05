@@ -66,10 +66,7 @@ int destination_submit_tags(const destination* dest, const taglist* tags) {
 int destination_open(destination* dest, const ich_time* now) {
     int r;
 
-    outputconfig_handler handler_output  = OUTPUTCONFIG_HANDLER_ZERO;
-    muxerconfig_handler  handler_muxer   =  MUXERCONFIG_HANDLER_ZERO;
-    audioconfig_handler  handler_encoder =  AUDIOCONFIG_HANDLER_ZERO;
-    audioconfig_handler  handler_filter  =  AUDIOCONFIG_HANDLER_ZERO;
+    frame_receiver source_receiver = FRAME_RECEIVER_ZERO;
 
     /* ensure we have an output plugin selected, there's no default for that */
     if(dest->output.plugin == NULL) {
@@ -105,41 +102,35 @@ int destination_open(destination* dest, const ich_time* now) {
     }
 
     /* set up for audio data forwards (frame -> packet -> segment -> output) */
-    dest->filter.frame_handler.cb       = (frame_handler_callback)encoder_submit_frame;
-    dest->filter.frame_handler.flush    = (frame_handler_flush_callback)encoder_flush;
-    dest->filter.frame_handler.userdata = &dest->encoder;
+    dest->filter.frame_receiver.open          = (frame_receiver_open_cb)encoder_open;
+    dest->filter.frame_receiver.submit_frame  = (frame_receiver_submit_frame_cb)encoder_submit_frame;
+    dest->filter.frame_receiver.flush         = (frame_receiver_flush_cb)encoder_flush;
+    dest->filter.frame_receiver.handle        = &dest->encoder;
 
-    dest->encoder.packet_handler.cb       = (packet_handler_callback)muxer_submit_packet;
-    dest->encoder.packet_handler.flush    = (packet_handler_flush_callback)muxer_flush;
-    dest->encoder.packet_handler.userdata = &dest->muxer;
+    dest->encoder.packet_receiver.open          = (packet_receiver_open_cb)muxer_open;
+    dest->encoder.packet_receiver.submit_dsi    = (packet_receiver_submit_dsi_cb)muxer_submit_dsi;
+    dest->encoder.packet_receiver.submit_packet = (packet_receiver_submit_packet_cb)muxer_submit_packet;
+    dest->encoder.packet_receiver.flush         = (packet_receiver_flush_cb)muxer_flush;
+    dest->encoder.packet_receiver.handle        = &dest->muxer;
 
-    dest->muxer.segment_handler.cb       = (segment_handler_callback)output_submit_segment;
-    dest->muxer.segment_handler.flush    = (segment_handler_flush_callback)output_flush;
-    dest->muxer.segment_handler.userdata = &dest->output;
+    dest->muxer.segment_receiver.open             = (segment_receiver_open_cb)output_open;
+    dest->muxer.segment_receiver.submit_segment   = (segment_receiver_submit_segment_cb)output_submit_segment;
+    dest->muxer.segment_receiver.flush            = (segment_receiver_flush_cb)output_flush;
+    dest->muxer.segment_receiver.handle           = &dest->output;
 
     dest->muxer.inband_images = dest->inband_images;
 
     dest->muxer.picture_handler.cb       = (picture_handler_callback)output_submit_picture;
     dest->muxer.picture_handler.userdata = &dest->output;
 
-    /* set up our config forwarders */
-    handler_output.userdata = &dest->output;
-    handler_output.submit   = (outputconfig_submit_callback)output_open;
-    muxer_set_outputconfig_handler(&dest->muxer,&handler_output);
+    /* finally our dummy receiver for the source */
+    source_receiver.open         = (frame_receiver_open_cb)filter_open;
+    source_receiver.submit_frame = (frame_receiver_submit_frame_cb)filter_submit_frame;
+    source_receiver.flush        = (frame_receiver_flush_cb)filter_flush;
+    source_receiver.handle       = &dest->filter;
 
-    handler_muxer.userdata = &dest->muxer;
-    handler_muxer.submit   = (muxerconfig_handler_callback)muxer_open;
-    handler_muxer.submit_dsi   = (muxerconfig_dsi_callback)muxer_submit_dsi;
-    encoder_set_muxerconfig_handler(&dest->encoder,&handler_muxer);
-
-    handler_encoder.userdata = &dest->encoder;
-    handler_encoder.open     = (audioconfig_open_callback)encoder_open;
-    filter_set_audioconfig_handler(&dest->filter,&handler_encoder);
-
-    handler_filter.userdata = &dest->filter;
-    handler_filter.open     = (audioconfig_open_callback)filter_open;
-
-    return source_open_dest(dest->source, &handler_filter);
+    /* let's gooooo */
+    return source_open_dest(dest->source, &source_receiver);
 }
 
 int destination_config(destination* dest, const strbuf* key, const strbuf* val) {

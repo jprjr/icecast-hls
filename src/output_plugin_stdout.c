@@ -41,14 +41,13 @@ static int plugin_config(void* userdata, const strbuf* key, const strbuf* value)
     return 0;
 }
 
-static int plugin_open(void* userdata, const outputconfig* config) {
+static int plugin_open(void* userdata, const segment_source* source) {
     (void)userdata;
-    (void)config;
-    outputinfo info = OUTPUTINFO_ZERO;
+    segment_source_params params = SEGMENT_SOURCE_PARAMS_ZERO;
 #if defined(_WIN32) || defined(_WIN64) || defined(_MSC_VER)
     if(_setmode( _fileno(stdout), _O_BINARY) == -1) return -1;
 #endif
-    return config->info.submit(config->info.userdata, &info);
+    return source->set_params(source->handle, &params);
 }
 
 static void plugin_close(void* userdata) {

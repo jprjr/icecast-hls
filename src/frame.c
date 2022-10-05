@@ -1,6 +1,7 @@
 #include "frame.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 /* note - all frame operations need to work on the
  * membuf-allocated memory directly and not call
@@ -251,3 +252,45 @@ int frame_move(frame* dest, frame* src, size_t len) {
     return 0;
 }
 
+
+const frame_receiver frame_receiver_zero = FRAME_RECEIVER_ZERO;
+const frame_source frame_source_zero = FRAME_SOURCE_ZERO;
+const frame frame_zero = FRAME_ZERO;
+const frame_source_params frame_source_params_zero = FRAME_SOURCE_PARAMS_ZERO;
+
+int frame_receiver_open_null(void* handle, const frame_source* source) {
+    (void)handle;
+    (void)source;
+    fprintf(stderr,"[app error] frame_receiver open not set\n");
+    abort();
+    return -1;
+}
+
+int frame_receiver_submit_frame_null(void* handle, const frame* frame) {
+    (void)handle;
+    (void)frame;
+    fprintf(stderr,"[app error] frame_receiver subit_frame not set\n");
+    abort();
+    return -1;
+}
+
+int frame_receiver_flush_null(void* handle) {
+    (void)handle;
+    fprintf(stderr,"[app error] frame_receiver flush not set\n");
+    abort();
+    return -1;
+}
+
+int frame_source_set_params_null(void* handle, const frame_source_params* params) {
+    (void)handle;
+    (void)params;
+    fprintf(stderr,"[app error] frame_source set_params not set\n");
+    abort();
+    return -1;
+}
+
+int frame_source_set_params_ignore(void* handle, const frame_source_params* params) {
+    (void)handle;
+    (void)params;
+    return 0;
+}

@@ -8,9 +8,7 @@ void destination_sync_init(destination_sync* sync) {
     thread_atomic_ptr_store(&sync->data, NULL);
     sync->on_tags.cb = NULL;
     sync->on_tags.userdata = NULL;
-    sync->on_frame.cb = NULL;
-    sync->on_frame.flush = NULL;
-    sync->on_frame.userdata = NULL;
+    sync->frame_receiver = frame_receiver_zero;
     sync->tagmap = NULL;
     sync->map_flags = NULL;
 
@@ -49,7 +47,7 @@ int destination_sync_run(destination_sync *sync) {
                 goto cleanup;
             }
             case DESTINATION_SYNC_EOF: {
-                ret = sync->on_frame.flush(sync->on_frame.userdata);
+                ret = sync->frame_receiver.flush(sync->frame_receiver.handle);
                 goto cleanup;
             }
             case DESTINATION_SYNC_FRAME: {
@@ -62,7 +60,7 @@ int destination_sync_run(destination_sync *sync) {
                 thread_atomic_int_store(&sync->status,0);
                 thread_signal_raise(&sync->consumed);
 
-                if(sync->on_frame.cb(sync->on_frame.userdata,&f) < 0) {
+                if(sync->frame_receiver.submit_frame(sync->frame_receiver.handle,&f) < 0) {
                     ret = -1;
                     goto cleanup;
                 }

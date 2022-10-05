@@ -7,7 +7,6 @@
 #include "input.h"
 #include "tag.h"
 #include "frame.h"
-#include "audioconfig.h"
 
 typedef int (*decoder_plugin_init)(void);
 typedef void (*decoder_plugin_deinit)(void);
@@ -16,9 +15,9 @@ typedef void* (*decoder_plugin_create)(void);
 
 typedef int (*decoder_plugin_config)(void* userdata, const strbuf* key, const strbuf* value);
 
-typedef int (*decoder_plugin_open)(void* userdata, const input *in, const audioconfig_handler* config);
+typedef int (*decoder_plugin_open)(void* userdata, const input *in, const frame_receiver* dest);
 
-typedef int (*decoder_plugin_decode)(void* userdata, const tag_handler* tag_handler, const frame_handler* frame_handler);
+typedef int (*decoder_plugin_decode)(void* userdata, const tag_handler* tag_handler, const frame_receiver* frame_dest);
 
 typedef void (*decoder_plugin_close)(void* userdata);
 

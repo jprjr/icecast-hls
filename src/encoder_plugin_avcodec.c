@@ -118,12 +118,12 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
     return r;
 }
 
-static int plugin_open(void* ud, const audioconfig* aconfig, const muxerconfig_handler* mux) {
+static int plugin_open(void* ud, const frame_source* source, const packet_receiver *dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
 
-    muxerconfig mconfig = MUXERCONFIG_ZERO;
-    encoderinfo einfo = ENCODERINFO_ZERO;
+    packet_source me = PACKET_SOURCE_ZERO;
+    frame_source_params params = FRAME_SOURCE_PARAMS_ZERO;
     AVDictionaryEntry *t = NULL;
     membuf dsi = STRBUF_ZERO; /* STRBUF_ZERO uses a smaller blocksize */
 
@@ -136,12 +136,12 @@ static int plugin_open(void* ud, const audioconfig* aconfig, const muxerconfig_h
         LOG0("out of memory"));
 
     userdata->ctx->time_base.num = 1;
-    userdata->ctx->time_base.den = aconfig->sample_rate;
-    userdata->ctx->sample_rate   = aconfig->sample_rate;
+    userdata->ctx->time_base.den = source->sample_rate;
+    userdata->ctx->sample_rate   = source->sample_rate;
 
-    TRY( (userdata->ctx->sample_fmt = find_best_format(userdata->codec,samplefmt_to_avsampleformat(aconfig->format))) != AV_SAMPLE_FMT_NONE,
+    TRY( (userdata->ctx->sample_fmt = find_best_format(userdata->codec,samplefmt_to_avsampleformat(source->format))) != AV_SAMPLE_FMT_NONE,
         LOG0("unable to find a suitable sample format"));
-    av_channel_layout_default(&userdata->ctx->ch_layout,aconfig->channels);
+    av_channel_layout_default(&userdata->ctx->ch_layout,source->channels);
 
     TRY(avcodec_open2(userdata->ctx, userdata->codec, &userdata->codec_config) >= 0,
         LOG0("unable to open codec context"));
@@ -155,8 +155,8 @@ static int plugin_open(void* ud, const audioconfig* aconfig, const muxerconfig_h
 
     switch(userdata->codec->id) {
         case AV_CODEC_ID_AAC: {
-            mconfig.type = CODEC_TYPE_AAC;
-            mconfig.roll_distance = -1;
+            me.codec = CODEC_TYPE_AAC;
+            me.roll_distance = -1;
             TRY(userdata->ctx->extradata_size > 0, LOG0("aac missing extradata"));
             TRY0(membuf_append(&dsi, userdata->ctx->extradata, userdata->ctx->extradata_size),
                 LOG0("out of memory"));
@@ -164,7 +164,7 @@ static int plugin_open(void* ud, const audioconfig* aconfig, const muxerconfig_h
         }
 
         case AV_CODEC_ID_ALAC: {
-            mconfig.type = CODEC_TYPE_ALAC;
+            me.codec = CODEC_TYPE_ALAC;
             TRY(userdata->ctx->extradata_size > 0, LOG0("alac missing extradata"));
 
             /* ffmpeg's alac encoder includes the mp4 box headers (size, 'alac', flags) */
@@ -178,7 +178,7 @@ static int plugin_open(void* ud, const audioconfig* aconfig, const muxerconfig_h
         }
 
         case AV_CODEC_ID_FLAC: {
-            mconfig.type = CODEC_TYPE_FLAC;
+            me.codec = CODEC_TYPE_FLAC;
             TRY(userdata->ctx->extradata_size > 0, LOG0("flac missing extradata"));
 
             /* ffmpeg's flac encoder does not include streaminfo's header block */
@@ -195,8 +195,8 @@ static int plugin_open(void* ud, const audioconfig* aconfig, const muxerconfig_h
         }
 
         case AV_CODEC_ID_MP3: {
-            mconfig.type = CODEC_TYPE_MP3;
-            mconfig.roll_distance = -1; /* TODO is this right? */
+            me.codec = CODEC_TYPE_MP3;
+            me.roll_distance = -1; /* TODO is this right? */
             break;
         }
 
@@ -205,16 +205,16 @@ static int plugin_open(void* ud, const audioconfig* aconfig, const muxerconfig_h
         }
     }
 
-    mconfig.channels = aconfig->channels;
-    mconfig.sample_rate = aconfig->sample_rate;
-    mconfig.frame_len = userdata->ctx->frame_size;
-    mconfig.sync_flag = userdata->ctx->codec_descriptor->props & AV_CODEC_PROP_INTRA_ONLY;
-    mconfig.padding = userdata->ctx->initial_padding;
-    mconfig.info = muxerinfo_ignore;
+    me.channels = source->channels;
+    me.sample_rate = source->sample_rate;
+    me.frame_len = userdata->ctx->frame_size;
+    me.sync_flag = userdata->ctx->codec_descriptor->props & AV_CODEC_PROP_INTRA_ONLY;
+    me.padding = userdata->ctx->initial_padding;
+    me.set_params = packet_source_set_params_ignore;
 
-    TRY0(mux->submit(mux->userdata, &mconfig), LOG0("error configuring muxer"));
+    TRY0(dest->open(dest->handle, &me), LOG0("error configuring muxer"));
 
-    TRY0(mux->submit_dsi(mux->userdata, &dsi), LOG0("error: unable to submit dsi to muxer"));
+    TRY0(dest->submit_dsi(dest->handle, &dsi), LOG0("error: unable to submit dsi to muxer"));
 
     TRY( (userdata->avframe = av_frame_alloc()) != NULL, LOG0("out of memory"));
     TRY( (userdata->avpacket = av_packet_alloc()) != NULL, LOG0("out of memory"));
@@ -223,15 +223,14 @@ static int plugin_open(void* ud, const audioconfig* aconfig, const muxerconfig_h
     membuf_free(&dsi);
     if(r != 0) return r;
 
-    /* let's make sure we can get input in our format */
-    einfo.format = avsampleformat_to_samplefmt(find_best_format(userdata->codec,samplefmt_to_avsampleformat(aconfig->format)));
-    einfo.frame_len = userdata->ctx->frame_size;
+    params.format   = avsampleformat_to_samplefmt(find_best_format(userdata->codec,samplefmt_to_avsampleformat(source->format)));
+    params.duration = userdata->ctx->frame_size;
 
-    return aconfig->info.submit(aconfig->info.userdata, &einfo);
+    return source->set_params(source->handle, &params);
 
 }
 
-static int drain_packets(plugin_userdata* userdata, const packet_handler* mux, int flushing) {
+static int drain_packets(plugin_userdata* userdata, const packet_receiver* dest, int flushing) {
     int av;
 
     while( (av = avcodec_receive_packet(userdata->ctx, userdata->avpacket)) >= 0) {
@@ -249,7 +248,7 @@ static int drain_packets(plugin_userdata* userdata, const packet_handler* mux, i
           return AVERROR_EXTERNAL;
         }
 
-        if(mux->cb(mux->userdata, &userdata->packet) != 0) {
+        if(dest->submit_packet(dest->handle, &userdata->packet) != 0) {
           LOG0("unable to send packet");
           return AVERROR_EXTERNAL;
         }
@@ -259,7 +258,7 @@ static int drain_packets(plugin_userdata* userdata, const packet_handler* mux, i
     return av;
 }
 
-static int plugin_submit_frame(void* ud, const frame* frame, const packet_handler* mux) {
+static int plugin_submit_frame(void* ud, const frame* frame, const packet_receiver* dest) {
     int r;
     int av;
     char averrbuf[128];
@@ -272,7 +271,7 @@ static int plugin_submit_frame(void* ud, const frame* frame, const packet_handle
       av_strerror(av, averrbuf, sizeof(averrbuf));
       LOG1("unable to send frame: %s",averrbuf));
 
-    TRY( (av = drain_packets(userdata,mux, 0)) == AVERROR(EAGAIN),
+    TRY( (av = drain_packets(userdata,dest, 0)) == AVERROR(EAGAIN),
       av_strerror(av, averrbuf, sizeof(averrbuf));
       LOG1("frame: error receiving packet: %s",averrbuf));
 
@@ -280,7 +279,7 @@ static int plugin_submit_frame(void* ud, const frame* frame, const packet_handle
     return r;
 }
 
-static int plugin_flush(void* ud, const packet_handler* mux) {
+static int plugin_flush(void* ud, const packet_receiver* dest) {
     int r;
     int av;
     char averrbuf[128];
@@ -290,14 +289,14 @@ static int plugin_flush(void* ud, const packet_handler* mux) {
       av_strerror(av, averrbuf, sizeof(averrbuf));
       LOG1("unable to flush encoder: %s",averrbuf));
 
-    TRY( (av = drain_packets(userdata,mux,1)) == AVERROR_EOF,
+    TRY( (av = drain_packets(userdata,dest,1)) == AVERROR_EOF,
       av_strerror(av, averrbuf, sizeof(averrbuf));
       LOG1("flush: error receiving packet: %s",averrbuf));
     r = 0;
 
     cleanup:
 
-    return r == 0 ? mux->flush(mux->userdata) : r;
+    return r == 0 ? dest->flush(dest->handle) : r;
 }
 
 const encoder_plugin encoder_plugin_avcodec = {

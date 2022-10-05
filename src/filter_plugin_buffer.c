@@ -45,48 +45,48 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* val) {
     return 0;
 }
 
-static int plugin_handle_encoderinfo(void* ud, const encoderinfo* info) {
+static int plugin_handle_frame_source_params(void* ud, const frame_source_params* info) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
-    userdata->frame_len       = info->frame_len;
+    userdata->frame_len       = info->duration;
 
     if(info->format != SAMPLEFMT_UNKNOWN) {
-        userdata->buffer.format      = info->format;
-        userdata->out.format      = info->format;
+        userdata->buffer.format = info->format;
+        userdata->out.format    = info->format;
     }
 
     return 0;
 }
 
-static int plugin_open(void* ud, const audioconfig* config, const audioconfig_handler* handler) {
+static int plugin_open(void* ud, const frame_source* source, const frame_receiver* dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
-    audioconfig oconfig = AUDIOCONFIG_ZERO;
-    encoderinfo info = ENCODERINFO_ZERO;
+    frame_source me = FRAME_SOURCE_ZERO;
+    frame_source_params params = FRAME_SOURCE_PARAMS_ZERO;
 
-    userdata->buffer.channels = config->channels;
-    userdata->buffer.format   = config->format;
-    userdata->buffer.sample_rate   = config->sample_rate;
+    userdata->buffer.channels = source->channels;
+    userdata->buffer.format   = source->format;
+    userdata->buffer.sample_rate   = source->sample_rate;
 
-    userdata->out.channels = config->channels;
-    userdata->out.format   = config->format;
-    userdata->out.sample_rate   = config->sample_rate;
+    userdata->out.channels = source->channels;
+    userdata->out.format   = source->format;
+    userdata->out.sample_rate   = source->sample_rate;
 
-    oconfig = *config;
-    oconfig.info.userdata = userdata;
-    oconfig.info.submit = plugin_handle_encoderinfo;
+    me = *source;
+    me.handle = userdata;
+    me.set_params = plugin_handle_frame_source_params;
 
-    if( (r = handler->open(handler->userdata, &oconfig)) != 0) return r;
+    if( (r = dest->open(dest->handle, &me)) != 0) return r;
 
     if( (r = frame_ready(&userdata->buffer)) != 0) return r;
     if( (r = frame_ready(&userdata->out)) != 0) return r;
 
-    info.format = config->format;
+    params.format = source->format;
 
-    return config->info.submit(config->info.userdata, &info);
+    return source->set_params(source->handle, &params);
 
 }
 
-static int plugin_drain_buffer(plugin_userdata* userdata, const frame_handler* handler) {
+static int plugin_drain_buffer(plugin_userdata* userdata, const frame_receiver* dest) {
     int r;
     size_t len;
 
@@ -95,13 +95,13 @@ static int plugin_drain_buffer(plugin_userdata* userdata, const frame_handler* h
 
     while(userdata->buffer.duration >= len) {
         if( (r = frame_move(&userdata->out, &userdata->buffer, len)) != 0) return r;
-        if( (r = handler->cb(handler->userdata,&userdata->out)) != 0) return r;
+        if( (r = dest->submit_frame(dest->handle,&userdata->out)) != 0) return r;
     }
 
     return 0;
 }
 
-static int plugin_submit_frame(void* ud, const frame* f, const frame_handler* handler) {
+static int plugin_submit_frame(void* ud, const frame* f, const frame_receiver* dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
 
@@ -110,21 +110,21 @@ static int plugin_submit_frame(void* ud, const frame* f, const frame_handler* ha
         return r;
     }
 
-    return plugin_drain_buffer(userdata,handler);
+    return plugin_drain_buffer(userdata,dest);
 }
 
-static int plugin_flush(void* ud, const frame_handler* handler) {
+static int plugin_flush(void* ud, const frame_receiver* dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
 
-    if( (r = plugin_drain_buffer(userdata,handler)) != 0) return r;
+    if( (r = plugin_drain_buffer(userdata,dest)) != 0) return r;
 
     if(userdata->buffer.duration > 0) {
         if( (r = frame_move(&userdata->out, &userdata->buffer, userdata->buffer.duration)) != 0) return r;
-        if( (r = handler->cb(handler->userdata,&userdata->out)) != 0) return r;
+        if( (r = dest->submit_frame(dest->handle,&userdata->out)) != 0) return r;
     }
 
-    return handler->flush(handler->userdata);
+    return dest->flush(dest->handle);
 }
 
 const filter_plugin filter_plugin_buffer = {

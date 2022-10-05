@@ -5,8 +5,6 @@
 #include "codecs.h"
 #include "frame.h"
 #include "packet.h"
-#include "audioconfig.h"
-#include "muxerconfig.h"
 #include "samplefmt.h"
 
 #include <stddef.h>
@@ -18,12 +16,12 @@ typedef void* (*encoder_plugin_create)(void);
 
 typedef int (*encoder_plugin_config)(void* userdata, const strbuf* key, const strbuf* value);
 
-typedef int (*encoder_plugin_open)(void* userdata, const audioconfig*, const muxerconfig_handler*);
+typedef int (*encoder_plugin_open)(void* userdata, const frame_source *source, const packet_receiver* dest);
 
 typedef void (*encoder_plugin_close)(void* userdata);
 
-typedef int (*encoder_plugin_submit_frame)(void* userdata, const frame* frame, const packet_handler* handler);
-typedef int (*encoder_plugin_flush)(void* userdata, const packet_handler* handler);
+typedef int (*encoder_plugin_submit_frame)(void* userdata, const frame* frame, const packet_receiver* dest);
+typedef int (*encoder_plugin_flush)(void* userdata, const packet_receiver* dest);
 
 struct encoder_plugin {
     const strbuf name;

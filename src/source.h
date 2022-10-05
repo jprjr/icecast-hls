@@ -10,7 +10,6 @@
 #include "tag.h"
 #include "frame.h"
 #include "samplefmt.h"
-#include "audioconfig.h"
 
 struct source {
     input input;
@@ -18,9 +17,10 @@ struct source {
     filter filter;
     uint8_t configuring;
     tag_handler tag_handler;
-    frame_handler frame_handler;
+    frame_receiver frame_receiver;
     taglist tagcache; /* to hold tags that we find during open, but before run */
-    audioconfig aconfig; /* the decoder will submit audioconfig during open, we'll need to cache */
+    frame_source frame_source; /* during open, the decoder/filter will "open" on a dummy
+    destination that just copies the source info, which is used during source_open_dest */
 };
 
 typedef struct source source;
@@ -44,12 +44,12 @@ int source_open(source* s);
 /* unlike the decoders etc, during open audioconfig is *not* submitted,
  * that gets delayed until we start opening destinations, the destination will
  * call this to get the pipeline ready */
-int source_open_dest(const source* s, const audioconfig_handler* handler);
+int source_open_dest(const source* s, const frame_receiver* dest);
 
 int source_run(const source* s);
 
-int source_set_tag_handler(source* s, const tag_handler*);
-int source_set_frame_handler(source* s, const frame_handler*);
+int source_set_tag_handler(source* s, const tag_handler* dest);
+int source_set_frame_receiver(source* s, const frame_receiver* dest);
 
 #ifdef __cplusplus
 }

@@ -40,12 +40,12 @@ int output_create(output* out, const strbuf* name) {
     return 0;
 }
 
-int output_open(const output* out, const outputconfig* config) {
+int output_open(const output* out, const segment_source* source) {
     if(out->plugin == NULL || out->userdata == NULL) {
         fprintf(stderr,"[output] plugin not selected\n");
         return -1;
     }
-    return out->plugin->open(out->userdata, config);
+    return out->plugin->open(out->userdata, source);
 }
 
 int output_config(const output* out, const strbuf* name, const strbuf* value) {

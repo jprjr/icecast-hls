@@ -36,19 +36,19 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* val) {
     return 0;
 }
 
-static int plugin_open(void* ud, const audioconfig* config, const audioconfig_handler* handler) {
+static int plugin_open(void* ud, const frame_source* source, const frame_receiver* dest) {
     (void)ud;
-    return handler->open(handler->userdata,config);
+    return dest->open(dest->handle,source);
 }
 
-static int plugin_submit_frame(void* ud, const frame* f, const frame_handler* handler) {
+static int plugin_submit_frame(void* ud, const frame* f, const frame_receiver* dest) {
     (void)ud;
-    return handler->cb(handler->userdata,f);
+    return dest->submit_frame(dest->handle,f);
 }
 
-static int plugin_flush(void* ud, const frame_handler* handler) {
+static int plugin_flush(void* ud, const frame_receiver* dest) {
     (void)ud;
-    return handler->flush(handler->userdata);
+    return dest->flush(dest->handle);
 }
 
 const filter_plugin filter_plugin_passthrough = {

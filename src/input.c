@@ -13,11 +13,6 @@ static int default_tag_handler(void* userdata, const taglist* tags) {
     return -1;
 }
 
-int input_set_tag_handler(input* in, const tag_handler* t) {
-    memcpy(&in->tag_handler,t,sizeof(tag_handler));
-    return 0;
-}
-
 void input_init(input* in) {
     in->userdata = NULL;
     in->plugin = NULL;
