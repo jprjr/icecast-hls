@@ -4,6 +4,7 @@
 #include <libavutil/channel_layout.h>
 #include <string.h>
 #include <limits.h>
+#include <stdlib.h>
 
 samplefmt avsampleformat_to_samplefmt(enum AVSampleFormat f) {
     switch(f) {
@@ -44,8 +45,10 @@ enum AVSampleFormat samplefmt_to_avsampleformat(samplefmt f) {
 }
 
 int frame_to_avframe(AVFrame* out, const frame* in) {
+    int r;
     size_t i = 0;
     void* samples;
+    char errmsg[128];
 
     av_frame_unref(out);
 
@@ -58,7 +61,9 @@ int frame_to_avframe(AVFrame* out, const frame* in) {
     out->pkt_dts = in->pts;
     out->format = samplefmt_to_avsampleformat(in->format);
 
-    if(av_frame_get_buffer(out,0) < 0) {
+    if( (r = av_frame_get_buffer(out,0)) < 0) {
+        av_strerror(r,errmsg,sizeof(errmsg));
+        fprintf(stderr,"error allocating AVFrame buffer: %s\n",errmsg);
         return -1;
     }
 
