@@ -415,14 +415,17 @@ int hls_configure(hls* h, const strbuf* key, const strbuf* value) {
 
     if(strbuf_ends_cstr(key,"init-basename")) {
         TRYS(strbuf_copy(&h->init_filename,value));
+        return 0;
     }
 
     if(strbuf_ends_cstr(key,"playlist-filename")) {
         TRYS(strbuf_copy(&h->playlist_filename,value));
+        return 0;
     }
 
     if(strbuf_ends_cstr(key,"entry-prefix")) {
         TRYS(strbuf_copy(&h->entry_prefix,value));
+        return 0;
     }
 
     LOGS("unknown key %.*s", (*key));
