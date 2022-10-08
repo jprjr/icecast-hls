@@ -60,7 +60,11 @@ int frame_ready(frame* f) {
         for(i=0;i<f->channels;i++) {
             if( (mptr = frame_get_channel_int(f,i)) == NULL) {
                 membuf_init(&m);
-                if( (r = membuf_append(&f->samples,&m,sizeof(membuf))) != 0) return r;
+                if( (r = membuf_append(&f->samples,&m,sizeof(membuf))) != 0) {
+                    fprintf(stderr,"out of memory\n");
+                    abort();
+                    return r;
+                }
             } else {
                 membuf_reset(mptr);
             }
@@ -68,7 +72,11 @@ int frame_ready(frame* f) {
     } else {
         if( (mptr = frame_get_channel_int(f,0)) == NULL) {
             membuf_init(&m);
-            if( (r = membuf_append(&f->samples,&m,sizeof(membuf))) != 0) return r;
+            if( (r = membuf_append(&f->samples,&m,sizeof(membuf))) != 0) {
+                fprintf(stderr,"out of memory\n");
+                abort();
+                return r;
+            }
         } else {
             membuf_reset(mptr);
         }
@@ -91,11 +99,19 @@ int frame_buffer(frame* f) {
     if(samplefmt_is_planar(f->format)) {
         for(i=0;i<f->channels;i++) {
             m = frame_get_channel_int(f,i);
-            if( (r = membuf_ready(m, samplesize * f->duration)) != 0) return r;
+            if( (r = membuf_ready(m, samplesize * f->duration)) != 0) {
+                fprintf(stderr,"out of memory\n");
+                abort();
+                return r;
+            }
         }
     } else {
         m = frame_get_channel_int(f,0);
-        if( (r = membuf_ready(m, f->channels * samplesize * f->duration)) != 0) return r;
+        if( (r = membuf_ready(m, f->channels * samplesize * f->duration)) != 0) {
+            fprintf(stderr,"out of memory\n");
+            abort();
+            return r;
+        }
     }
 
     return 0;
