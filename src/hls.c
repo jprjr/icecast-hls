@@ -28,7 +28,7 @@ static STRBUF_CONST(mime_m3u8,"application/vnd.apple.mpegurl");
 static int hls_delete_default_callback(void* userdata, const strbuf* filename) {
     (void)userdata;
     (void)filename;
-    LOG0("delete callback not set");
+    LOG0("delete callback not set"); abort();
     return -1;
 }
 
@@ -37,7 +37,7 @@ static int hls_write_default_callback(void* userdata, const strbuf* filename, co
     (void)filename;
     (void)data;
     (void)mime;
-    LOG0("write callback not set");
+    LOG0("write callback not set"); abort();
     return -1;
 }
 
@@ -163,6 +163,7 @@ void hls_init(hls* h) {
     strbuf_init(&h->init_mime);
     strbuf_init(&h->media_ext);
     strbuf_init(&h->media_mime);
+    strbuf_init(&h->entry_prefix);
     hls_playlist_init(&h->playlist);
     hls_segment_init(&h->segment);
     h->callbacks.delete = hls_delete_default_callback;
@@ -190,6 +191,7 @@ void hls_free(hls* h) {
     strbuf_free(&h->init_mime);
     strbuf_free(&h->media_ext);
     strbuf_free(&h->media_mime);
+    strbuf_free(&h->entry_prefix);
     hls_playlist_free(&h->playlist);
     hls_init(h);
 }
@@ -308,12 +310,13 @@ static int hls_flush_segment(hls* h) {
     TRYS(strbuf_sprintf(&t->tags,
       "#EXT-X-PROGRAM-DATE-TIME:%04u-%02u-%02uT%02u:%02u:%02u.%03uZ\n"
       "#EXTINF:%f,\n"
-      "%.*s\n\n",
+      "%.*s%.*s\n\n",
       tm.year,tm.month,tm.day,tm.hour,tm.min,tm.sec,tm.mill,
       (((double)h->segment.samples) / ((double)h->time_base)),
+      (int)h->entry_prefix.len, (const char*)h->entry_prefix.x,
       (int)t->filename.len, (const char*)t->filename.x));
 
-    TRY0(h->callbacks.write(h->callbacks.userdata,&t->filename, &h->segment.data, &h->media_mime),
+    TRY0(h->callbacks.write(h->callbacks.userdata, &t->filename, &h->segment.data, &h->media_mime),
       LOGS("error writing file %.*s", t->filename));
 
     f.num = h->segment.samples;
@@ -335,9 +338,11 @@ int hls_add_segment(hls* h, const segment* s) {
 
     if(s->type == SEGMENT_TYPE_INIT) {
         TRYS(strbuf_sprintf(&h->header,
-          "#EXT-X-MAP:URI=\"%.*s\"\n",
+          "#EXT-X-MAP:URI=\"%.*s%.*s\"\n",
+          (int)h->entry_prefix.len,
+          (const char*)h->entry_prefix.x,
           (int)h->init_filename.len,
-          (char*)h->init_filename.x));
+          (const char*)h->init_filename.x));
         tmp.x = (void*)s->data;
         tmp.len = s->len;
         return h->callbacks.write(h->callbacks.userdata,&h->init_filename,&tmp,&h->init_mime);
@@ -378,6 +383,8 @@ const strbuf* hls_get_playlist(const hls* h) {
 }
 
 int hls_configure(hls* h, const strbuf* key, const strbuf* value) {
+    int r = -1;
+
     if(strbuf_ends_cstr(key,"target-duration")) {
         errno = 0;
         h->target_duration = strbuf_strtoul(value,10);
@@ -407,23 +414,21 @@ int hls_configure(hls* h, const strbuf* key, const strbuf* value) {
     }
 
     if(strbuf_ends_cstr(key,"init-basename")) {
-        if(strbuf_copy(&h->init_filename,value) != 0) {
-            LOG0("out of memory");
-            return -1;
-        }
-        return 0;
+        TRYS(strbuf_copy(&h->init_filename,value));
     }
 
     if(strbuf_ends_cstr(key,"playlist-filename")) {
-        if(strbuf_copy(&h->playlist_filename,value) != 0) {
-            LOG0("out of memory");
-            return -1;
-        }
-        return 0;
+        TRYS(strbuf_copy(&h->playlist_filename,value));
+    }
+
+    if(strbuf_ends_cstr(key,"entry-prefix")) {
+        TRYS(strbuf_copy(&h->entry_prefix,value));
     }
 
     LOGS("unknown key %.*s", (*key));
-    return -1;
+
+    cleanup:
+    return r;
 }
 
 /* used by the outputs when we're trying to move a picture out-of-band,

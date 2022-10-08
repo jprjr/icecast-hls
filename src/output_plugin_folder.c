@@ -65,7 +65,6 @@ static int directory_create(const strbuf* foldername) {
 }
 
 static int file_delete(const strbuf* filename) {
-    fprintf(stderr,"deleting file: %s\n",filename->x);
 #ifdef DR_WINDOWS
     int r = -1;
     strbuf w = STRBUF_ZERO;
@@ -175,9 +174,6 @@ static int plugin_hls_write(void* ud, const strbuf* filename, const membuf* data
     FILE* f = NULL;
 
     (void)mime;
-
-    fprintf(stderr,"folder: writing %lu byte file %.*s\n",
-      data->len,filename->len,filename->x);
 
     if(data->len == 0) abort();
 

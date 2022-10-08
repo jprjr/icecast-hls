@@ -76,6 +76,7 @@ struct hls {
     strbuf init_mime;  /* the mimetype to use on init segments */
     strbuf media_ext;   /* the file extension to use on media segments */
     strbuf media_mime;  /* the mimetype to use on media segments */
+    strbuf entry_prefix; /* user-configurable prefix on playlist entries */
 
     hls_playlist playlist;
     hls_segment segment;
