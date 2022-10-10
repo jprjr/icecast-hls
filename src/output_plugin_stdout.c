@@ -1,6 +1,8 @@
 #include "output_plugin_stdout.h"
 
 #include <stdio.h>
+#include <errno.h>
+#include <string.h>
 
 #if defined(_WIN32) || defined(_WIN64) || defined(_MSC_VER)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -10,6 +12,11 @@
 #include <io.h>
 #include <fcntl.h>
 #endif
+
+#define LOG0(s) fprintf(stderr,"[output:stdout] "s"\n")
+#define LOG1(s, a) fprintf(stderr,"[output:stdout] "s"\n", (a))
+
+#define TRY0(exp, act) if( (r = (exp)) != 0 ) { act; goto cleanup; }
 
 /* global flag to make sure we only have 1
  * stdout output configured */
@@ -27,7 +34,7 @@ static void plugin_deinit(void) {
 
 static void* plugin_create(void) {
     if(opened) {
-        fprintf(stderr,"[output:stdout] only one instance of this plugin can be active at a time\n");
+        LOG0("only one instance of this plugin can be active at a time");
         return NULL;
     }
     opened = 1;
@@ -42,11 +49,17 @@ static int plugin_config(void* userdata, const strbuf* key, const strbuf* value)
 }
 
 static int plugin_open(void* userdata, const segment_source* source) {
+    int r;
     (void)userdata;
     segment_source_params params = SEGMENT_SOURCE_PARAMS_ZERO;
 #if defined(_WIN32) || defined(_WIN64) || defined(_MSC_VER)
-    if(_setmode( _fileno(stdout), _O_BINARY) == -1) return -1;
+    TRY0(_setmode( _fileno(stdout), _O_BINARY), LOG0("error setting stdout mode to binary") );
+#else
+    (void)r;
+    /* just so the compiler doesn't complain this isn't used */
+    goto cleanup;
 #endif
+    cleanup:
     return source->set_params(source->handle, &params);
 }
 
@@ -57,7 +70,14 @@ static void plugin_close(void* userdata) {
 
 static int plugin_submit_segment(void* userdata, const segment* seg) {
     (void)userdata;
-    return fwrite(seg->data,1,seg->len,stdout) == seg->len ? 0 : -1;
+    int r;
+
+    TRY0(fwrite(seg->data,1,seg->len,stdout) == seg->len ? 0 : -1,
+      LOG1("error writing segment: %s", strerror(errno))
+    );
+
+    cleanup:
+    return r;
 }
 
 static int plugin_submit_picture(void* userdata, const picture* src, picture* out) {
