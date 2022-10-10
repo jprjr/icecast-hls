@@ -160,8 +160,7 @@ int frame_append_convert(frame* dest, const frame* src, samplefmt format) {
     size_t i;
     const membuf* src_buf;
     membuf* dest_buf;
-    size_t src_channels;
-    size_t dest_channels;
+    int src_planar, dest_planar;
     size_t duration;
 
     if(dest->sample_rate != src->sample_rate) return -1;
@@ -173,42 +172,44 @@ int frame_append_convert(frame* dest, const frame* src, samplefmt format) {
 
     if( (r = frame_buffer(dest)) != 0) return r;
 
-    if(samplefmt_is_planar(dest->format)) {
-        dest_channels = dest->channels;
-    } else {
-        dest_channels = 1;
-    }
+    src_planar = samplefmt_is_planar(src->format);
+    dest_planar = samplefmt_is_planar(dest->format);
 
-    if(samplefmt_is_planar(src->format)) {
-        src_channels = src->channels;
-    } else {
-        src_channels = 1;
-    }
-
-    if(src_channels == dest_channels) {
-        /* either both formats are planar are both are packed */
-        for(i=0;i<src_channels;i++) {
+    if(src_planar && dest_planar) {
+        for(i=0;i<src->channels;i++) {
             src_buf  = frame_get_channel_int(src,i);
             dest_buf = frame_get_channel_int(dest,i);
-            /* if src_channels == 1, but src->channels != 1, this is definitely packed audio */
-            /* otherwise it could be they're all planar, or it's planar but still only one channel */
-            samplefmt_convert(&dest_buf->x[duration * samplefmt_size(dest->format) * (dest_channels == 1 && dest->channels != 1 ? dest->channels : 1)],src_buf->x,src->format,dest->format, src->duration * (src_channels == 1 && src->channels != 1 ? src->channels : 1), 1, 0, 1, 0);
+            samplefmt_convert(&dest_buf->x[duration * samplefmt_size(dest->format)],src_buf->x,src->format,dest->format, src->duration, 1, 0, 1, 0);
         }
-    } else if(src_channels < dest_channels) {
-        /* going from packed to planar */
-        for(i=0;i<dest_channels;i++) {
+        return 0;
+    }
+
+    if(!src_planar && !dest_planar) {
+        for(i=0;i<src->channels;i++) {
+            src_buf  = frame_get_channel_int(src,i);
+            dest_buf = frame_get_channel_int(dest,i);
+            samplefmt_convert(&dest_buf->x[duration * samplefmt_size(dest->format) * src->channels],src_buf->x,src->format,dest->format, src->duration * src->channels, 1, 0, 1, 0);
+        }
+        return 0;
+    }
+
+    if(!src_planar && dest_planar) {
+        for(i=0;i<src->channels;i++) {
             src_buf  = frame_get_channel_int(src,0);
             dest_buf = frame_get_channel_int(dest,i);
             samplefmt_convert(&dest_buf->x[duration * samplefmt_size(dest->format)],src_buf->x,src->format,dest->format, src->duration, src->channels, i, 1, 0);
         }
-    } else {
-        /* going from planar to packed */
-        for(i=0;i<src_channels;i++) {
+        return 0;
+    }
+
+    /* if(src_planar && !dest_planar) { */
+        for(i=0;i<src->channels;i++) {
             src_buf  = frame_get_channel_int(src,i);
             dest_buf = frame_get_channel_int(dest,0);
             samplefmt_convert(&dest_buf->x[duration * samplefmt_size(dest->format) * dest->channels],src_buf->x,src->format,dest->format, src->duration, 1, 0, dest->channels, i);
         }
-    }
+
+    /* } */
 
     return 0;
 }
