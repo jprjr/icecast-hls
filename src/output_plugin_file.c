@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
 
 #if defined(_WIN32) || defined(_WIN64) || defined(_MSC_VER)
 #define DR_WINDOWS
@@ -18,6 +19,19 @@
 #else
 #include <unistd.h>
 #endif
+
+#define LOG0(s) fprintf(stderr,"[output:file] "s"\n")
+#define LOG1(s, a) fprintf(stderr,"[output:file] "s"\n", (a))
+#define LOG2(s, a, b) fprintf(stderr,"[output:file] "s"\n", (a), (b))
+#define LOG3(s, a, b, c) fprintf(stderr,"[output:file] "s"\n", (a), (b), (c))
+#define LOGS(s, a) LOG2(s, (int)(a).len, (const char *)(a).x )
+#define LOGS1(s, a, b) LOG3(s, (int)(a).len, (const char *)(a).x, b )
+#define LOGERRNO(s) LOG1(s": %s", strerror(errno))
+
+#define TRY(exp, act) if(!(exp)) { act; }
+#define TRY0(exp, act) if( (r = (exp)) != 0 ) { act; goto cleanup; }
+#define TRYNULL(exp, act) if( (exp) == NULL) { act; r=-1; goto cleanup; }
+#define TRYS(exp) TRY0(exp, LOG0("out of memory"); abort())
 
 /* keep a global counter for writing out picture files. We could
  * have multiple file destinations going to the same folder,
@@ -35,6 +49,7 @@ typedef struct file_userdata file_userdata;
 
 static FILE* file_open(const strbuf* filename) {
     FILE* f;
+    int r;
 #ifdef DR_WINDOWS
     strbuf w;
     w.x = NULL; w.a = 0; w.len = 0;
@@ -44,20 +59,20 @@ static FILE* file_open(const strbuf* filename) {
 #ifdef DR_WINDOWS
     /* since we'll include the terminating zero we don't
      * need to manually terminate this after calling strbuf_wide */
-    if(strbuf_wide(&w,&t) != 0) goto cleanup;
-    f = _wfopen((wchar_t *)w.x, L"wb");
+    TRYS(strbuf_wide(&w,&t))
+    TRYNULL(f = _wfopen((wchar_t *)w.x, L"wb"),
+      LOGS1("error opening file %.*s: %s", (*filename), strerror(errno)));
 #else
-    f = fopen((const char *)filename->x,"wb");
+    TRYNULL(f = fopen((const char *)filename->x,"wb"),
+      LOGS1("error opening file %.*s: %s", (*filename), strerror(errno)));
 #endif
-    if(f == NULL) {
-        printf("[output:file] error opening file: %.*s\n",(int)filename->len,filename->x);
-    }
 
-#ifdef DR_WINDOWS
     cleanup:
+#ifdef DR_WINDOWS
     strbuf_free(&w);
 #endif
 
+    (void)r;
     return f;
 }
 
@@ -82,27 +97,34 @@ static void plugin_deinit(void) {
 }
 
 static void* plugin_create(void) {
-    file_userdata* userdata = (file_userdata*)malloc(sizeof(file_userdata));
-    if(userdata == NULL) return userdata;
+    file_userdata* userdata = NULL;
+    int r = -1;
+    TRYNULL(userdata = (file_userdata*)malloc(sizeof(file_userdata)),
+      LOGERRNO("error creating plugin"));
 
     userdata->f = NULL;
     strbuf_init(&userdata->filename);
     strbuf_init(&userdata->basename);
+
+    cleanup:
+    (void)r;
     return userdata;
 }
 
 static int plugin_open(void* ud, const segment_source* source) {
+    int r;
     segment_source_params params = SEGMENT_SOURCE_PARAMS_ZERO;
     strbuf tmp = STRBUF_ZERO;
 #if defined(_WIN32) || defined(_WIN64) || defined(_MSC_VER)
     strbuf tmp2 = STRBUF_ZERO;
 #endif
     strbuf* t = NULL;
+    r = 0;
 
     file_userdata* userdata = (file_userdata*)ud;
-    if(userdata->filename.len == 0) return -1;
-    userdata->f = file_open(&userdata->filename);
-    if(userdata->f == NULL) return -1;
+    TRY(userdata->filename.len != 0, LOG0("no filename given"); r=-1; goto cleanup);
+    /* error already logged in file open, we'll just flush stderr */
+    TRYNULL(userdata->f = file_open(&userdata->filename), fflush(stderr));
 
     if(strbuf_rchrbuf(&tmp,&userdata->filename,'/') == 0
 #if defined(_WIN32) || defined(_WIN64) || defined(_MSC_VER)
@@ -113,30 +135,40 @@ static int plugin_open(void* ud, const segment_source* source) {
 #if defined(_WIN32) || defined(_WIN64) || defined(_MSC_VER)
         if(tmp2.x > tmp.x) t = &tmp2;
 #endif
-        if(membuf_append(&userdata->basename,userdata->filename.x,userdata->filename.len - t->len + 1) != 0) return -1;
+        TRYS(membuf_append(&userdata->basename,userdata->filename.x,userdata->filename.len - t->len));
     }
 
-    return source->set_params(source->handle, &params);
+    cleanup:
+    if(r == 0) r = source->set_params(source->handle, &params);
+    return r;
 }
 
 static int plugin_config(void* ud, const strbuf* key, const strbuf* val) {
     int r;
     file_userdata* userdata = (file_userdata*)ud;
 
-    if(strbuf_equals_cstr(key,"file")) {
-        if( (r = strbuf_copy(&userdata->filename,val)) != 0) return r;
-        if( (r = strbuf_term(&userdata->filename)) != 0) return r;
+    if(strbuf_ends_cstr(key,"file")) {
+        TRYS(strbuf_copy(&userdata->filename,val));
+        TRYS(strbuf_term(&userdata->filename));
         return 0;
     }
-    fprintf(stderr,"file plugin: unknown key \"%.*s\"\n",(int)key->len,(const char *)key->x);
+
+    LOGS("unknown key \"%.*s\"",(*key));
+
+    cleanup:
     return -1;
 }
 
 static int plugin_submit_segment(void* ud, const segment* seg) {
+    int r;
     file_userdata* userdata = (file_userdata*)ud;
-    if(seg == NULL) return 0;
 
-    return fwrite(seg->data,1,seg->len,userdata->f) == seg->len ? 0 : -1;
+    TRY0(fwrite(seg->data,1,seg->len,userdata->f) == seg->len ? 0 : -1,
+      LOG1("error writing segment: %s", strerror(errno))
+    );
+
+    cleanup:
+    return r;
 }
 
 static int plugin_submit_picture(void* ud, const picture* src, picture* out) {
@@ -149,43 +181,36 @@ static int plugin_submit_picture(void* ud, const picture* src, picture* out) {
 
     picture_id = thread_atomic_uint_inc(&counter) % 100000000;
 
-#define TRY(x) if( (r = (x)) != 0 ) goto cleanup
-
     if(userdata->basename.len > 0) {
-        TRY(strbuf_cat(&dest_filename,&userdata->basename));
+        TRYS(strbuf_cat(&dest_filename,&userdata->basename));
     }
-
-    TRY(strbuf_readyplus(&dest_filename,13));
 
     if(strbuf_ends_cstr(&src->mime,"/png")) {
         fmt_str = "%08u.png";
-    } else if(strbuf_ends_cstr(&src->mime,"/jpg") | strbuf_ends_cstr(&src->mime,"jpeg")) {
+    } else if(strbuf_ends_cstr(&src->mime,"/jpg") || strbuf_ends_cstr(&src->mime,"jpeg")) {
         fmt_str = "%08u.jpg";
     } else if(strbuf_ends_cstr(&src->mime,"/gif")) {
         fmt_str = "%08u.gif";
+    } else if(strbuf_equals_cstr(&src->mime,"image/")) {
+        /* just assume it's JPG */
+        fmt_str = "%08u.jpg";
     } else {
-        fprintf(stderr,"[output:file] unknown image mime type %.*s\n",
-          (int)src->mime.len,(char*)src->mime.x);
+        LOGS("WARNING: unknown image mime type %.*s",src->mime);
         r = 0; goto cleanup;
     }
 
-    snprintf((char *)&dest_filename.x[userdata->basename.len],13,fmt_str,picture_id);
-    dest_filename.len += 13;
-    /* snprintf terminated the string so we won't manually terminate it */
+    TRYS(strbuf_sprintf(&dest_filename,fmt_str,picture_id));
+    TRYS(strbuf_term(&dest_filename));
 
-    f = file_open(&dest_filename);
-    if(f == NULL) {
-        r = -1;
-        goto cleanup;
-    }
-    if(fwrite(src->data.x,1,src->data.len,f) != src->data.len) {
-        r = -1;
-        goto cleanup;
-    }
+    TRYNULL(f = file_open(&dest_filename), fflush(stderr));
 
-    TRY(membuf_append(&out->mime,"-->",3));
-    TRY(membuf_append(&out->data,&dest_filename.x[userdata->basename.len],12));
-    TRY(strbuf_copy(&out->desc,&src->desc));
+    TRY0(fwrite(src->data.x,1,src->data.len, f) == src->data.len ? 0 : -1,
+      LOG1("error writing picture: %s", strerror(errno))
+    );
+
+    TRYS(membuf_append(&out->mime,"-->",3));
+    TRYS(membuf_append(&out->data,&dest_filename.x[userdata->basename.len],12));
+    TRYS(strbuf_copy(&out->desc,&src->desc));
     r = 0;
 
     cleanup:
