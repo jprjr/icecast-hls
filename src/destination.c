@@ -152,9 +152,7 @@ int destination_config(destination* dest, const strbuf* key, const strbuf* val) 
 
     if(strbuf_equals_cstr(key,"images")) {
         f = 0;
-        fprintf(stderr,"images, val=%.*s\n",(int)val->len,(char*)val->x);
         if(strbuf_casecontains_cstr(val,"keep")) {
-            printf("keep: yes\n");
             dest->image_mode |= IMAGE_MODE_KEEP;
             f++;
         }
@@ -257,6 +255,19 @@ int destination_config(destination* dest, const strbuf* key, const strbuf* val) 
         if( (r = output_create(&dest->output,val)) != 0) return r;
         dest->configuring = CONFIGURING_OUTPUT;
         return 0;
+    }
+
+    if(strbuf_begins_cstr(key,"filter-")) {
+        return filter_config(&dest->filter,key,val);
+    }
+    if(strbuf_begins_cstr(key,"encoder-")) {
+        return encoder_config(&dest->encoder,key,val);
+    }
+    if(strbuf_begins_cstr(key,"muxer-")) {
+        return muxer_config(&dest->muxer,key,val);
+    }
+    if(strbuf_begins_cstr(key,"output-")) {
+        return output_config(&dest->output,key,val);
     }
 
     switch(dest->configuring) {

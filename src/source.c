@@ -102,6 +102,18 @@ int source_config(source* s, const strbuf* key, const strbuf* val) {
         return 0;
     }
 
+    if(strbuf_begins_cstr(key,"input-")) {
+        return input_config(&s->input,key,val);
+    }
+
+    if(strbuf_begins_cstr(key,"decoder-")) {
+        return decoder_config(&s->decoder,key,val);
+    }
+
+    if(strbuf_begins_cstr(key,"filter-")) {
+        return filter_config(&s->filter,key,val);
+    }
+
     switch(s->configuring) {
         case CONFIGURING_INPUT: return input_config(&s->input,key,val);
         case CONFIGURING_DECODER: return decoder_config(&s->decoder,key,val);
