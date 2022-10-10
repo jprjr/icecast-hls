@@ -165,7 +165,8 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
         return r;
     }
 
-    me.codec       = CODEC_TYPE_USAC;
+    me.codec       = CODEC_TYPE_AAC;
+    me.profile     = CODEC_PROFILE_AAC_USAC;
     me.channels    = source->channels;
     me.sample_rate = source->sample_rate;
     me.frame_len   = userdata->frame_len;

@@ -158,6 +158,7 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     switch(userdata->codec->id) {
         case AV_CODEC_ID_AAC: {
             me.codec = CODEC_TYPE_AAC;
+            me.profile = userdata->ctx->profile + 1;
             me.roll_distance = -1;
             TRY(userdata->ctx->extradata_size > 0, LOG0("aac missing extradata"));
             TRY0(membuf_append(&dsi, userdata->ctx->extradata, userdata->ctx->extradata_size),

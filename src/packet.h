@@ -32,6 +32,7 @@ struct packet_source {
     void* handle;
     packet_source_set_params_cb set_params;
     codec_type codec;
+    unsigned int profile; /* codec-specific profile */
     unsigned int channels;
     unsigned int sample_rate;
     unsigned int frame_len;

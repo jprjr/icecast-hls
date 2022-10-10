@@ -445,7 +445,6 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     userdata->track->stream_type = FMP4_STREAM_TYPE_AUDIO;
 
     switch(source->codec) {
-        case CODEC_TYPE_USAC: /* fall-through */
         case CODEC_TYPE_AAC: {
             userdata->track->codec = FMP4_CODEC_MP4A;
             userdata->track->object_type = FMP4_OBJECT_TYPE_AAC;
