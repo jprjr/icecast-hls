@@ -11,6 +11,7 @@
 #define MINPERDAY  (MINPERHOUR * HOURPERDAY)
 #define SECPERHOUR (SECPERMIN * MINPERHOUR)
 #define SECPERDAY  (SECPERHOUR * HOURPERDAY)
+#define NANOPERDAY (NANOPERSEC * SECPERDAY)
 
 #if defined(_WIN32) || defined(_WIN64) || defined(_MSC_VER)
 #define ICH_TIME_WINDOWS
@@ -38,8 +39,8 @@ int ich_time_now(ich_time* t) {
     GetSystemTimePreciseAsFileTime(&tm);
     i.LowPart = tm.dwLowDateTime;
     i.HighPart = tm.dwHighDateTime;
-    t->seconds = i.QuadPart / 10000000ULL - 11644473600ULL;
-    t->nanoseconds = (i.QuadPart % (NANOPERDAY / 100)) * 100;
+    t->seconds =      i.QuadPart / 10000000ULL - 11644473600ULL;
+    t->nanoseconds = (i.QuadPart % 10000000ULL) * 100;
     return 0;
 #elif defined(ICH_TIME_UNIX)
     struct timespec tv;

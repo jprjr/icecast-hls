@@ -26,17 +26,13 @@ struct file_userdata {
 typedef struct file_userdata file_userdata;
 
 static FILE* file_open(const strbuf* filename) {
-    FILE* f;
+    FILE* f = NULL;
 #ifdef DR_WINDOWS
-    strbuf w;
-    w.x = NULL; w.a = 0; w.len = 0;
-#endif
-    f = NULL;
+    strbuf w = STRBUF_ZERO;
 
-#ifdef DR_WINDOWS
     /* since we'll include the terminating zero we don't
      * need to manually terminate this after calling strbuf_wide */
-    if(strbuf_wide(&w,&t) != 0) goto cleanup;
+    if(strbuf_wide(&w,filename) != 0) goto cleanup;
     f = _wfopen((wchar_t *)w.x, L"rb");
 #else
     f = fopen((const char *)filename->x,"rb");

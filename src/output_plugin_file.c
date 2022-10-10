@@ -48,18 +48,13 @@ struct file_userdata {
 typedef struct file_userdata file_userdata;
 
 static FILE* file_open(const strbuf* filename) {
-    FILE* f;
-    int r;
+    FILE* f = NULL;
+    int r = 0;
 #ifdef DR_WINDOWS
-    strbuf w;
-    w.x = NULL; w.a = 0; w.len = 0;
-#endif
-    f = NULL;
-
-#ifdef DR_WINDOWS
+    strbuf w = STRBUF_ZERO;
     /* since we'll include the terminating zero we don't
      * need to manually terminate this after calling strbuf_wide */
-    TRYS(strbuf_wide(&w,&t))
+    TRYS(strbuf_wide(&w,filename))
     TRYNULL(f = _wfopen((wchar_t *)w.x, L"wb"),
       LOGS1("error opening file %.*s: %s", (*filename), strerror(errno)));
 #else
