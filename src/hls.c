@@ -448,7 +448,7 @@ int hls_submit_picture(hls* h, const picture* src, picture* out) {
     if(strbuf_ends_cstr(&src->mime,"/png")) {
         fmt_str = "%08u.png";
         mime = src->mime;
-    } else if(strbuf_ends_cstr(&src->mime,"/jpg") | strbuf_ends_cstr(&src->mime,"jpeg")) {
+    } else if(strbuf_ends_cstr(&src->mime,"/jpg") || strbuf_ends_cstr(&src->mime,"jpeg")) {
         fmt_str = "%08u.jpg";
         mime = src->mime;
     } else if(strbuf_ends_cstr(&src->mime,"/gif")) {
@@ -460,7 +460,7 @@ int hls_submit_picture(hls* h, const picture* src, picture* out) {
     } else if(strbuf_equals_cstr(&src->mime,"image/")) {
         fmt_str = "%08u.jpg";
         mime.x = (uint8_t*)"image/jpg";
-        mime.len = 0;
+        mime.len = 9;
     } else {
         /* we just return 0 and clean up so the caller
          * just strips the image */
