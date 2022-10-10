@@ -166,6 +166,7 @@ static int plugin_process_vorbis_comment(plugin_userdata *userdata) {
     while( (res = mflac_vorbis_comment_length(&userdata->m,&comment_len)) == MFLAC_OK) {
         if(strbuf_ready(&userdata->tmpstr,comment_len) != 0) {
             fprintf(stderr,"[decoder:miniflac] %u out of memory\n",__LINE__);
+            abort();
             return -1;
         }
 
