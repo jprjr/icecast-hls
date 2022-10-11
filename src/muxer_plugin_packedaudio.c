@@ -187,7 +187,8 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     if( (source->frame_len * 90000) % source->sample_rate != 0) {
         LOG1("WARNING, sample rate %u prevents MPEG-TS timestamps from aligning, consider resampling", source->sample_rate);
     }
-    userdata->samples_per_packet = source->frame_len * 90000 / source->sample_rate;
+    userdata->mpeg_samples_per_packet = source->frame_len * 90000 / source->sample_rate;
+    userdata->samples_per_packet = source->frame_len;
 
     me.time_base = source->sample_rate;
     me.frame_len = source->frame_len;
