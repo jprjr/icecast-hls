@@ -159,7 +159,6 @@ int destination_config(destination* dest, const strbuf* key, const strbuf* val) 
         }
 
         if(strbuf_casecontains_cstr(val,"inband")) {
-            printf("inband: yes\n");
             dest->image_mode |= IMAGE_MODE_INBAND;
             f++;
         }

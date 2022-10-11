@@ -471,9 +471,6 @@ int hls_submit_picture(hls* h, const picture* src, picture* out) {
     TRYS(strbuf_sprintf(&dest_filename,fmt_str,picture_id));
     TRYS(h->callbacks.write(h->callbacks.userdata, &dest_filename, &src->data, &mime));
 
-    LOG3("segment %lu: wrote picture %.*s",
-      h->counter+1,(int)dest_filename.len,(char *)dest_filename.x);
-
     TRYS(strbuf_append(&out->mime,"-->",3));
     if(src->desc.len > 0) TRYS(strbuf_copy(&out->desc,&src->desc));
     TRYS(strbuf_copy(&out->data,&dest_filename));
@@ -489,8 +486,6 @@ int hls_expire_file(hls* h, const strbuf* filename) {
 
     TRYS(strbuf_cat(&h->segment.expired_files,filename));
     TRYS(strbuf_term(&h->segment.expired_files));
-    LOG3("segment %lu: marking file as expired %.*s",
-      h->counter+1,(int)filename->len,(char *)filename->x);
 
     cleanup:
     return r;
