@@ -5,6 +5,7 @@
 
 #include <libavcodec/avcodec.h>
 #include <libavutil/frame.h>
+#include <libavutil/channel_layout.h>
 #include <libavutil/dict.h>
 
 #include "pack_u32be.h"
@@ -143,7 +144,11 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
 
     TRY( (userdata->ctx->sample_fmt = find_best_format(userdata->codec,samplefmt_to_avsampleformat(source->format))) != AV_SAMPLE_FMT_NONE,
         LOG0("unable to find a suitable sample format"));
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
     av_channel_layout_default(&userdata->ctx->ch_layout,source->channels);
+#else
+    userdata->ctx->channel_layout = av_get_default_channel_layout(source->channels);
+#endif
 
     TRY(avcodec_open2(userdata->ctx, userdata->codec, &userdata->codec_config) >= 0,
         LOG0("unable to open codec context"));

@@ -52,10 +52,16 @@ int frame_to_avframe(AVFrame* out, const frame* in) {
 
     av_frame_unref(out);
 
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,17,100)
     out->time_base.num = 1;
     out->time_base.den = in->sample_rate;
+#endif
     out->sample_rate = in->sample_rate;
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
     av_channel_layout_default(&out->ch_layout,in->channels);
+#else
+    out->channel_layout = av_get_default_channel_layout(in->channels);
+#endif
     out->nb_samples = in->duration;
     out->pts = in->pts;
     out->pkt_dts = in->pts;
@@ -87,7 +93,11 @@ int avframe_to_frame(frame* out, const AVFrame* in) {
 
     out->duration = in->nb_samples;
     out->format = avsampleformat_to_samplefmt(in->format);
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
     out->channels = in->ch_layout.nb_channels;
+#else
+    out->channels = av_get_channel_layout_nb_channels(in->channel_layout);
+#endif
     out->pts = in->pts;
     out->sample_rate = in->sample_rate;
 

@@ -7,7 +7,7 @@
 #include <libavfilter/buffersink.h>
 #include <libavutil/opt.h>
 #include <libavutil/frame.h>
-
+#include <libavutil/channel_layout.h>
 
 #include <errno.h>
 
@@ -97,7 +97,12 @@ static int plugin_graph_open(plugin_userdata* userdata) {
     const char* out_name = NULL;
     char args[512];
     char layout[64];
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
     AVChannelLayout ch_layout;
+#else
+    uint64_t channel_layout;
+    int64_t channel_layout_tmp;
+#endif
     enum AVSampleFormat fmt;
 
     if(buffer_filter == NULL || buffersink_filter == NULL) {
@@ -111,9 +116,19 @@ static int plugin_graph_open(plugin_userdata* userdata) {
         return -1;
     }
 
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
     av_channel_layout_default(&ch_layout, userdata->src_config.channels);
     av_channel_layout_describe(&ch_layout, layout, sizeof(layout));
     av_channel_layout_uninit(&ch_layout);
+#else
+    if( (channel_layout_tmp = av_get_default_channel_layout(userdata->src_config.channels)) < 0) {
+        av_strerror(channel_layout_tmp,args,sizeof(args));
+        fprintf(stderr,"[filter:avfilter] unable to get channel layout: %s\n", args);
+        return -1;
+    }
+    channel_layout = (uint64_t) channel_layout_tmp;
+    av_get_channel_layout_string(layout,sizeof(layout),userdata->src_config.channels,channel_layout);
+#endif
 
     snprintf(args,sizeof(args),
       "time_base=%u/%u:sample_rate=%u:sample_fmt=%s:channel_layout=%s",
@@ -211,7 +226,11 @@ static int plugin_handle_frame_source_params(void* ud, const frame_source_params
 
 static int plugin_open(void* ud, const frame_source* source, const frame_receiver *dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
     AVChannelLayout ch_layout;
+#else
+    uint64_t channel_layout;
+#endif
 
     userdata->src_config = *source;
 
@@ -226,10 +245,18 @@ static int plugin_open(void* ud, const frame_source* source, const frame_receive
         return -1;
     }
 
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
     if(av_buffersink_get_ch_layout(userdata->buffersink, &ch_layout) < 0) return -1;
+#else
+    channel_layout = av_buffersink_get_channel_layout(userdata->buffersink);
+#endif
 
     userdata->dest_config.sample_rate = av_buffersink_get_sample_rate(userdata->buffersink);
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
     userdata->dest_config.channels = ch_layout.nb_channels;
+#else
+    userdata->dest_config.channels = av_get_channel_layout_nb_channels(channel_layout);
+#endif
     userdata->dest_config.format = avsampleformat_to_samplefmt(av_buffersink_get_format(userdata->buffersink));
     userdata->dest_config.handle = userdata;
     userdata->dest_config.set_params = plugin_handle_frame_source_params;
