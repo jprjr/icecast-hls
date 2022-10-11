@@ -12,6 +12,7 @@ SOURCES = \
 	src/main.c \
 	src/miniflac.c \
 	src/minifmp4.c \
+	src/codecs.c \
 	src/decoder.c \
 	src/decoder_plugin.c \
 	src/decoder_plugin_miniflac.c \
@@ -39,6 +40,7 @@ SOURCES = \
 	src/muxer.c \
 	src/muxer_plugin.c \
 	src/muxer_plugin_fmp4.c \
+	src/muxer_plugin_packedaudio.c \
 	src/output.c \
 	src/output_plugin.c \
 	src/output_plugin_file.c \
@@ -66,6 +68,7 @@ REQUIRED_OBJS = \
 	src/membuf.o \
 	src/miniflac.o \
 	src/minifmp4.o \
+	src/codecs.c \
 	src/decoder.o \
 	src/decoder_plugin.o \
 	src/decoder_plugin_miniflac.o \
@@ -90,6 +93,7 @@ REQUIRED_OBJS = \
 	src/muxer.o \
 	src/muxer_plugin.o \
 	src/muxer_plugin_fmp4.o \
+	src/muxer_plugin_packedaudio.o \
 	src/output.o \
 	src/output_plugin.o \
 	src/output_plugin_file.o \
