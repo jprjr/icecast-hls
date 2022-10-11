@@ -125,7 +125,10 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
         return 0;
     }
 
-    if(strbuf_ends_cstr(key,"bitrate")) {
+    if(strbuf_ends_cstr(key,"bitrate") || strbuf_ends_cstr(key,"-b") || strbuf_equals_cstr(key,"b")) {
+        if(strbuf_caseends_cstr(value,"k")) {
+            mult = 1000;
+        }
         if(strbuf_caseends_cstr(value,"kbps")) {
             mult = 1000;
         }

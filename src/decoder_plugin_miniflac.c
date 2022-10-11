@@ -43,6 +43,7 @@ struct plugin_userdata {
     const input* input;
     strbuf tmpstr;
     taglist list;
+    uint8_t empty_tags; /* if 1 we keep empty tags */
 };
 
 typedef struct plugin_userdata plugin_userdata;
@@ -62,14 +63,37 @@ static void* plugin_create(void) {
     strbuf_init(&userdata->tmpstr);
     taglist_init(&userdata->list);
     userdata->input = NULL;
+    userdata->empty_tags = 0;
     return userdata;
 }
 
-static int plugin_config(void* userdata, const strbuf* key, const strbuf* value) {
-    (void)key;
-    (void)value;
-    (void)userdata;
-    return 0;
+static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
+    plugin_userdata* userdata = (plugin_userdata*)ud;
+    if(strbuf_ends_cstr(key,"empty tags") || strbuf_ends_cstr(key,"empty-tags")) {
+        if(strbuf_truthy(value)) {
+            userdata->empty_tags = 1;
+            return 0;
+        }
+        if(strbuf_falsey(value)) {
+            userdata->empty_tags = 0;
+            return 0;
+        }
+        if(strbuf_caseequals_cstr(value,"keep")) {
+            userdata->empty_tags = 1;
+            return 0;
+        }
+        if(strbuf_caseequals_cstr(value,"remove")) {
+            userdata->empty_tags = 0;
+            return 0;
+        }
+        fprintf(stderr,"[decoder:miniflac] unknown value for key %.*s: %.*s\n",
+          (int)key->len,(char *)key->x,(int)value->len,(char *)value->x);
+        return -1;
+    }
+
+    fprintf(stderr,"[decoder:miniflac] unknown key %.*s\n",
+      (int)key->len,(char *)key->x);
+    return -1;
 }
 
 static void plugin_strerror(MINIFLAC_RESULT res) {
@@ -181,6 +205,7 @@ static int plugin_process_vorbis_comment(plugin_userdata *userdata) {
         key.x   = userdata->tmpstr.x;
         key.len = userdata->tmpstr.len - eq.len;
         if(key.len == 0) continue;
+        if(val.len == 0 && !userdata->empty_tags) continue;
 
         strbuf_lower(&key);
 

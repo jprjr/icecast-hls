@@ -126,6 +126,7 @@ static int id3_encode_text_frame(id3* id3, const tag* t) {
 }
 
 static int id3_encode_tag(id3* id3, const tag* t) {
+
     if(t->key.x[0] == 'T' ||
        strbuf_equals_cstr(&t->key,"GRP1") ||
        strbuf_equals_cstr(&t->key,"MVNM") ||
@@ -146,6 +147,11 @@ int id3_add_tag(id3* id3, const tag* t) {
     int r;
     size_t len = 0;
     size_t pos = id3->len;
+
+    /* this happens if a picture block isn't handled by a custom mapping,
+     * we never want to send binary data as a text frame, so just don't encode it */
+    if(strbuf_caseequals_cstr(&t->key,"txxx:metadata_picture_block")) return 0;
+
 
     if( (r = membuf_readyplus(id3,10)) != 0) return r;
 
