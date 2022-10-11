@@ -157,7 +157,7 @@ int muxer_submit_tags(const muxer* m, const taglist* tags) {
         pack_u32be(&tmp_tag.value.x[4],dest.mime.len);
         memcpy(&tmp_tag.value.x[8],dest.mime.x,dest.mime.len);
         pack_u32be(&tmp_tag.value.x[8 + dest.mime.len],dest.desc.len);
-        memcpy(&tmp_tag.value.x[8 + dest.mime.len + 4],dest.desc.x,dest.desc.len);
+        if(dest.desc.len) memcpy(&tmp_tag.value.x[8 + dest.mime.len + 4],dest.desc.x,dest.desc.len);
         memcpy(&tmp_tag.value.x[8 + dest.mime.len + 4 + dest.desc.len],&t->value.x[8 + src.mime.len + 4 + src.desc.len],16);
         pack_u32be(&tmp_tag.value.x[8 + dest.mime.len + 4 + dest.desc.len + 16],dest.data.len);
         memcpy(&tmp_tag.value.x[8 + dest.mime.len + 4 + dest.desc.len + 20],dest.data.x,dest.data.len);

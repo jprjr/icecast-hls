@@ -66,6 +66,8 @@ int membuf_append(membuf* m, const void* src, size_t len) {
     int r;
 
     if( (r = membuf_readyplus(m,len)) != 0) return r;
+    if(src == NULL) abort();
+    if(m->x == NULL) abort();
     memcpy(&m->x[m->len],src,len);
     m->len += len;
     return 0;
