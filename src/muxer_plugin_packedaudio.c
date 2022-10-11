@@ -25,13 +25,15 @@ static STRBUF_CONST(key_mpegts,"PRIV:com.apple.streaming.transportStreamTimestam
 
 struct plugin_userdata {
     unsigned int segment_length;
-    size_t samples_per_segment;
+    size_t packets_per_segment;
+    size_t mpeg_samples_per_packet; /* packet # of samples scaled to mpeg-ts ticks */
+    size_t samples_per_packet;
     membuf samples;
     membuf segment;
     uint8_t profile;
     uint8_t freq;
     uint8_t ch_index;
-    size_t samplecount;
+    size_t packetcount;
     uint64_t ts; /* represents the 33-bit MPEG timestamp */
     id3 id3;
     int (*append_packet)(struct plugin_userdata*, const packet*);
@@ -86,7 +88,10 @@ static void* plugin_create(void) {
     userdata->profile = 0;
     userdata->freq = 0;
     userdata->ch_index = 0;
-    userdata->samplecount = 0;
+    userdata->packets_per_segment = 0;
+    userdata->mpeg_samples_per_packet = 0;
+    userdata->samples_per_packet = 0;
+    userdata->packetcount = 0;
     userdata->ts = 0x0800000000; /* start at the rollover, if we have padding we'll subtract */
 
     return userdata;
@@ -179,6 +184,11 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
         }
     }
 
+    if( (source->frame_len * 90000) % source->sample_rate != 0) {
+        LOG1("WARNING, sample rate %u prevents MPEG-TS timestamps from aligning, consider resampling", source->sample_rate);
+    }
+    userdata->samples_per_packet = source->frame_len * 90000 / source->sample_rate;
+
     me.time_base = source->sample_rate;
     me.frame_len = source->frame_len;
     me.handle = userdata;
@@ -188,7 +198,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     if( (r = id3_ready(&userdata->id3)) != 0) return r;
 
     params.packets_per_segment = (userdata->segment_length * source->sample_rate / source->frame_len) + (source->sample_rate % source->frame_len > (source->frame_len / 2));
-    userdata->samples_per_segment = params.packets_per_segment * source->frame_len;
+    userdata->packets_per_segment = params.packets_per_segment;
     userdata->ts -= (uint64_t)source->padding * (uint64_t)90000 / (uint64_t)source->sample_rate;
 
     return source->set_params(source->handle, &params);
@@ -227,7 +237,7 @@ static int plugin_send(plugin_userdata* userdata, const segment_receiver* dest) 
     s.type = SEGMENT_TYPE_MEDIA;
     s.data = userdata->segment.x;
     s.len  = userdata->segment.len;
-    s.samples = userdata->samplecount;
+    s.samples = userdata->packetcount * userdata->samples_per_packet;
     if( (r = dest->submit_segment(dest->handle,&s)) != 0) {
         LOG0("error submitting segment");
         return r;
@@ -245,12 +255,12 @@ static int plugin_submit_packet(void* ud, const packet* packet, const segment_re
     if( (r = userdata->append_packet(userdata,packet)) != 0) {
         return r;
     }
-    userdata->samplecount += packet->duration;
+    userdata->packetcount++;
 
-    if(userdata->samplecount >= userdata->samples_per_segment) {
+    if(userdata->packetcount >= userdata->packets_per_segment) {
         if( (r = plugin_send(userdata,dest)) != 0) return r;
-        userdata->ts += (uint64_t)userdata->samplecount * (uint64_t)90000 / (uint64_t)packet->sample_rate;
-        userdata->samplecount = 0;
+        userdata->ts += (uint64_t)userdata->packetcount * (uint64_t)userdata->mpeg_samples_per_packet;
+        userdata->packetcount = 0;
     }
 
     return r;
@@ -260,7 +270,7 @@ static int plugin_flush(void* ud, const segment_receiver* dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
 
-    if(userdata->samplecount != 0) {
+    if(userdata->packetcount != 0) {
         if( (r = plugin_send(userdata,dest)) != 0) return r;
     }
 
