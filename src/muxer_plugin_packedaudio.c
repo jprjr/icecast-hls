@@ -36,6 +36,7 @@ struct plugin_userdata {
     size_t packetcount;
     uint64_t ts; /* represents the 33-bit MPEG timestamp */
     id3 id3;
+    taglist taglist;
     int (*append_packet)(struct plugin_userdata*, const packet*);
 };
 typedef struct plugin_userdata plugin_userdata;
@@ -84,6 +85,7 @@ static void* plugin_create(void) {
     membuf_init(&userdata->samples);
     membuf_init(&userdata->segment);
     id3_init(&userdata->id3);
+    taglist_init(&userdata->taglist);
     userdata->append_packet = NULL;
     userdata->profile = 0;
     userdata->freq = 0;
@@ -92,7 +94,7 @@ static void* plugin_create(void) {
     userdata->mpeg_samples_per_packet = 0;
     userdata->samples_per_packet = 0;
     userdata->packetcount = 0;
-    userdata->ts = 0x0800000000; /* start at the rollover, if we have padding we'll subtract */
+    userdata->ts = 0x0200000000; /* start at the rollover, if we have padding we'll subtract */
 
     return userdata;
 }
@@ -103,6 +105,7 @@ static void plugin_close(void* ud) {
     membuf_free(&userdata->samples);
     membuf_free(&userdata->segment);
     id3_free(&userdata->id3);
+    taglist_free(&userdata->taglist);
     free(userdata);
 }
 
@@ -211,6 +214,7 @@ static int plugin_send(plugin_userdata* userdata, const segment_receiver* dest) 
     tag ts_tag;
     uint8_t val_enc[8];
     int r;
+    id3_reset(&userdata->id3);
 
     userdata->ts &= 0x1FFFFFFFFULL;
     pack_u64be(val_enc,userdata->ts);
@@ -223,6 +227,13 @@ static int plugin_send(plugin_userdata* userdata, const segment_receiver* dest) 
     if( (r = id3_add_tag(&userdata->id3, &ts_tag)) != 0) {
         LOGERRNO("error adding tag");
         return r;
+    }
+
+    if(taglist_len(&userdata->taglist) > 0) {
+        if( (r = id3_add_taglist(&userdata->id3,&userdata->taglist)) != 0) {
+            LOGERRNO("error adding taglist");
+            return r;
+        }
     }
 
     if( (r = membuf_cat(&userdata->segment, &userdata->id3)) != 0) {
@@ -282,13 +293,10 @@ static int plugin_submit_tags(void* ud, const taglist* tags, const segment_recei
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
 
-    id3_reset(&userdata->id3);
-    if( (r = id3_add_taglist(&userdata->id3,tags)) != 0) {
-        LOGERRNO("error encoding tags");
+    if( (r = taglist_deep_copy(&userdata->taglist,tags)) != 0) { 
+        LOGERRNO("error copying tagS");
         return r;
     }
-
-    (void)dest;
 
     return 0;
 }
