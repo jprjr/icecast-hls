@@ -1,5 +1,5 @@
-#ifndef MUXER_PLUGIN_EXHALE_H
-#define MUXER_PLUGIN_EXHALE_H
+#ifndef MUXER_PLUGIN_FMP4_H
+#define MUXER_PLUGIN_FMP4_H
 
 #include "muxer_plugin.h"
 

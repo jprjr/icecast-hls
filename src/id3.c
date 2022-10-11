@@ -4,10 +4,10 @@
 #include <string.h>
 
 static void pack_uint32_syncsafe(uint8_t *output, uint32_t val) {
-    output[0] = (uint8_t)((val & 0x0FE00000) >> 21);
-    output[1] = (uint8_t)((val & 0x001FC000) >> 14);
-    output[2] = (uint8_t)((val & 0x00003F80) >> 7);
-    output[3] = (uint8_t)((val & 0x0000007F));
+    output[0] = (uint8_t)(((val >> 21) & 0x7F));
+    output[1] = (uint8_t)(((val >> 14) & 0x7F));
+    output[2] = (uint8_t)(((val >>  7) & 0x7F));
+    output[3] = (uint8_t)(((val >>  0) & 0x7F));
 }
 
 void id3_init(id3* id3) {
@@ -76,14 +76,26 @@ static int id3_encode_apic_frame(id3* id3, const tag* t) {
     id3->x[id3->len++] = (uint8_t)unpack_u32be(&t->value.x[0]);
 
     /* description string */
-    memcpy(&id3->x[id3->len],&t->value.x[4 + 4 + mime_len + 4], desc_len);
-    id3->len += desc_len;
+    if(desc_len > 0) {
+        memcpy(&id3->x[id3->len],&t->value.x[4 + 4 + mime_len + 4], desc_len);
+        id3->len += desc_len;
+    }
     id3->x[id3->len++] = 0x00;
 
     /* picture data */
     memcpy(&id3->x[id3->len],&t->value.x[4 + 4 + mime_len + 4 + desc_len + 4 + 4 +4 +4 + 4], pic_len);
     id3->len += pic_len;
 
+    return 0;
+}
+
+static int id3_encode_priv_com_apple_streaming_transportStreamTimestamp_frame(id3* id3, const tag* t) {
+    int r;
+
+    if( (r = membuf_readyplus(id3,53)) != 0) return r; /* 8 bytes for integer, strlen("com.apple.streaming.transportStreamTimestamp") == 44, +1 null */
+
+    membuf_append(id3,(uint8_t*)"com.apple.streaming.transportStreamTimestamp",45);
+    membuf_append(id3,t->value.x,t->value.len);
     return 0;
 }
 
@@ -123,6 +135,9 @@ static int id3_encode_tag(id3* id3, const tag* t) {
     }
 
     if(strbuf_equals_cstr(&t->key,"APIC")) return id3_encode_apic_frame(id3,t);
+
+    if(strbuf_equals_cstr(&t->key,"PRIV:com.apple.streaming.transportStreamTimestamp"))
+        return id3_encode_priv_com_apple_streaming_transportStreamTimestamp_frame(id3,t);
 
     return -1;
 }
