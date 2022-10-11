@@ -386,17 +386,17 @@ static int plugin_submit_packet(void* ud, const packet* packet, const segment_re
     int r;
     fmp4_sample_info info;
 
-    /* see if we need to flush the current segment */
-    if(userdata->track->trun_sample_count > 0 && (userdata->track->trun_sample_count + packet->duration > userdata->samples_per_segment)) {
-        if( (r = plugin_muxer_flush(userdata,dest)) != 0) return r;
-    }
-
     fmp4_sample_info_init(&info);
     info.duration = packet->duration;
     info.size = packet->data.len;
     info.flags.is_non_sync = !packet->sync;
 
     if(fmp4_track_add_sample(userdata->track, packet->data.x, &info) != FMP4_OK) return -1;
+
+    /* see if we need to flush the current segment */
+    if(userdata->track->trun_sample_count >= userdata->samples_per_segment) {
+        if( (r = plugin_muxer_flush(userdata,dest)) != 0) return r;
+    }
 
     return 0;
 }
@@ -491,6 +491,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     me.init_mime  = &mime_mp4;
     me.media_mime = &mime_m4s;
     me.time_base  = source->sample_rate;
+    me.frame_len  = source->frame_len;
 
     me.handle = userdata;
     me.set_params = plugin_receive_params;
@@ -499,7 +500,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     /* now we have the frame length and a segment length set, tell
      * the encoder our tune in period */
-    params.packets_per_segment = userdata->segment_length * source->sample_rate / source->frame_len;
+    params.packets_per_segment = (userdata->segment_length * source->sample_rate / source->frame_len) + (source->sample_rate % source->frame_len > (source->frame_len / 2));
     userdata->samples_per_segment = params.packets_per_segment * source->frame_len;
 
     return source->set_params(source->handle, &params);

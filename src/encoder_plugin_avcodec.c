@@ -241,6 +241,7 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     me.sync_flag = userdata->ctx->codec_descriptor->props & AV_CODEC_PROP_INTRA_ONLY;
     me.padding = userdata->ctx->initial_padding;
     me.set_params = packet_source_set_params_ignore;
+    if(me.frame_len == 0) me.frame_len = 1024;
 
     TRY0(dest->open(dest->handle, &me), LOG0("error configuring muxer"));
 

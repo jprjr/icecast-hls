@@ -44,6 +44,7 @@ struct segment_source {
     const strbuf* media_ext;
     const strbuf* media_mime;
     unsigned int time_base;
+    unsigned int frame_len;
 };
 typedef struct segment_source segment_source;
 
@@ -69,7 +70,7 @@ typedef struct segment_receiver segment_receiver;
 
 #define SEGMENT_RECEIVER_ZERO { .handle = NULL, .open = segment_receiver_open_null, .submit_segment = segment_receiver_submit_segment_null, .flush = segment_receiver_flush_null }
 
-#define SEGMENT_SOURCE_ZERO { .handle = NULL, .set_params = segment_source_set_params_null, .init_ext = NULL, .init_mime = NULL, .media_ext = NULL, .media_mime = NULL, .time_base = 0 }
+#define SEGMENT_SOURCE_ZERO { .handle = NULL, .set_params = segment_source_set_params_null, .init_ext = NULL, .init_mime = NULL, .media_ext = NULL, .media_mime = NULL, .time_base = 0, .frame_len = 0 }
 
 #define SEGMENT_SOURCE_PARAMS_ZERO { .segment_length = 0 }
 

@@ -199,10 +199,12 @@ void hls_free(hls* h) {
 int hls_open(hls* h, const segment_source* source) {
     int r;
     unsigned int playlist_segments;
+    size_t packets_per_segment;
     segment_source_params params = SEGMENT_SOURCE_PARAMS_ZERO;
 
     h->time_base  = source->time_base;
-    h->target_samples = source->time_base * h->target_duration;
+    packets_per_segment = (h->target_duration * source->time_base / source->frame_len) + (source->time_base % source->frame_len > (source->frame_len / 2));
+    h->target_samples = packets_per_segment * source->frame_len;
 
     if(source->media_mime != NULL) {
         TRYS(strbuf_copy(&h->media_mime,source->media_mime));
@@ -229,7 +231,7 @@ int hls_open(hls* h, const segment_source* source) {
         TRYS(strbuf_append_cstr(&h->playlist_filename,"stream.m3u8"));
     }
 
-    playlist_segments = (h->playlist_length / h->target_duration) + 1;
+    playlist_segments = (h->playlist_length / h->target_duration) + (source->time_base % source->frame_len <= (source->frame_len / 2));
     TRYS(hls_playlist_open(&h->playlist, playlist_segments))
 
     TRY0(strbuf_sprintf(&h->header,
@@ -348,15 +350,13 @@ int hls_add_segment(hls* h, const segment* s) {
         return h->callbacks.write(h->callbacks.userdata,&h->init_filename,&tmp,&h->init_mime);
     }
 
+    TRYS(membuf_append(&h->segment.data,s->data,s->len));
+    h->segment.samples += s->samples;
 
-
-    if( (h->segment.samples > 0) && (h->segment.samples + s->samples >= h->target_samples)) { /* time to flush! */
+    if(h->segment.samples >= h->target_samples) { /* time to flush! */
         TRY0(hls_flush_segment(h),LOG0("error flushing segment"));
         TRY0(h->callbacks.write(h->callbacks.userdata,&h->playlist_filename,&h->txt,&mime_m3u8),LOGS("error writing file %.*s",h->playlist_filename));
     }
-
-    TRYS(membuf_append(&h->segment.data,s->data,s->len));
-    h->segment.samples += s->samples;
 
     cleanup:
     return r;
@@ -475,7 +475,7 @@ int hls_submit_picture(hls* h, const picture* src, picture* out) {
       h->counter+1,(int)dest_filename.len,(char *)dest_filename.x);
 
     TRYS(strbuf_append(&out->mime,"-->",3));
-    TRYS(strbuf_copy(&out->desc,&src->desc));
+    if(src->desc.len > 0) TRYS(strbuf_copy(&out->desc,&src->desc));
     TRYS(strbuf_copy(&out->data,&dest_filename));
     r = 0;
 
