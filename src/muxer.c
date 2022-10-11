@@ -182,3 +182,6 @@ int muxer_flush(const muxer* m) {
     return m->plugin->flush(m->userdata, &m->segment_receiver);
 }
 
+int muxer_get_caps(const muxer* m, packet_receiver_caps* caps) {
+    return m->plugin->get_caps(m->userdata, caps);
+}

@@ -40,6 +40,7 @@ int muxer_submit_packet(const muxer*, const packet*);
 int muxer_submit_tags(const muxer*, const taglist* tags);
 
 int muxer_flush(const muxer*);
+int muxer_get_caps(const muxer*, packet_receiver_caps* caps);
 
 
 #ifdef __cplusplus

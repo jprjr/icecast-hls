@@ -111,6 +111,7 @@ int destination_open(destination* dest, const ich_time* now) {
     dest->encoder.packet_receiver.submit_dsi    = (packet_receiver_submit_dsi_cb)muxer_submit_dsi;
     dest->encoder.packet_receiver.submit_packet = (packet_receiver_submit_packet_cb)muxer_submit_packet;
     dest->encoder.packet_receiver.flush         = (packet_receiver_flush_cb)muxer_flush;
+    dest->encoder.packet_receiver.get_caps      = (packet_receiver_get_caps_cb)muxer_get_caps;
     dest->encoder.packet_receiver.handle        = &dest->muxer;
 
     dest->muxer.segment_receiver.open             = (segment_receiver_open_cb)output_open;

@@ -115,11 +115,16 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     segment_source me = SEGMENT_SOURCE_ZERO;
     packet_source_params params = PACKET_SOURCE_PARAMS_ZERO;
+    unsigned int sample_rate = source->sample_rate;
+    unsigned int channels = source->channels;
+    unsigned int profile = source->profile;
 
     switch(source->codec) {
         case CODEC_TYPE_AAC: {
-            switch(source->profile) {
+            switch(profile) {
                 case CODEC_PROFILE_AAC_LC: break;
+                case CODEC_PROFILE_AAC_HE2: channels = 1; /* fall-through */
+                case CODEC_PROFILE_AAC_HE: sample_rate /= 2; profile = CODEC_PROFILE_AAC_LC; break;
                 case CODEC_PROFILE_AAC_USAC: /* fall-through */
                 default: {
                     LOG1("unsupported AAC profile %u",source->profile);
@@ -127,7 +132,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
                 }
             }
 
-            switch(source->sample_rate) {
+            switch(sample_rate) {
                 case 96000: userdata->freq = 0x00; break;
                 case 88200: userdata->freq = 0x01; break;
                 case 64000: userdata->freq = 0x02; break;
@@ -142,21 +147,21 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
                 case  8000: userdata->freq = 0x0B; break;
                 case  7350: userdata->freq = 0x0C; break;
                 default: {
-                    LOG1("unsupported sample rate %u",source->sample_rate);
+                    LOG1("unsupported sample rate %u",sample_rate);
                     return -1;
                 }
             }
 
-            switch(source->channels) {
+            switch(channels) {
                 case 1: /* fall-through */
-                case 2: userdata->ch_index = source->channels; break;
+                case 2: userdata->ch_index = channels; break;
                 default: {
-                    LOG1("unsupported channel count %u", source->channels);
+                    LOG1("unsupported channel count %u", channels);
                     return -1;
                 }
             }
             userdata->append_packet = append_packet_adts;
-            userdata->profile = source->profile - 1;
+            userdata->profile = profile - 1;
             me.media_ext = &ext_aac;
             me.media_mime = &mime_aac;
             break;
@@ -299,6 +304,11 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* val) {
     return 0;
 }
 
+static int plugin_get_caps(void* ud, packet_receiver_caps* caps) {
+    (void)ud;
+    caps->has_global_header = 0;
+    return 0;
+}
 
 const muxer_plugin muxer_plugin_packed_audio = {
     {.a = 0, .len = 12, .x = (uint8_t*)"packed-audio" },
@@ -312,5 +322,6 @@ const muxer_plugin muxer_plugin_packed_audio = {
     plugin_submit_packet,
     plugin_submit_tags,
     plugin_flush,
+    plugin_get_caps,
 };
 

@@ -47,10 +47,16 @@ typedef struct packet_source packet_source;
  * the encoder. It has an open function (mapped to a muxer_open),
  * so the encoder can tell the a muxer about packet info */
 
+struct packet_receiver_caps {
+    uint8_t has_global_header; /* muxer supports global headers */
+};
+typedef struct packet_receiver_caps packet_receiver_caps;
+
 typedef int (*packet_receiver_open_cb)(void* handle, const packet_source* source);
 typedef int (*packet_receiver_submit_packet_cb)(void* handle, const packet*);
 typedef int (*packet_receiver_submit_dsi_cb)(void* handle, const membuf*);
 typedef int (*packet_receiver_flush_cb)(void* handle);
+typedef int (*packet_receiver_get_caps_cb)(void* handle, packet_receiver_caps* caps);
 
 struct packet_receiver {
     void* handle;
@@ -58,6 +64,7 @@ struct packet_receiver {
     packet_receiver_submit_packet_cb submit_packet;
     packet_receiver_submit_dsi_cb submit_dsi;
     packet_receiver_flush_cb flush;
+    packet_receiver_get_caps_cb get_caps;
 };
 
 typedef struct packet_receiver packet_receiver;
@@ -72,6 +79,8 @@ typedef struct packet_receiver packet_receiver;
 }
 
 #define PACKET_SOURCE_PARAMS_ZERO { .packets_per_segment = 0 }
+
+#define PACKET_RECEIVER_CAPS_ZERO { .has_global_header = 0 }
 
 #define PACKET_RECEIVER_ZERO { \
     .handle = NULL, \

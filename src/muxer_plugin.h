@@ -22,6 +22,7 @@ typedef int (*muxer_plugin_submit_dsi)(void* userdata, const membuf* data, const
 typedef int (*muxer_plugin_submit_packet)(void* userdata, const packet* packet, const segment_receiver* dest);
 typedef int (*muxer_plugin_submit_tags)(void* userdata, const taglist* tags, const segment_receiver* dest);
 typedef int (*muxer_plugin_flush)(void* userdata, const segment_receiver* dest);
+typedef int (*muxer_plugin_get_caps)(void* userdata, packet_receiver_caps* caps);
 
 struct muxer_plugin {
     const strbuf name;
@@ -35,6 +36,7 @@ struct muxer_plugin {
     muxer_plugin_submit_packet submit_packet;
     muxer_plugin_submit_tags submit_tags;
     muxer_plugin_flush flush;
+    muxer_plugin_get_caps get_caps;
 };
 
 typedef struct muxer_plugin muxer_plugin;

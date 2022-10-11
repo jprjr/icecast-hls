@@ -12,7 +12,9 @@ enum codec_type {
 
 typedef enum codec_type codec_type;
 
-#define CODEC_PROFILE_AAC_LC 2
+#define CODEC_PROFILE_AAC_LC    2
+#define CODEC_PROFILE_AAC_HE    5
+#define CODEC_PROFILE_AAC_HE2  29
 #define CODEC_PROFILE_AAC_USAC 42
 
 const char* codec_name(codec_type t);

@@ -23,6 +23,7 @@ SOURCES = \
 	src/encoder_plugin.c \
 	src/encoder_plugin_avcodec.c \
 	src/encoder_plugin_exhale.c \
+	src/encoder_plugin_fdk_aac.c \
 	src/filter.c \
 	src/filter_plugin.c \
 	src/filter_plugin_avfilter.c \
@@ -115,6 +116,9 @@ REQUIRED_OBJS = \
 CFLAGS_EXHALE =
 LDFLAGS_EXHALE = -lexhale
 
+CFLAGS_FDK_AAC = $(shell pkg-config --cflags fdk-aac)
+LDFLAGS_FDK_AAC = $(shell pkg-config --libs fdk-aac)
+
 CFLAGS_AVFILTER = $(shell pkg-config --cflags libavfilter)
 LDFLAGS_AVFILTER = $(shell pkg-config --libs libavfilter)
 
@@ -128,6 +132,7 @@ ENCODER_PLUGIN_CFLAGS =
 FILTER_PLUGIN_CFLAGS =
 
 # temp because I just want to build everything while testing
+ENABLE_FDK_AAC=1
 ENABLE_EXHALE=1
 ENABLE_AVFILTER=1
 ENABLE_AVCODEC=1
@@ -155,8 +160,18 @@ REQUIRED_OBJS += src/encoder_plugin_exhale.o
 EXHALE_REQUIRED=1
 endif
 
+ifeq ($(ENABLE_FDK_AAC),1)
+ENCODER_PLUGIN_CFLAGS += -DENCODER_PLUGIN_FDK_AAC=1
+REQUIRED_OBJS += src/encoder_plugin_fdk_aac.o
+FDK_AAC_REQUIRED=1
+endif
+
 ifeq ($(EXHALE_REQUIRED),1)
 LDFLAGS += $(LDFLAGS_EXHALE)
+endif
+
+ifeq ($(FDK_AAC_REQUIRED),1)
+LDFLAGS += $(LDFLAGS_FDK_AAC)
 endif
 
 ifeq ($(AVFILTER_REQUIRED),1)
@@ -207,6 +222,9 @@ src/encoder_plugin_exhale.o: src/encoder_plugin_exhale.c
 
 src/encoder_plugin_avcodec.o: src/encoder_plugin_avcodec.c
 	$(CC) $(CFLAGS) $(CFLAGS_AVCODEC) $(CFLAGS_AVUTIL) -c -o $@ $<
+
+src/encoder_plugin_fdk_aac.o: src/encoder_plugin_fdk_aac.c
+	$(CC) $(CFLAGS) $(CFLAGS_FDK_AAC) -c -o $@ $<
 
 src/minifmp4.o: src/minifmp4.c src/minifmp4.h
 	$(CC) $(CFLAGS) -c -o $@ $<

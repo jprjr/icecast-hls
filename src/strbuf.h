@@ -63,6 +63,12 @@ int strbuf_caseequals(const strbuf* s1, const strbuf* s2);
 int strbuf_casebegins(const strbuf* s, const strbuf* q);
 int strbuf_caseends(const strbuf* s, const strbuf* q);
 
+int strbuf_casecmp_cstr(const strbuf* s1, const char* s2);
+
+int strbuf_caseequals_cstr(const strbuf* s1, const char* s2);
+int strbuf_casebegins_cstr(const strbuf* s, const char* q);
+int strbuf_caseends_cstr(const strbuf* s, const char* q);
+
 int strbuf_casecontains(const strbuf* s1, const strbuf* s2);
 int strbuf_casecontains_cstr(const strbuf* s1, const char*s );
 

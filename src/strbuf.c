@@ -418,6 +418,34 @@ int strbuf_ends_cstr(const strbuf* s1, const char* s2) {
     return strbuf_ends(s1,&tmp);
 }
 
+int strbuf_casecmp_cstr(const strbuf* s1, const char* s2) {
+    strbuf tmp = STRBUF_ZERO;
+    tmp.x = (uint8_t*)s2;
+    tmp.len = strlen(s2);
+    return strbuf_casecmp(s1,&tmp);
+}
+
+int strbuf_caseequals_cstr(const strbuf* s1, const char* s2) {
+    strbuf tmp = STRBUF_ZERO;
+    tmp.x = (uint8_t*)s2;
+    tmp.len = strlen(s2);
+    return strbuf_caseequals(s1,&tmp);
+}
+
+int strbuf_casebegins_cstr(const strbuf* s1, const char* s2) {
+    strbuf tmp = STRBUF_ZERO;
+    tmp.x = (uint8_t*)s2;
+    tmp.len = strlen(s2);
+    return strbuf_casebegins(s1,&tmp);
+}
+
+int strbuf_caseends_cstr(const strbuf* s1, const char* s2) {
+    strbuf tmp = STRBUF_ZERO;
+    tmp.x = (uint8_t*)s2;
+    tmp.len = strlen(s2);
+    return strbuf_caseends(s1,&tmp);
+}
+
 int strbuf_truthy(const strbuf* s) {
     return strbuf_equals_cstr(s,"true")
            || strbuf_equals_cstr(s,"1")
