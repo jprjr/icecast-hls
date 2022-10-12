@@ -223,7 +223,7 @@ int frame_append(frame* dest, const frame* src) {
     return frame_append_convert(dest,src,dest->format == SAMPLEFMT_UNKNOWN ? src->format : dest->format);
 }
 
-int frame_move(frame* dest, frame* src, size_t len) {
+int frame_move(frame* dest, frame* src, unsigned int len) {
     int r;
     size_t i;
     size_t channels;
