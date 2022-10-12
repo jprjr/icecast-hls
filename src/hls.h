@@ -84,7 +84,7 @@ struct hls {
     unsigned int time_base;
     unsigned int target_duration; /* in seconds */
     unsigned int playlist_length; /* in seconds */
-    size_t target_samples; /* target duration in samples */
+    unsigned int target_samples; /* target duration in samples */
     size_t media_sequence;        /* current media sequence number */
     size_t counter;
     unsigned int version;         /* reported HLS playlist version */
@@ -111,7 +111,7 @@ void hls_segment_meta_reset(hls_segment_meta*);
 void hls_playlist_init(hls_playlist*);
 void hls_playlist_free(hls_playlist*);
 
-int hls_playlist_open(hls_playlist*, size_t segments);
+int hls_playlist_open(hls_playlist*, unsigned int segments);
 int hls_playlist_isempty(const hls_playlist*);
 int hls_playlist_isfull(const hls_playlist*);
 size_t hls_playlist_used(const hls_playlist*);

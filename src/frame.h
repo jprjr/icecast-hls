@@ -8,8 +8,8 @@
 struct frame {
     membuf samples; /* in planer formats this has as many elements as there are channels */
     samplefmt format;
-    size_t channels;
-    size_t duration; /* duration given in number of samples */
+    unsigned int channels;
+    unsigned int duration; /* duration given in number of samples */
 
     /* sample_rate and pts are only used when
      * converting from a frame to an AVFrame */
@@ -27,8 +27,8 @@ typedef struct frame frame;
  * set params on the source (decoders, filters) */
 struct frame_source_params {
     samplefmt format;
-    size_t channels;
-    size_t duration;
+    unsigned int channels;
+    unsigned int duration;
 };
 typedef struct frame_source_params frame_source_params;
 
@@ -39,8 +39,8 @@ struct frame_source {
     void* handle;
     frame_source_set_params_cb set_params;
     samplefmt format;
-    size_t channels;
-    size_t duration;
+    unsigned int channels;
+    unsigned int duration;
     unsigned int sample_rate;
 };
 typedef struct frame_source frame_source;
@@ -115,10 +115,10 @@ int frame_append(frame*, const frame*);
  * uses memcpy under the hood, meaning src and
  * dest parameters (including format) have to
  * match */
-int frame_move(frame* dest, frame* src, size_t len);
+int frame_move(frame* dest, frame* src, unsigned int len);
 
 /* throw away samples from the beginning of the frame */
-int frame_discard(frame*, size_t len);
+int frame_discard(frame*, unsigned int len);
 
 
 int frame_receiver_open_null(void* handle, const frame_source* source);

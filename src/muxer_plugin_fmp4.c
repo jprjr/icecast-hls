@@ -43,7 +43,8 @@ struct plugin_userdata {
     fmp4_measurement* measurement;
     fmp4_emsg* emsg;
     membuf expired_emsgs;
-    size_t samples_per_segment;
+    unsigned int packets_per_segment;
+    unsigned int samples_per_segment;
     unsigned int segment_length;
     uint8_t configuring;
     id3 id3;
@@ -429,6 +430,8 @@ static int plugin_receive_params(void* ud, const segment_source_params* params) 
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
     userdata->segment_length = params->segment_length;
+    userdata->packets_per_segment = params->packets_per_segment;
+
     if(userdata->segment_length == 0) userdata->segment_length = 1;
     return 0;
 }
@@ -500,7 +503,10 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     /* now we have the frame length and a segment length set, tell
      * the encoder our tune in period */
-    params.packets_per_segment = (userdata->segment_length * source->sample_rate / source->frame_len) + (source->sample_rate % source->frame_len > (source->frame_len / 2));
+    params.packets_per_segment = userdata->packets_per_segment;
+    if(params.packets_per_segment == 0) {
+        params.packets_per_segment = (userdata->segment_length * source->sample_rate / source->frame_len);
+    }
     userdata->samples_per_segment = params.packets_per_segment * source->frame_len;
 
     return source->set_params(source->handle, &params);

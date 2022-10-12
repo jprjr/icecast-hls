@@ -90,7 +90,7 @@ void hls_playlist_free(hls_playlist* p) {
     hls_playlist_init(p);
 }
 
-int hls_playlist_open(hls_playlist* b, size_t segments) {
+int hls_playlist_open(hls_playlist* b, unsigned int segments) {
     size_t i = 0;
     b->size = segments + 1;
     b->segments = (hls_segment_meta*)malloc(sizeof(hls_segment_meta) * b->size);
@@ -125,7 +125,7 @@ size_t hls_playlist_used(const hls_playlist* b) {
     return (b->size-1) - hls_playlist_avail(b);
 }
 
-hls_segment_meta* hls_playlist_get(hls_playlist* b,size_t index) {
+hls_segment_meta* hls_playlist_get(hls_playlist* b, size_t index) {
     index += b->tail;
     if(index >= b->size) index -= b->size;
     return &b->segments[index];
@@ -199,12 +199,12 @@ void hls_free(hls* h) {
 int hls_open(hls* h, const segment_source* source) {
     int r;
     unsigned int playlist_segments;
-    size_t packets_per_segment;
     segment_source_params params = SEGMENT_SOURCE_PARAMS_ZERO;
 
+    params.segment_length = h->target_duration;
+    params.packets_per_segment = (params.segment_length * source->time_base / source->frame_len);
+    h->target_samples = params.packets_per_segment * source->frame_len;
     h->time_base  = source->time_base;
-    packets_per_segment = (h->target_duration * source->time_base / source->frame_len) + (source->time_base % source->frame_len > (source->frame_len / 2));
-    h->target_samples = packets_per_segment * source->frame_len;
 
     if(source->media_mime != NULL) {
         TRYS(strbuf_copy(&h->media_mime,source->media_mime));
@@ -245,7 +245,6 @@ int hls_open(hls* h, const segment_source* source) {
       (int)h->media_ext.len,(char *)h->media_ext.x))
     TRYS(strbuf_term(&h->fmt));
 
-    params.segment_length = h->target_duration;
 
     r = source->set_params(source->handle, &params);
 

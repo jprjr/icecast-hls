@@ -25,15 +25,15 @@ static STRBUF_CONST(key_mpegts,"PRIV:com.apple.streaming.transportStreamTimestam
 
 struct plugin_userdata {
     unsigned int segment_length;
-    size_t packets_per_segment;
-    size_t mpeg_samples_per_packet; /* packet # of samples scaled to mpeg-ts ticks */
-    size_t samples_per_packet;
+    unsigned int packets_per_segment;
+    unsigned int mpeg_samples_per_packet; /* packet # of samples scaled to mpeg-ts ticks */
+    unsigned int samples_per_packet;
     membuf samples;
     membuf segment;
     uint8_t profile;
     uint8_t freq;
     uint8_t ch_index;
-    size_t packetcount;
+    unsigned int packetcount;
     uint64_t ts; /* represents the 33-bit MPEG timestamp */
     id3 id3;
     taglist taglist;
@@ -113,6 +113,8 @@ static int plugin_receive_params(void* ud, const segment_source_params* params) 
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
     userdata->segment_length = params->segment_length;
+    userdata->packets_per_segment = params->packets_per_segment;
+
     if(userdata->segment_length == 0) userdata->segment_length = 1;
     return 0;
 }
@@ -201,9 +203,12 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     if( (r = dest->open(dest->handle, &me)) != 0) return r;
     if( (r = id3_ready(&userdata->id3)) != 0) return r;
 
-    params.packets_per_segment = (userdata->segment_length * source->sample_rate / source->frame_len) + (source->sample_rate % source->frame_len > (source->frame_len / 2));
-    userdata->packets_per_segment = params.packets_per_segment;
+    if(userdata->packets_per_segment == 0) {
+        userdata->packets_per_segment = userdata->segment_length * source->sample_rate / source->frame_len;
+    }
     userdata->ts -= (uint64_t)source->padding * (uint64_t)90000 / (uint64_t)source->sample_rate;
+
+    params.packets_per_segment = userdata->packets_per_segment;
 
     return source->set_params(source->handle, &params);
 }
