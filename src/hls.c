@@ -264,7 +264,7 @@ static int hls_update_playlist(hls* h) {
 
     TRYS(strbuf_cat(&h->txt,&h->header));
     TRYS(strbuf_sprintf(&h->txt,
-      "#EXT-X-MEDIA_SEQUENCE:%u\n\n",
+      "#EXT-X-MEDIA-SEQUENCE:%u\n\n",
       h->media_sequence))
 
     for(i=0;i<len;i++) {

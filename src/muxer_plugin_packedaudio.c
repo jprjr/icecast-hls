@@ -221,7 +221,7 @@ static int plugin_send(plugin_userdata* userdata, const segment_receiver* dest) 
 
     ts_tag.key = key_mpegts;
     ts_tag.value.x = val_enc;
-    ts_tag.value.len = 0;
+    ts_tag.value.len = 8;
     ts_tag.value.a = 0;
 
     if( (r = id3_add_tag(&userdata->id3, &ts_tag)) != 0) {
