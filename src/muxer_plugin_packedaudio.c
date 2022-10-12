@@ -94,7 +94,7 @@ static void* plugin_create(void) {
     userdata->mpeg_samples_per_packet = 0;
     userdata->samples_per_packet = 0;
     userdata->packetcount = 0;
-    userdata->ts = 0x0200000000; /* start at the rollover, if we have padding we'll subtract */
+    userdata->ts = 0;
 
     return userdata;
 }
@@ -206,7 +206,6 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     if(userdata->packets_per_segment == 0) {
         userdata->packets_per_segment = userdata->segment_length * source->sample_rate / source->frame_len;
     }
-    userdata->ts -= (uint64_t)source->padding * (uint64_t)90000 / (uint64_t)source->sample_rate;
 
     params.packets_per_segment = userdata->packets_per_segment;
 
@@ -262,6 +261,7 @@ static int plugin_send(plugin_userdata* userdata, const segment_receiver* dest) 
     s.data = userdata->segment.x;
     s.len  = userdata->segment.len;
     s.samples = userdata->packetcount * userdata->samples_per_packet;
+
     if( (r = dest->submit_segment(dest->handle,&s)) != 0) {
         LOG0("error submitting segment");
         return r;
@@ -275,6 +275,7 @@ static int plugin_send(plugin_userdata* userdata, const segment_receiver* dest) 
 static int plugin_submit_packet(void* ud, const packet* packet, const segment_receiver* dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
+
 
     if( (r = userdata->append_packet(userdata,packet)) != 0) {
         return r;
