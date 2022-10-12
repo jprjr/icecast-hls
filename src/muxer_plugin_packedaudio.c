@@ -297,6 +297,7 @@ static int plugin_flush(void* ud, const segment_receiver* dest) {
 static int plugin_submit_tags(void* ud, const taglist* tags, const segment_receiver* dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
+    (void)dest;
 
     if( (r = taglist_deep_copy(&userdata->taglist,tags)) != 0) { 
         LOGERRNO("error copying tagS");
