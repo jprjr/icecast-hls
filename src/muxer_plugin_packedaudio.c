@@ -219,7 +219,6 @@ static int plugin_send(plugin_userdata* userdata, const segment_receiver* dest) 
     tag ts_tag;
     uint8_t val_enc[8];
     int r;
-    id3_reset(&userdata->id3);
 
     userdata->ts &= 0x1FFFFFFFFULL;
     pack_u64be(val_enc,userdata->ts);
@@ -229,21 +228,29 @@ static int plugin_send(plugin_userdata* userdata, const segment_receiver* dest) 
     ts_tag.value.len = 8;
     ts_tag.value.a = 0;
 
+    id3_reset(&userdata->id3);
     if( (r = id3_add_tag(&userdata->id3, &ts_tag)) != 0) {
         LOGERRNO("error adding tag");
         return r;
     }
+    if( (r = membuf_cat(&userdata->segment, &userdata->id3)) != 0) {
+        LOGERRNO("error concatenating segment");
+        return r;
+    }
+
 
     if(taglist_len(&userdata->taglist) > 0) {
+        id3_reset(&userdata->id3);
+
         if( (r = id3_add_taglist(&userdata->id3,&userdata->taglist)) != 0) {
             LOGERRNO("error adding taglist");
             return r;
         }
-    }
 
-    if( (r = membuf_cat(&userdata->segment, &userdata->id3)) != 0) {
-        LOGERRNO("error concatenating segment");
-        return r;
+        if( (r = membuf_cat(&userdata->segment, &userdata->id3)) != 0) {
+            LOGERRNO("error concatenating segment");
+            return r;
+        }
     }
 
     if( (r = membuf_cat(&userdata->segment, &userdata->samples)) != 0) {
