@@ -340,7 +340,7 @@ static int plugin_submit_tags(void* ud, const taglist* tags, const segment_recei
     if(fmp4_emsg_set_scheme_id_uri(userdata->emsg, AOID3_SCHEME_ID_URI) != FMP4_OK) return -1;
     if(fmp4_emsg_set_value(userdata->emsg, AOID3_VALUE) != FMP4_OK) return -1;
     userdata->emsg->presentation_time = userdata->track->base_media_decode_time + userdata->track->trun_sample_count;
-    userdata->emsg->event_duration = 0;
+    userdata->emsg->event_duration = 0xFFFFFFFF;
     if(fmp4_emsg_set_message(userdata->emsg,userdata->id3.x,userdata->id3.len) != FMP4_OK) return -1;
 
     return 0;
@@ -357,7 +357,6 @@ static int plugin_muxer_flush(plugin_userdata* userdata, const segment_receiver*
     wrapper.pts = userdata->track->base_media_decode_time;
 
     if(userdata->emsg != NULL) {
-        userdata->emsg->event_duration = userdata->track->trun_sample_count - (userdata->emsg->presentation_time - userdata->track->base_media_decode_time);
         if(fmp4_mux_add_emsg(&userdata->mux,userdata->emsg) != FMP4_OK) return -1;
     }
 
