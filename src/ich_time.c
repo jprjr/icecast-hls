@@ -76,6 +76,11 @@ void ich_time_add_frac(ich_time* t, const ich_frac* f) {
      */
     t->seconds += (f->num / f->den);
     t->nanoseconds += (f->num % f->den) * NANOPERSEC / f->den;
+
+    while(t->nanoseconds >= NANOPERSEC) {
+        t->seconds++;
+        t->nanoseconds -= NANOPERSEC;
+    }
 }
 
 static inline int isleapyear(int64_t y) {
