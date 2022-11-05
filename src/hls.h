@@ -36,6 +36,7 @@ struct hls_segment_meta {
                  with a URL or something */
     strbuf expired_files; /* stores a list of strings that are considered expired when this chunk expires,
                              this is a list of NULL-separated c strings */
+    uint8_t disc; /* a flag that, if sets, means this segment is discontinuous */
 };
 
 typedef struct hls_segment_meta hls_segment_meta;
@@ -44,6 +45,7 @@ typedef struct hls_segment_meta hls_segment_meta;
 struct hls_segment {
     membuf data;
     unsigned int samples;
+    uint64_t pts;
     strbuf expired_files;
 };
 
@@ -86,9 +88,13 @@ struct hls {
     unsigned int playlist_length; /* in seconds */
     unsigned int target_samples; /* target duration in samples */
     size_t media_sequence;        /* current media sequence number */
+    size_t disc_sequence; /* current discontinuity sequence number */
     size_t counter;
     unsigned int version;         /* reported HLS playlist version */
     ich_time now;
+    uint8_t has_init;
+    uint64_t last_pts;
+    uint64_t next_pts;
 };
 
 typedef struct hls hls;

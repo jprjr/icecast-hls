@@ -27,7 +27,6 @@ struct plugin_userdata {
     unsigned int segment_length;
     unsigned int packets_per_segment;
     unsigned int mpeg_samples_per_packet; /* packet # of samples scaled to mpeg-ts ticks */
-    unsigned int samples_per_packet;
     membuf samples;
     membuf segment;
     uint8_t profile;
@@ -92,9 +91,8 @@ static void* plugin_create(void) {
     userdata->ch_index = 0;
     userdata->packets_per_segment = 0;
     userdata->mpeg_samples_per_packet = 0;
-    userdata->samples_per_packet = 0;
     userdata->packetcount = 0;
-    userdata->ts = 0x0200000000; /* start at the rollover, if we have padding we'll subtract */
+    userdata->ts = 0x200000000ULL;
 
     return userdata;
 }
@@ -193,10 +191,9 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
         LOG1("WARNING, sample rate %u prevents MPEG-TS timestamps from aligning, consider resampling", source->sample_rate);
     }
     userdata->mpeg_samples_per_packet = source->frame_len * 90000 / source->sample_rate;
-    userdata->samples_per_packet = source->frame_len;
 
-    me.time_base = source->sample_rate;
-    me.frame_len = source->frame_len;
+    me.time_base = 90000;
+    me.frame_len = userdata->mpeg_samples_per_packet;
     me.handle = userdata;
     me.set_params = plugin_receive_params;
 
@@ -238,7 +235,6 @@ static int plugin_send(plugin_userdata* userdata, const segment_receiver* dest) 
         return r;
     }
 
-
     if(taglist_len(&userdata->taglist) > 0) {
         id3_reset(&userdata->id3);
 
@@ -261,7 +257,9 @@ static int plugin_send(plugin_userdata* userdata, const segment_receiver* dest) 
     s.type = SEGMENT_TYPE_MEDIA;
     s.data = userdata->segment.x;
     s.len  = userdata->segment.len;
-    s.samples = userdata->packetcount * userdata->samples_per_packet;
+    s.samples = userdata->packetcount * userdata->mpeg_samples_per_packet;
+    s.pts = userdata->ts;
+
     if( (r = dest->submit_segment(dest->handle,&s)) != 0) {
         LOG0("error submitting segment");
         return r;

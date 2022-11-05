@@ -18,6 +18,7 @@ struct segment {
     const void* data;
     size_t len;
     unsigned int samples; /* will be 0 for init segments */
+    uint64_t pts; /* pts of this segment, used to detect discontinuities */
 };
 
 typedef struct segment segment;

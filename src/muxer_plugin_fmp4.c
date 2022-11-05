@@ -284,7 +284,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
 struct segment_wrapper {
     const segment_receiver* dest;
     int samples;
-    int time_base;
+    uint64_t pts;
 };
 
 typedef struct segment_wrapper segment_wrapper;
@@ -298,6 +298,7 @@ static size_t plugin_write_segment_callback(const void* src, size_t len, void* u
     s.data = src;
     s.len = len;
     s.samples = wrapper->samples;
+    s.pts = wrapper->pts;
 
     r = wrapper->dest->submit_segment(wrapper->dest->handle,&s);
     return r == 0 ? len : 0;
@@ -353,7 +354,7 @@ static int plugin_muxer_flush(plugin_userdata* userdata, const segment_receiver*
 
     wrapper.dest = dest;
     wrapper.samples = userdata->track->trun_sample_count;
-    wrapper.time_base = userdata->track->time_scale;
+    wrapper.pts = userdata->track->base_media_decode_time;
 
     if(userdata->emsg != NULL) {
         userdata->emsg->event_duration = userdata->track->trun_sample_count - (userdata->emsg->presentation_time - userdata->track->base_media_decode_time);
@@ -409,6 +410,7 @@ static size_t plugin_write_init_callback(const void* src, size_t len, void* user
     s.type = SEGMENT_TYPE_INIT;
     s.data = src;
     s.len = len;
+    s.pts = 0;
 
     return dest->submit_segment(dest->handle,&s) == 0 ? len : 0;
 }
