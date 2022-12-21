@@ -32,6 +32,33 @@ static int source_tag_handler_wrapper(void* ud, const taglist* tags) {
 
 static int source_submit_frame_wrapper(void* ud, const frame* frame) {
     source *s = (source *)ud;
+    ich_time now;
+    ich_time exp;
+    ich_time diff;
+    ich_frac frac;
+
+    if(s->samplecount == 0) {
+        ich_time_now(&s->ts);
+    }
+    s->samplecount += frame->duration;
+
+    if(s->samplecount >= s->frame_source.sample_rate) {
+        ich_time_now(&now);
+        frac.num = s->samplecount;
+        frac.den = s->frame_source.sample_rate;
+        exp = s->ts;
+        ich_time_add_frac(&exp,&frac);
+        if(ich_time_cmp(&exp,&now) < 0) {/* exp < now, meaning we're behind */
+            ich_time_sub(&diff,&now,&exp);
+            if(diff.seconds > 0 || diff.nanoseconds > 500000000) {
+                fprintf(stderr, "[WARNING] audio decoding behind by %ld.%03ld\n",diff.seconds,diff.nanoseconds / (1000 * 1000));
+            }
+        }
+
+        s->samplecount -= s->frame_source.sample_rate;
+        ich_time_now(&s->ts);
+    }
+
     return s->frame_destination.submit_frame(s->frame_destination.handle, frame);
 }
 
@@ -72,6 +99,7 @@ void source_init(source* s) {
     s->frame_destination = frame_receiver_zero;
 
     s->configuring = CONFIGURING_UNKNOWN;
+    s->samplecount = 0;
 }
 
 void source_free(source* s) {
