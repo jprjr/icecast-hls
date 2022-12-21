@@ -10,7 +10,6 @@
 #include "tag.h"
 #include "frame.h"
 #include "samplefmt.h"
-#include "ich_time.h"
 
 struct source {
     input input;
@@ -22,8 +21,6 @@ struct source {
     taglist tagcache; /* to hold tags that we find during open, but before run */
     frame_source frame_source; /* during open, the decoder/filter will "open" on a dummy
     destination that just copies the source info, which is used during source_open_dest */
-    size_t samplecount; /* counts number of samples seen */
-    ich_time ts; /* timestamp to track datarate */
 };
 
 typedef struct source source;

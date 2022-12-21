@@ -4,6 +4,7 @@
 #include "membuf.h"
 #include "source.h"
 #include "thread.h"
+#include "ich_time.h"
 
 typedef void (*sourcelist_quit_func)(void*,int);
 
@@ -15,6 +16,8 @@ struct sourcelist_entry {
     membuf destination_syncs; /* stores pointers to destination_sync objects */
     sourcelist_quit_func quit; /* used to end all threads when one dies */
     void* quit_userdata;
+    size_t samplecount; /* counts number of samples seen */
+    ich_time ts; /* timestamp to track datarate */
 };
 
 typedef struct sourcelist_entry sourcelist_entry;

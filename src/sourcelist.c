@@ -39,6 +39,7 @@ void sourcelist_entry_init(sourcelist_entry* entry) {
     thread_atomic_int_store(&entry->status, 0);
     entry->quit = NULL;
     entry->quit_userdata = NULL;
+    entry->samplecount = 0;
 }
 
 void sourcelist_entry_free(sourcelist_entry* entry) {
@@ -159,9 +160,36 @@ static int sourcelist_entry_frame_handler(void* userdata, const frame* frame) {
     size_t i;
     size_t len;
     source_sync sync;
+    ich_time now;
+    ich_time exp;
+    ich_time diff;
+    ich_frac frac;
+
 
     sourcelist_entry* entry = (sourcelist_entry *)userdata;
     destination_sync** dest_sync;
+
+    if(entry->samplecount == 0) {
+        ich_time_now(&entry->ts);
+    }
+    entry->samplecount += frame->duration;
+
+    if(entry->samplecount >= frame->sample_rate) {
+        ich_time_now(&now);
+        frac.num = entry->samplecount;
+        frac.den = frame->sample_rate;
+        exp = entry->ts;
+        ich_time_add_frac(&exp,&frac);
+        if(ich_time_cmp(&exp,&now) < 0) {/* exp < now, meaning we're behind */
+            ich_time_sub(&diff,&now,&exp);
+            if(diff.seconds > 0 || diff.nanoseconds > 500000000) {
+                fprintf(stderr, "[source.%.*s] [WARNING] audio decoding behind by %ld.%03ld\n",(int)entry->id.len,(const char *)entry->id.x,diff.seconds,diff.nanoseconds / (1000 * 1000));
+            }
+        }
+
+        entry->samplecount -= frame->sample_rate;
+        ich_time_now(&entry->ts);
+    }
 
     len = entry->destination_syncs.len / sizeof(destination_sync*);
     dest_sync = (destination_sync**)entry->destination_syncs.x;
