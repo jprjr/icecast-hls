@@ -48,6 +48,9 @@ void ich_time_add_frac(ich_time*, const ich_frac*);
 
 void ich_time_to_tm(ich_tm*, const ich_time*);
 
+int ich_time_cmp(const ich_time*, const ich_time*);
+void ich_time_diff(ich_time*, const ich_time*, const ich_time*);
+
 #ifdef __cplusplus
 }
 #endif

@@ -125,3 +125,23 @@ void ich_time_to_tm(ich_tm* tm, const ich_time* t) {
     tm->sec   = sec;
     tm->mill  = t->nanoseconds / NANOPERMILLI;
 }
+
+int ich_time_cmp(const ich_time* a, const ich_time* b) {
+    if(a->seconds == b->seconds) {
+        if(a->nanoseconds == b->nanoseconds) return 0;
+        return a->nanoseconds < b->nanoseconds ? -1 : 1;
+    }
+    return a->seconds < b->seconds ? -1 : 1;
+}
+
+void ich_time_diff(ich_time* c, const ich_time* a, const ich_time* b) {
+    ich_time tmp;
+    tmp.seconds = a->seconds - b->seconds;
+    tmp.nanoseconds = a->nanoseconds - b->nanoseconds;
+    if(tmp.nanoseconds < 0) {
+        tmp.nanoseconds += 1000000000;
+        tmp.seconds--;
+    }
+    *c = tmp;
+    return;
+}
