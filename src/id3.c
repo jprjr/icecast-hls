@@ -99,18 +99,39 @@ static int id3_encode_priv_com_apple_streaming_transportStreamTimestamp_frame(id
     return 0;
 }
 
+static int id3_encode_url_frame(id3* id3, const tag* t) {
+    int r;
+    size_t len;
+
+    /* for url frames, the length will be:
+     * url string
+     * if the url is a WXXX frame (which we
+     * detect by just checking if the key length > 4,
+     * since we mark those as "WXXX:stuff")
+     * then we also have (key length) - 5, and a null byte */
+    len = t->value.len;
+    if(t->key.len > 4) len += (t->key.len - 4);
+    if( (r = membuf_readyplus(id3,len)) != 0) return r;
+
+    if(t->key.len > 4) {
+        membuf_append(id3,&t->key.x[5],t->key.len - 5);
+        id3->x[id3->len++] = 0x00;
+    }
+    membuf_append(id3,t->value.x,t->value.len);
+    return 0;
+}
+
 static int id3_encode_text_frame(id3* id3, const tag* t) {
     int r;
     size_t len;
 
     /* for text frames, the length will be:
-     * 1 encoding byte
-     * text string + null byte
+     * 1 encoding byte + text string
      * if the string is a TXXX frame (which we
      * detect by just checking if the key length > 4,
      * since we mark those as "TXXX:stuff")
-     * then we also have (key length) - 5, and another null byte */
-    len = 1 + t->value.len + 1;
+     * then we also have (key length) - 5, and a null byte */
+    len = 1 + t->value.len;
     if(t->key.len > 4) len += (t->key.len - 4);
     if( (r = membuf_readyplus(id3,len)) != 0) return r;
 
@@ -121,7 +142,6 @@ static int id3_encode_text_frame(id3* id3, const tag* t) {
         id3->x[id3->len++] = 0x00;
     }
     membuf_append(id3,t->value.x,t->value.len);
-    id3->x[id3->len++] = 0x00;
     return 0;
 }
 
@@ -133,6 +153,10 @@ static int id3_encode_tag(id3* id3, const tag* t) {
        strbuf_equals_cstr(&t->key,"MVIN") ||
        strbuf_equals_cstr(&t->key,"USLT")) {
         return id3_encode_text_frame(id3,t);
+    }
+
+    if(t->key.x[0] == 'W') {
+        return id3_encode_url_frame(id3,t);
     }
 
     if(strbuf_equals_cstr(&t->key,"APIC")) return id3_encode_apic_frame(id3,t);
@@ -151,7 +175,6 @@ int id3_add_tag(id3* id3, const tag* t) {
     /* this happens if a picture block isn't handled by a custom mapping,
      * we never want to send binary data as a text frame, so just don't encode it */
     if(strbuf_caseequals_cstr(&t->key,"txxx:metadata_picture_block")) return 0;
-
 
     if( (r = membuf_readyplus(id3,10)) != 0) return r;
 
