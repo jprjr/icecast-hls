@@ -51,6 +51,13 @@ int default_tagmap_init(void) {
     ADD(copyright,TCOP)
     ADD(language,TLAN)
     ADD(lyrics,USLT)
+
+    ADD(icy_name,TRSN)
+    ADD(icy_title,TIT2)
+    ADD(icy_genre,TCON)
+    ADD(icy_url,WORS)
+    ADD(icy_description,TXXX:icy_description)
+
     ADD(metadata_picture_block,APIC)
 #undef ADD
     taglist_sort(DEFAULT_TAGMAP);

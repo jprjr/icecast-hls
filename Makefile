@@ -36,7 +36,6 @@ SOURCES = \
 	src/input.c \
 	src/input_plugin.c \
 	src/input_plugin_file.c \
-	src/input_plugin_http.c \
 	src/input_plugin_stdin.c \
 	src/muxer.c \
 	src/muxer_plugin.c \
@@ -89,7 +88,6 @@ REQUIRED_OBJS = \
 	src/input.o \
 	src/input_plugin.o \
 	src/input_plugin_file.o \
-	src/input_plugin_http.o \
 	src/input_plugin_stdin.o \
 	src/muxer.o \
 	src/muxer_plugin.o \
@@ -116,6 +114,9 @@ REQUIRED_OBJS = \
 CFLAGS_EXHALE =
 LDFLAGS_EXHALE = -lexhale
 
+CFLAGS_CURL = $(shell pkg-config --cflags libcurl)
+LDFLAGS_CURL = $(shell pkg-config --libs libcurl)
+
 CFLAGS_FDK_AAC = $(shell pkg-config --cflags fdk-aac)
 LDFLAGS_FDK_AAC = $(shell pkg-config --libs fdk-aac)
 
@@ -136,6 +137,7 @@ ENABLE_FDK_AAC=1
 ENABLE_EXHALE=1
 ENABLE_AVFILTER=1
 ENABLE_AVCODEC=1
+ENABLE_CURL=1
 
 ifeq ($(ENABLE_AVFILTER),1)
 FILTER_PLUGIN_CFLAGS += -DFILTER_PLUGIN_AVFILTER=1
@@ -166,6 +168,14 @@ REQUIRED_OBJS += src/encoder_plugin_fdk_aac.o
 FDK_AAC_REQUIRED=1
 endif
 
+ifeq ($(ENABLE_CURL),1)
+INPUT_PLUGIN_CFLAGS += -DINPUT_PLUGIN_CURL=1
+#OUTPUT_PLUGIN_CFLAGS += -DOUTPUT_PLUGIN_CURL=1
+REQUIRED_OBJS += src/input_plugin_curl.o
+#REQUIRED_OBJS += src/output_plugin_curl.o
+CURL_REQUIRED=1
+endif
+
 ifeq ($(EXHALE_REQUIRED),1)
 LDFLAGS += $(LDFLAGS_EXHALE)
 endif
@@ -194,6 +204,10 @@ ifeq ($(AVPACKET_REQUIRED),1)
 REQUIRED_OBJS += src/avpacket_utils.o
 endif
 
+ifeq ($(CURL_REQUIRED),1)
+LDFLAGS += $(LDFLAGS_CURL)
+endif
+
 all: icecast-hls
 
 clean:
@@ -207,6 +221,9 @@ src/encoder_plugin.o: src/encoder_plugin.c
 
 src/filter_plugin.o: src/filter_plugin.c
 	$(CC) $(CFLAGS) $(FILTER_PLUGIN_CFLAGS) -c -o $@ $<
+
+src/input_plugin.o: src/input_plugin.c
+	$(CC) $(CFLAGS) $(INPUT_PLUGIN_CFLAGS) -c -o $@ $<
 
 src/avpacket_utils.o: src/avpacket_utils.c
 	$(CC) $(CFLAGS) $(CFLAGS_AVCODEC) -c -o $@ $<
@@ -225,6 +242,12 @@ src/encoder_plugin_avcodec.o: src/encoder_plugin_avcodec.c
 
 src/encoder_plugin_fdk_aac.o: src/encoder_plugin_fdk_aac.c
 	$(CC) $(CFLAGS) $(CFLAGS_FDK_AAC) -c -o $@ $<
+
+src/input_plugin_curl.o: src/input_plugin_curl.c
+	$(CC) $(CFLAGS) $(CFLAGS_CURL) -c -o $@ $<
+
+src/decoder_plugin_miniflac.o: src/decoder_plugin_miniflac.c src/miniflac.h
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 src/minifmp4.o: src/minifmp4.c src/minifmp4.h
 	$(CC) $(CFLAGS) -c -o $@ $<

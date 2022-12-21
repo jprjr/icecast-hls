@@ -1,11 +1,20 @@
 #include "input_plugin_stdin.h"
 #include "input_plugin_file.h"
 
-#include <string.h>
+#ifndef INPUT_PLUGIN_CURL
+#define INPUT_PLUGIN_CURL 0
+#endif
+
+#if INPUT_PLUGIN_CURL
+#include "input_plugin_curl.h"
+#endif
 
 const input_plugin* input_plugin_list[] = {
     &input_plugin_stdin,
     &input_plugin_file,
+#if INPUT_PLUGIN_CURL
+    &input_plugin_curl,
+#endif
     NULL
 };
 
