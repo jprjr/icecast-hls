@@ -88,7 +88,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* val) {
     int r;
     file_userdata* userdata = (file_userdata*)ud;
 
-    if(strbuf_equals_cstr(key,"file")) {
+    if(strbuf_ends_cstr(key,"file")) {
         if( (r = strbuf_copy(&userdata->filename,val)) != 0) return r;
         if( (r = strbuf_term(&userdata->filename)) != 0) return r;
         return 0;
