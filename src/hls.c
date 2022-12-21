@@ -241,10 +241,10 @@ int hls_open(hls* h, const segment_source* source) {
 
     TRY0(strbuf_sprintf(&h->header,
       "#EXTM3U\n"
-      "#EXT-X-TARGETDURATION:%u\n"
-      "#EXT-X-VERSION:%u\n",
-      h->target_duration,
-      h->version),LOG0("out of memory"));
+      "#EXT-X-VERSION:%u\n"
+      "#EXT-X-TARGETDURATION:%u\n",
+      h->version,
+      h->target_duration),LOG0("out of memory"));
 
     TRYS(strbuf_sprintf(&h->fmt,"%%08u%.*s",
       (int)h->media_ext.len,(char *)h->media_ext.x))
@@ -270,7 +270,7 @@ static int hls_update_playlist(hls* h) {
 
     TRYS(strbuf_sprintf(&h->txt,
       "#EXT-X-MEDIA-SEQUENCE:%u\n"
-      "#EXT-X-DISCONTINUITY-SEQUENCE:%u\n\n",
+      "#EXT-X-DISCONTINUITY-SEQUENCE:%u\n",
       h->media_sequence,
       h->disc_sequence));
 
@@ -282,6 +282,7 @@ static int hls_update_playlist(hls* h) {
           (int)h->init_filename.len,
           (const char*)h->init_filename.x));
     }
+
 
     for(i=0;i<len;i++) {
         s = hls_playlist_get(&h->playlist,i);
@@ -342,7 +343,7 @@ static int hls_flush_segment(hls* h) {
 
     TRYS(strbuf_sprintf(&t->tags,
       "#EXTINF:%f,\n"
-      "%.*s%.*s\n\n",
+      "%.*s%.*s\n",
       (((double)h->segment.samples) / ((double)h->time_base)),
       (int)h->entry_prefix.len, (const char*)h->entry_prefix.x,
       (int)t->filename.len, (const char*)t->filename.x));
