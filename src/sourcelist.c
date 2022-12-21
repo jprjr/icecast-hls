@@ -34,7 +34,7 @@ void sourcelist_init(sourcelist* slist) {
 
 void sourcelist_entry_init(sourcelist_entry* entry) {
     strbuf_init(&entry->id);
-    source_init(&entry->source);
+    /* source_init(&entry->source); this gets done after appending the entry */
     membuf_init(&entry->destination_syncs);
     thread_atomic_int_store(&entry->status, 0);
     entry->quit = NULL;
@@ -93,6 +93,8 @@ int sourcelist_configure(const strbuf* id, const strbuf* key, const strbuf* valu
         if( (r = membuf_append(list,&empty,sizeof(sourcelist_entry))) != 0) return r;
         entry = sourcelist_find(list,id);
         if(entry == NULL) abort();
+        /* need to init some pointers after memcpy */
+        source_init(&entry->source);
     }
 
     return source_config(&entry->source,key,value);
