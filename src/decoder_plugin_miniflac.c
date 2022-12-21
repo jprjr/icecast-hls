@@ -360,7 +360,9 @@ static int plugin_decode(void* ud, const tag_handler* tag_handler, const frame_r
                 if( (r = plugin_process_metadata(userdata)) != 0) return r;
                 if( (res = mflac_sync(&userdata->m)) != MFLAC_OK) goto end;
             }
-            if( (r = tag_handler->cb(tag_handler->userdata, &userdata->list)) != 0) return r;
+            if(taglist_len(&userdata->list) > 0) {
+                if( (r = tag_handler->cb(tag_handler->userdata, &userdata->list)) != 0) return r;
+            }
         }
 
         if(userdata->m.flac.state == MINIFLAC_FRAME) {
