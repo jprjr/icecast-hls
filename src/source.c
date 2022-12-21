@@ -85,19 +85,28 @@ int source_config(source* s, const strbuf* key, const strbuf* val) {
     int r;
 
     if(strbuf_equals_cstr(key,"input")) {
-        if( (r = input_create(&s->input,val)) != 0) return r;
+        if( (r = input_create(&s->input,val)) != 0) {
+            fprintf(stderr,"[source] error creating input\n");
+            return r;
+        }
         s->configuring = CONFIGURING_INPUT;
         return 0;
     }
 
     if(strbuf_equals_cstr(key,"decoder")) {
-        if( (r = decoder_create(&s->decoder,val)) != 0) return r;
+        if( (r = decoder_create(&s->decoder,val)) != 0) {
+            fprintf(stderr,"[source] error creating decoder\n");
+            return r;
+        }
         s->configuring = CONFIGURING_DECODER;
         return 0;
     }
 
     if(strbuf_equals_cstr(key,"filter")) {
-        if( (r = filter_create(&s->filter,val)) != 0) return r;
+        if( (r = filter_create(&s->filter,val)) != 0) {
+            fprintf(stderr,"[source] error creating filter\n");
+            return r;
+        }
         s->configuring = CONFIGURING_FILTER;
         return 0;
     }
