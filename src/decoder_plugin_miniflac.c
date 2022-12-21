@@ -44,6 +44,7 @@ struct plugin_userdata {
     strbuf tmpstr;
     taglist list;
     uint8_t empty_tags; /* if 1 we keep empty tags */
+    uint8_t ignore_tags; /* if 1 we ignore all tags */
 };
 
 typedef struct plugin_userdata plugin_userdata;
@@ -84,6 +85,20 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
         }
         if(strbuf_caseequals_cstr(value,"remove")) {
             userdata->empty_tags = 0;
+            return 0;
+        }
+        fprintf(stderr,"[decoder:miniflac] unknown value for key %.*s: %.*s\n",
+          (int)key->len,(char *)key->x,(int)value->len,(char *)value->x);
+        return -1;
+    }
+
+    if(strbuf_ends_cstr(key,"ignore tags") || strbuf_ends_cstr(key,"ignore-tags")) {
+        if(strbuf_truthy(value)) {
+            userdata->ignore_tags = 1;
+            return 0;
+        }
+        if(strbuf_falsey(value)) {
+            userdata->ignore_tags = 0;
             return 0;
         }
         fprintf(stderr,"[decoder:miniflac] unknown value for key %.*s: %.*s\n",
@@ -353,6 +368,7 @@ static int plugin_decode(void* ud, const tag_handler* tag_handler, const frame_r
         if(! (userdata->m.flac.state == MINIFLAC_METADATA || userdata->m.flac.state == MINIFLAC_FRAME)) return -1;
 
         if(userdata->m.flac.state == MINIFLAC_METADATA) {
+            if(userdata->ignore_tags) continue;
             /* we want to get through all metadata blocks to gather
              * pictures etc in a single go */
             taglist_reset(&userdata->list);
