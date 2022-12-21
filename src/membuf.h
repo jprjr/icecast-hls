@@ -39,7 +39,7 @@ int membuf_remove(membuf*, size_t len, size_t pos);
 int membuf_discard(membuf*, size_t len);
 
 /* trim removes bytes from beginning of buffer */
-int membuf_discard(membuf*, size_t len);
+int membuf_trim(membuf*, size_t len);
 
 int membuf_copy(membuf*, const membuf* s);
 int membuf_cat(membuf*, const membuf* s);
