@@ -129,19 +129,28 @@ void ich_time_to_tm(ich_tm* tm, const ich_time* t) {
 int ich_time_cmp(const ich_time* a, const ich_time* b) {
     if(a->seconds == b->seconds) {
         if(a->nanoseconds == b->nanoseconds) return 0;
-        return a->nanoseconds < b->nanoseconds ? -1 : 1;
+        return a->nanoseconds - b->nanoseconds;
     }
-    return a->seconds < b->seconds ? -1 : 1;
+    return a->seconds - b->seconds;
 }
 
-void ich_time_diff(ich_time* c, const ich_time* a, const ich_time* b) {
-    ich_time tmp;
-    tmp.seconds = a->seconds - b->seconds;
-    tmp.nanoseconds = a->nanoseconds - b->nanoseconds;
-    if(tmp.nanoseconds < 0) {
-        tmp.nanoseconds += 1000000000;
-        tmp.seconds--;
+void ich_time_sub(ich_time* res, const ich_time* a, const ich_time* b) {
+    ich_time x, y;
+    int nsec;
+
+    x = *a;
+    y = *b;
+
+    if(x.nanoseconds < y.nanoseconds) {
+        nsec = ((y.nanoseconds - x.nanoseconds) / NANOPERSEC) + 1;
+        y.nanoseconds -= NANOPERSEC * nsec;
+        y.seconds += nsec;
     }
-    *c = tmp;
-    return;
+    if(x.nanoseconds - y.nanoseconds > NANOPERSEC) {
+        nsec = (y.nanoseconds - x.nanoseconds) / NANOPERSEC;
+        y.nanoseconds += NANOPERSEC * nsec;
+        y.seconds -= nsec;
+    }
+    res->seconds = x.seconds - y.seconds;
+    res->nanoseconds = x.nanoseconds - y.nanoseconds;
 }
