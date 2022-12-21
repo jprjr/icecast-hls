@@ -33,7 +33,11 @@ int input_create(input* in, const strbuf* name) {
     void* userdata;
 
     plug = input_plugin_get(name);
-    if(plug == NULL) return -1;
+    if(plug == NULL) {
+        fprintf(stderr,"[input] unable to find plugin: %.*s\n",
+          (int)name->len,(const char*)name->x);
+        return -1;
+    }
 
     userdata = plug->create();
     if(userdata == NULL) return -1;
