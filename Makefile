@@ -170,9 +170,9 @@ endif
 
 ifeq ($(ENABLE_CURL),1)
 INPUT_PLUGIN_CFLAGS += -DINPUT_PLUGIN_CURL=1
-#OUTPUT_PLUGIN_CFLAGS += -DOUTPUT_PLUGIN_CURL=1
+OUTPUT_PLUGIN_CFLAGS += -DOUTPUT_PLUGIN_CURL=1
 REQUIRED_OBJS += src/input_plugin_curl.o
-#REQUIRED_OBJS += src/output_plugin_curl.o
+REQUIRED_OBJS += src/output_plugin_curl.o
 CURL_REQUIRED=1
 endif
 
@@ -225,6 +225,9 @@ src/filter_plugin.o: src/filter_plugin.c
 src/input_plugin.o: src/input_plugin.c
 	$(CC) $(CFLAGS) $(INPUT_PLUGIN_CFLAGS) -c -o $@ $<
 
+src/output_plugin.o: src/output_plugin.c
+	$(CC) $(CFLAGS) $(OUTPUT_PLUGIN_CFLAGS) -c -o $@ $<
+
 src/avpacket_utils.o: src/avpacket_utils.c
 	$(CC) $(CFLAGS) $(CFLAGS_AVCODEC) -c -o $@ $<
 
@@ -244,6 +247,9 @@ src/encoder_plugin_fdk_aac.o: src/encoder_plugin_fdk_aac.c
 	$(CC) $(CFLAGS) $(CFLAGS_FDK_AAC) -c -o $@ $<
 
 src/input_plugin_curl.o: src/input_plugin_curl.c
+	$(CC) $(CFLAGS) $(CFLAGS_CURL) -c -o $@ $<
+
+src/output_plugin_curl.o: src/output_plugin_curl.c
 	$(CC) $(CFLAGS) $(CFLAGS_CURL) -c -o $@ $<
 
 src/decoder_plugin_miniflac.o: src/decoder_plugin_miniflac.c src/miniflac.h
