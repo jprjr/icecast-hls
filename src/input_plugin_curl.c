@@ -18,8 +18,6 @@
 #define LOGCURLE(s,e) LOG1(s": %s", curl_easy_strerror(e))
 #define LOGINT(s, i) LOG1(s": %d", i)
 
-#include <stdio.h>
-
 static STRBUF_CONST(ICY_TITLE,"icy_title");
 static STRBUF_CONST(ICY_NAME,"icy_name");
 static STRBUF_CONST(ICY_GENRE,"icy_genre");
@@ -324,11 +322,13 @@ static void input_plugin_curl_close(void* ud) {
     strbuf_free(&userdata->buffer);
     strbuf_free(&userdata->tmp);
     taglist_free(&userdata->tags);
+    free(userdata);
 }
 
 static int input_plugin_curl_config(void* ud, const strbuf* key, const strbuf* val) {
     int r;
     input_plugin_curl_userdata* userdata = (input_plugin_curl_userdata*)ud;
+    struct curl_slist* slist_temp = NULL;
 
     if(strbuf_ends_cstr(key,"url")) {
         if( (r = strbuf_copy(&userdata->url,val)) != 0) {
@@ -416,12 +416,13 @@ static int input_plugin_curl_config(void* ud, const strbuf* key, const strbuf* v
             userdata->tmp.len = 0;
             return r;
         }
-        userdata->headers = curl_slist_append(userdata->headers,(const char *)userdata->tmp.x);
+        slist_temp = curl_slist_append(userdata->headers,(const char *)userdata->tmp.x);
         userdata->tmp.len = 0;
-        if(userdata->headers == NULL) {
+        if(slist_temp == NULL) {
             LOG0("error appending header");
             return -1;
         }
+        userdata->headers = slist_temp;
         if(strbuf_casebegins_cstr(val,"icy-metadata:")) {
             userdata->icy_header = 1;
         }
@@ -538,6 +539,7 @@ static size_t input_plugin_curl_header_callback(char* ptr, size_t size, size_t n
 static int input_plugin_curl_open(void* ud) {
     CURLcode r;
     CURLMcode mc;
+    struct curl_slist* slist_temp = NULL;
     input_plugin_curl_userdata* userdata = (input_plugin_curl_userdata*)ud;
 
     if(userdata->url.len == 0) {
@@ -583,11 +585,12 @@ static int input_plugin_curl_open(void* ud) {
     }
 
     if(userdata->ignore_icecast == 0 && !userdata->icy_header) { /* user didn't specify ignore_icy and didn't add the icy-metadata header  - we'll add */
-        userdata->headers = curl_slist_append(userdata->headers, "Icy-MetaData:1");
-        if(userdata->headers == NULL) {
+        slist_temp = curl_slist_append(userdata->headers, "Icy-MetaData:1");
+        if(slist_temp == NULL) {
             LOG0("error adding Icy-MetaData header");
             return -1;
         }
+        userdata->headers = slist_temp;
     }
 
     if(userdata->headers != NULL) {
