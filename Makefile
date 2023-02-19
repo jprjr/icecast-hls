@@ -15,6 +15,7 @@ SOURCES = \
 	src/codecs.c \
 	src/decoder.c \
 	src/decoder_plugin.c \
+	src/decoder_plugin_avcodec.c \
 	src/decoder_plugin_miniflac.c \
 	src/destination.c \
 	src/destinationlist.c \
@@ -120,6 +121,9 @@ LDFLAGS_CURL = $(shell pkg-config --libs libcurl)
 CFLAGS_FDK_AAC = $(shell pkg-config --cflags fdk-aac)
 LDFLAGS_FDK_AAC = $(shell pkg-config --libs fdk-aac)
 
+CFLAGS_AVFORMAT = $(shell pkg-config --cflags libavformat)
+LDFLAGS_AVFORMAT = $(shell pkg-config --libs libavformat)
+
 CFLAGS_AVFILTER = $(shell pkg-config --cflags libavfilter)
 LDFLAGS_AVFILTER = $(shell pkg-config --libs libavfilter)
 
@@ -149,11 +153,14 @@ endif
 
 ifeq ($(ENABLE_AVCODEC),1)
 ENCODER_PLUGIN_CFLAGS += -DENCODER_PLUGIN_AVCODEC=1
+DECODER_PLUGIN_CFLAGS += -DDECODER_PLUGIN_AVCODEC=1
 REQUIRED_OBJS += src/encoder_plugin_avcodec.o
+REQUIRED_OBJS += src/decoder_plugin_avcodec.o
 AVFRAME_REQUIRED=1
 AVPACKET_REQUIRED=1
 AVUTIL_REQUIRED=1
 AVCODEC_REQUIRED=1
+AVFORMAT_REQUIRED=1
 endif
 
 ifeq ($(ENABLE_EXHALE),1)
@@ -184,16 +191,20 @@ ifeq ($(FDK_AAC_REQUIRED),1)
 LDFLAGS += $(LDFLAGS_FDK_AAC)
 endif
 
+ifeq ($(AVFORMAT_REQUIRED),1)
+LDFLAGS += $(LDFLAGS_AVFORMAT)
+endif
+
 ifeq ($(AVFILTER_REQUIRED),1)
 LDFLAGS += $(LDFLAGS_AVFILTER)
 endif
 
-ifeq ($(AVUTIL_REQUIRED),1)
-LDFLAGS += $(LDFLAGS_AVUTIL)
-endif
-
 ifeq ($(AVCODEC_REQUIRED),1)
 LDFLAGS += $(LDFLAGS_AVCODEC)
+endif
+
+ifeq ($(AVUTIL_REQUIRED),1)
+LDFLAGS += $(LDFLAGS_AVUTIL)
 endif
 
 ifeq ($(AVFRAME_REQUIRED),1)
@@ -215,6 +226,9 @@ clean:
 
 icecast-hls: $(REQUIRED_OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS)
+
+src/decoder_plugin.o: src/decoder_plugin.c
+	$(CC) $(CFLAGS) $(DECODER_PLUGIN_CFLAGS) -c -o $@ $<
 
 src/encoder_plugin.o: src/encoder_plugin.c
 	$(CC) $(CFLAGS) $(ENCODER_PLUGIN_CFLAGS) -c -o $@ $<
@@ -239,6 +253,9 @@ src/filter_plugin_avfilter.o: src/filter_plugin_avfilter.c
 
 src/encoder_plugin_exhale.o: src/encoder_plugin_exhale.c
 	$(CC) $(CFLAGS) $(CFLAGS_EXHALE) -c -o $@ $<
+
+src/decoder_plugin_avcodec.o: src/decoder_plugin_avcodec.c
+	$(CC) $(CFLAGS) $(CFLAGS_AVFORMAT) $(CFLAGS_AVCODEC) $(CFLAGS_AVUTIL) -c -o $@ $<
 
 src/encoder_plugin_avcodec.o: src/encoder_plugin_avcodec.c
 	$(CC) $(CFLAGS) $(CFLAGS_AVCODEC) $(CFLAGS_AVUTIL) -c -o $@ $<
