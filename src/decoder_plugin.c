@@ -1,7 +1,20 @@
+#include "decoder_plugin.h"
+
+#ifndef DECODER_PLUGIN_AVCODEC
+#define DECODER_PLUGIN_AVCODEC 0
+#endif
+
 #include "decoder_plugin_miniflac.h"
+
+#if DECODER_PLUGIN_AVCODEC
+#include "decoder_plugin_avcodec.h"
+#endif
 
 const decoder_plugin* decoder_plugin_list[] = {
     &decoder_plugin_miniflac,
+#if DECODER_PLUGIN_AVCODEC
+    &decoder_plugin_avcodec,
+#endif
     NULL,
 };
 
