@@ -70,7 +70,7 @@ static void* plugin_create(void) {
 
 static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
-    if(strbuf_ends_cstr(key,"empty tags") || strbuf_ends_cstr(key,"empty-tags")) {
+    if(strbuf_equals_cstr(key,"empty tags") || strbuf_equals_cstr(key,"empty-tags")) {
         if(strbuf_truthy(value)) {
             userdata->empty_tags = 1;
             return 0;
@@ -92,7 +92,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
         return -1;
     }
 
-    if(strbuf_ends_cstr(key,"ignore tags") || strbuf_ends_cstr(key,"ignore-tags")) {
+    if(strbuf_equals_cstr(key,"ignore tags") || strbuf_equals_cstr(key,"ignore-tags")) {
         if(strbuf_truthy(value)) {
             userdata->ignore_tags = 1;
             return 0;

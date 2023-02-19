@@ -204,7 +204,6 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
 
         case AV_CODEC_ID_MP3: {
             me.codec = CODEC_TYPE_MP3;
-            me.roll_distance = -1; /* TODO is this right? */
             break;
         }
 

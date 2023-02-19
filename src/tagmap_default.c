@@ -19,6 +19,8 @@ int default_tagmap_init(void) {
     ADD(subtitle,TIT3)
     ADD(movementname,MVNM)
     ADD(albumartist,TPE2)
+    ADDP(album_artist,TPE2,0xFE)
+    ADDP(album artist,TPE2,0xFD)
     ADD(albumartistsort,TSO2)
     ADD(artist,TPE1)
     ADD(artistsort,TSOP)

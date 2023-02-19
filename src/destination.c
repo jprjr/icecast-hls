@@ -135,20 +135,18 @@ int destination_open(destination* dest, const ich_time* now) {
 }
 
 int destination_config(destination* dest, const strbuf* key, const strbuf* val) {
-    strbuf tmp;
+    strbuf t = STRBUF_ZERO;
     int r = -1;
     int f;
 
-    strbuf_init(&tmp);
-
     if(strbuf_equals_cstr(key,"source")) {
         if( (r = strbuf_copy(&dest->source_id,val)) != 0) return r;
-        r = 0; goto cleanup;
+        return 0;
     }
 
     if(strbuf_equals_cstr(key,"tagmap")) {
         if( (r = strbuf_copy(&dest->tagmap_id,val)) != 0) return r;
-        r = 0; goto cleanup;
+        return 0;
     }
 
     if(strbuf_equals_cstr(key,"images")) {
@@ -189,48 +187,47 @@ int destination_config(destination* dest, const strbuf* key, const strbuf* val) 
         }
 
         if(f > 0) {
-            r = 0; goto cleanup;
+            return 0;
         }
 
         fprintf(stderr,"[destination] unknown configuration value %.*s for option %.*s\n",
           (int)val->len,(const char *)val->x,
           (int)key->len,(const char *)key->x);
-        r = -1; goto cleanup;
+        return -1;
     }
 
     if(strbuf_equals_cstr(key,"unknown tags") || strbuf_equals_cstr(key,"unknown-tags")) {
         if(strbuf_equals_cstr(val,"ignore")) {
             dest->map_flags.unknownmode = TAGMAP_UNKNOWN_IGNORE;
-            r = 0; goto cleanup;
+            return 0;
         }
         if(strbuf_equals_cstr(val,"txxx")) {
             dest->map_flags.unknownmode = TAGMAP_UNKNOWN_TXXX;
-            r = 0; goto cleanup;
+            return 0;
         }
         fprintf(stderr,"[destination] unknown configuration value %.*s for option %.*s\n",
           (int)val->len,(const char *)val->x,
           (int)key->len,(const char *)key->x);
-        r = -1; goto cleanup;
+        return -1;
     }
 
     if(strbuf_equals_cstr(key,"duplicate tags") || strbuf_equals_cstr(key,"duplicate-tags")) {
         if(strbuf_equals_cstr(val,"ignore")) {
             dest->map_flags.mergemode = TAGMAP_MERGE_IGNORE;
-            r = 0; goto cleanup;
+            return 0;
         }
         if(strbuf_equals_cstr(val,"null")) {
             dest->map_flags.mergemode = TAGMAP_MERGE_NULL;
-            r = 0; goto cleanup;
+            return 0;
         }
         if(strbuf_equals_cstr(val,"semicolon")) {
             dest->map_flags.mergemode = TAGMAP_MERGE_SEMICOLON;
-            r = 0; goto cleanup;
+            return 0;
         }
         fprintf(stderr,"[destination] unknown configuration value %.*s for option %.*s\n",
           (int)val->len,(const char *)val->x,
           (int)key->len,(const char *)key->x);
-        r = -1; goto cleanup;
-        goto cleanup;
+        return -1;
     }
 
     if(strbuf_equals_cstr(key,"filter")) {
@@ -258,16 +255,24 @@ int destination_config(destination* dest, const strbuf* key, const strbuf* val) 
     }
 
     if(strbuf_begins_cstr(key,"filter-")) {
-        return filter_config(&dest->filter,key,val);
+        t.x = &key->x[7];
+        t.len = key->len - 7;
+        return filter_config(&dest->filter,&t,val);
     }
     if(strbuf_begins_cstr(key,"encoder-")) {
-        return encoder_config(&dest->encoder,key,val);
+        t.x = &key->x[8];
+        t.len = key->len - 8;
+        return encoder_config(&dest->encoder,&t,val);
     }
     if(strbuf_begins_cstr(key,"muxer-")) {
-        return muxer_config(&dest->muxer,key,val);
+        t.x = &key->x[6];
+        t.len = key->len - 6;
+        return muxer_config(&dest->muxer,&t,val);
     }
     if(strbuf_begins_cstr(key,"output-")) {
-        return output_config(&dest->output,key,val);
+        t.x = &key->x[7];
+        t.len = key->len - 7;
+        return output_config(&dest->output,&t,val);
     }
 
     switch(dest->configuring) {
@@ -281,8 +286,6 @@ int destination_config(destination* dest, const strbuf* key, const strbuf* val) 
 
     fprintf(stderr,"[destination] unknown configuration option %.*s\n",(int)key->len,(const char *)key->x);
 
-    cleanup:
-    strbuf_free(&tmp);
     return r;
 }
 

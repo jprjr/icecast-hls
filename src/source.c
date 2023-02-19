@@ -83,6 +83,7 @@ void source_free(source* s) {
 
 int source_config(source* s, const strbuf* key, const strbuf* val) {
     int r;
+    strbuf t = STRBUF_ZERO;
 
     if(strbuf_equals_cstr(key,"input")) {
         if( (r = input_create(&s->input,val)) != 0) {
@@ -112,15 +113,21 @@ int source_config(source* s, const strbuf* key, const strbuf* val) {
     }
 
     if(strbuf_begins_cstr(key,"input-")) {
-        return input_config(&s->input,key,val);
+        t.x = &key->x[6];
+        t.len = key->len - 6;
+        return input_config(&s->input,&t,val);
     }
 
     if(strbuf_begins_cstr(key,"decoder-")) {
-        return decoder_config(&s->decoder,key,val);
+        t.x = &key->x[8];
+        t.len = key->len - 8;
+        return decoder_config(&s->decoder,&t,val);
     }
 
     if(strbuf_begins_cstr(key,"filter-")) {
-        return filter_config(&s->filter,key,val);
+        t.x = &key->x[7];
+        t.len = key->len - 7;
+        return filter_config(&s->filter,&t,val);
     }
 
     switch(s->configuring) {

@@ -330,7 +330,7 @@ static int input_plugin_curl_config(void* ud, const strbuf* key, const strbuf* v
     input_plugin_curl_userdata* userdata = (input_plugin_curl_userdata*)ud;
     struct curl_slist* slist_temp = NULL;
 
-    if(strbuf_ends_cstr(key,"url")) {
+    if(strbuf_equals_cstr(key,"url")) {
         if( (r = strbuf_copy(&userdata->url,val)) != 0) {
             LOGERRNO("unable to copy url string");
             return r;
@@ -342,9 +342,9 @@ static int input_plugin_curl_config(void* ud, const strbuf* key, const strbuf* v
         return 0;
     }
 
-    if(strbuf_ends_cstr(key,"read timeout") ||
-       strbuf_ends_cstr(key,"read-timeout") ||
-       strbuf_ends_cstr(key,"read_timeout")) {
+    if(strbuf_equals_cstr(key,"read timeout") ||
+       strbuf_equals_cstr(key,"read-timeout") ||
+       strbuf_equals_cstr(key,"read_timeout")) {
         errno = 0;
         userdata->read_timeout = strbuf_strtoul(val,10);
         if(errno != 0) {
@@ -358,9 +358,9 @@ static int input_plugin_curl_config(void* ud, const strbuf* key, const strbuf* v
         return 0;
     }
 
-    if(strbuf_ends_cstr(key,"connect timeout") ||
-       strbuf_ends_cstr(key,"connect-timeout") ||
-       strbuf_ends_cstr(key,"connect_timeout")) {
+    if(strbuf_equals_cstr(key,"connect timeout") ||
+       strbuf_equals_cstr(key,"connect-timeout") ||
+       strbuf_equals_cstr(key,"connect_timeout")) {
         errno = 0;
         userdata->connect_timeout = strbuf_strtoul(val,10);
         if(errno != 0) {
@@ -374,7 +374,7 @@ static int input_plugin_curl_config(void* ud, const strbuf* key, const strbuf* v
         return 0;
     }
 
-    if(strbuf_ends_cstr(key,"verbose")) {
+    if(strbuf_equals_cstr(key,"verbose")) {
         if(strbuf_truthy(val)) {
             userdata->verbose = 1;
             return 0;
@@ -387,12 +387,12 @@ static int input_plugin_curl_config(void* ud, const strbuf* key, const strbuf* v
         return -1;
     }
 
-    if(strbuf_ends_cstr(key,"ignore icy") ||
-       strbuf_ends_cstr(key,"ignore-icy") ||
-       strbuf_ends_cstr(key,"ignore_icy") ||
-       strbuf_ends_cstr(key,"ignore icecast") ||
-       strbuf_ends_cstr(key,"ignore-icecast") ||
-       strbuf_ends_cstr(key,"ignore_icecast") ){
+    if(strbuf_equals_cstr(key,"ignore icy") ||
+       strbuf_equals_cstr(key,"ignore-icy") ||
+       strbuf_equals_cstr(key,"ignore_icy") ||
+       strbuf_equals_cstr(key,"ignore icecast") ||
+       strbuf_equals_cstr(key,"ignore-icecast") ||
+       strbuf_equals_cstr(key,"ignore_icecast") ){
         if(strbuf_truthy(val)) {
             userdata->ignore_icecast = 1;
             return 0;
@@ -405,7 +405,7 @@ static int input_plugin_curl_config(void* ud, const strbuf* key, const strbuf* v
         return -1;
     }
 
-    if(strbuf_ends_cstr(key,"header")) {
+    if(strbuf_equals_cstr(key,"header")) {
         if((r = strbuf_copy(&userdata->tmp,val)) != 0) {
             LOGERRNO("unable to copy header string");
             userdata->tmp.len = 0;

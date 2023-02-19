@@ -336,7 +336,7 @@ static int output_plugin_curl_config(void* ud, const strbuf* key, const strbuf* 
 
     if(strbuf_begins_cstr(key,"hls-")) return hls_configure(&userdata->hls,key,value);
 
-    if(strbuf_ends_cstr(key,"url")) {
+    if(strbuf_equals_cstr(key,"url")) {
         if( (r = strbuf_copy(&userdata->url,value)) != 0) return r;
         while(userdata->url.len && (userdata->url.x[userdata->url.len - 1] == '/')) {
             userdata->url.len--;
@@ -352,7 +352,7 @@ static int output_plugin_curl_config(void* ud, const strbuf* key, const strbuf* 
         return 0;
     }
 
-    if(strbuf_ends_cstr(key,"username")) {
+    if(strbuf_equals_cstr(key,"username")) {
         if( (r = strbuf_copy(&userdata->http_username,value)) != 0) {
             LOG0("error copying http username string");
             return r;
@@ -360,7 +360,7 @@ static int output_plugin_curl_config(void* ud, const strbuf* key, const strbuf* 
         return 0;
     }
 
-    if(strbuf_ends_cstr(key,"password")) {
+    if(strbuf_equals_cstr(key,"password")) {
         if( (r = strbuf_copy(&userdata->http_password,value)) != 0) {
             LOG0("error copying http password string");
             return r;
@@ -368,7 +368,7 @@ static int output_plugin_curl_config(void* ud, const strbuf* key, const strbuf* 
         return 0;
     }
 
-    if(strbuf_ends_cstr(key,"verbose")) {
+    if(strbuf_equals_cstr(key,"verbose")) {
         if(strbuf_truthy(value)) {
             userdata->verbose = 1;
             return 0;
@@ -381,7 +381,7 @@ static int output_plugin_curl_config(void* ud, const strbuf* key, const strbuf* 
         return -1;
     }
 
-    if(strbuf_ends_cstr(key,"aws")) {
+    if(strbuf_equals_cstr(key,"aws")) {
         if(strbuf_truthy(value)) {
             userdata->aws = 1;
             return 0;
@@ -394,7 +394,7 @@ static int output_plugin_curl_config(void* ud, const strbuf* key, const strbuf* 
         return -1;
     }
 
-    if(strbuf_ends_cstr(key,"delete")) {
+    if(strbuf_equals_cstr(key,"delete")) {
         if(strbuf_truthy(value)) {
             userdata->delete = 1;
             return 0;
@@ -407,9 +407,9 @@ static int output_plugin_curl_config(void* ud, const strbuf* key, const strbuf* 
         return -1;
     }
 
-    if(strbuf_ends_cstr(key,"aws_region") ||
-       strbuf_ends_cstr(key,"aws region") ||
-       strbuf_ends_cstr(key,"aws-region")) {
+    if(strbuf_equals_cstr(key,"aws_region") ||
+       strbuf_equals_cstr(key,"aws region") ||
+       strbuf_equals_cstr(key,"aws-region")) {
         if( (r = strbuf_copy(&userdata->aws_region,value)) != 0) {
             LOG0("error copying aws region string");
             return r;
@@ -418,9 +418,9 @@ static int output_plugin_curl_config(void* ud, const strbuf* key, const strbuf* 
         return 0;
     }
 
-    if(strbuf_ends_cstr(key,"aws_service") ||
-       strbuf_ends_cstr(key,"aws service") ||
-       strbuf_ends_cstr(key,"aws-service")) {
+    if(strbuf_equals_cstr(key,"aws_service") ||
+       strbuf_equals_cstr(key,"aws service") ||
+       strbuf_equals_cstr(key,"aws-service")) {
         if( (r = strbuf_copy(&userdata->aws_service,value)) != 0) {
             LOG0("error copying aws service string");
             return r;
@@ -429,9 +429,9 @@ static int output_plugin_curl_config(void* ud, const strbuf* key, const strbuf* 
         return 0;
     }
 
-    if(strbuf_ends_cstr(key,"aws_access_key_id") ||
-       strbuf_ends_cstr(key,"aws access key id") ||
-       strbuf_ends_cstr(key,"aws-access-key-id")) {
+    if(strbuf_equals_cstr(key,"aws_access_key_id") ||
+       strbuf_equals_cstr(key,"aws access key id") ||
+       strbuf_equals_cstr(key,"aws-access-key-id")) {
         if( (r = strbuf_copy(&userdata->aws_access_key_id,value)) != 0) {
             LOG0("error copying aws access key id string");
             return r;
@@ -440,9 +440,9 @@ static int output_plugin_curl_config(void* ud, const strbuf* key, const strbuf* 
         return 0;
     }
 
-    if(strbuf_ends_cstr(key,"aws_secret_access_key") ||
-       strbuf_ends_cstr(key,"aws secret access key") ||
-       strbuf_ends_cstr(key,"aws-secret-access-key")) {
+    if(strbuf_equals_cstr(key,"aws_secret_access_key") ||
+       strbuf_equals_cstr(key,"aws secret access key") ||
+       strbuf_equals_cstr(key,"aws-secret-access-key")) {
         if( (r = strbuf_copy(&userdata->aws_secret_access_key,value)) != 0) {
             LOG0("error copying aws secret access key string");
             return r;
@@ -451,9 +451,9 @@ static int output_plugin_curl_config(void* ud, const strbuf* key, const strbuf* 
         return 0;
     }
 
-    if(strbuf_ends_cstr(key,"put header") ||
-       strbuf_ends_cstr(key,"put-header") ||
-       strbuf_ends_cstr(key,"put_header")) {
+    if(strbuf_equals_cstr(key,"put header") ||
+       strbuf_equals_cstr(key,"put-header") ||
+       strbuf_equals_cstr(key,"put_header")) {
         if( (r = strbuf_cat(&userdata->put_headers,value)) != 0) {
             LOG0("error copying put headers");
             return r;
@@ -465,9 +465,9 @@ static int output_plugin_curl_config(void* ud, const strbuf* key, const strbuf* 
         return 0;
     }
 
-    if(strbuf_ends_cstr(key,"delete header") ||
-       strbuf_ends_cstr(key,"delete-header") ||
-       strbuf_ends_cstr(key,"delete_header")) {
+    if(strbuf_equals_cstr(key,"delete header") ||
+       strbuf_equals_cstr(key,"delete-header") ||
+       strbuf_equals_cstr(key,"delete_header")) {
         if( (r = strbuf_cat(&userdata->delete_headers,value)) != 0) {
             LOG0("error copying delete headers");
             return r;
@@ -479,7 +479,7 @@ static int output_plugin_curl_config(void* ud, const strbuf* key, const strbuf* 
         return 0;
     }
 
-    if(strbuf_ends_cstr(key,"header")) {
+    if(strbuf_equals_cstr(key,"header")) {
         if( (r = strbuf_cat(&userdata->shared_headers,value)) != 0) {
             LOG0("error copying shared headers");
             return r;

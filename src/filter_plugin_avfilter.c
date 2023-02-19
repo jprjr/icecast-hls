@@ -11,11 +11,6 @@
 
 #include <errno.h>
 
-#define KEY(v,t) \
-static const strbuf KEY_##v = { .a = 0, .len = sizeof(#t) - 1, .x = (uint8_t*)#t }
-
-KEY(filter_string,filter-string);
-
 struct plugin_userdata {
     AVFilterGraph *graph;
     AVFilterContext *buffersrc;
@@ -67,7 +62,7 @@ static void* plugin_create(void) {
 static int plugin_config(void* ud, const strbuf* key, const strbuf* val) {
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
-    if(strbuf_equals(key,&KEY_filter_string)) {
+    if(strbuf_equals_cstr(key,"string")) {
         if(userdata->filter_string.len > 0) {
             fprintf(stderr,"[filter:avfilter] only 1 filter string is supported\n");
             return -1;

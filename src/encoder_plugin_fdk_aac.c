@@ -74,7 +74,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
     unsigned int mult = 1;
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
-    if(strbuf_ends_cstr(key,"profile")) {
+    if(strbuf_equals_cstr(key,"profile")) {
         if(strbuf_caseequals_cstr(value,"aac_low")
             || strbuf_caseequals_cstr(value,"aac")
             || strbuf_caseequals_cstr(value,"aac-lc")
@@ -111,7 +111,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
         return -1;
     }
 
-    if(strbuf_ends_cstr(key,"vbr")) {
+    if(strbuf_equals_cstr(key,"vbr")) {
         errno = 0;
         userdata->vbr = strbuf_strtoul(value,10);
         if(errno != 0) {
@@ -125,7 +125,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
         return 0;
     }
 
-    if(strbuf_ends_cstr(key,"bitrate") || strbuf_ends_cstr(key,"-b") || strbuf_equals_cstr(key,"b")) {
+    if(strbuf_equals_cstr(key,"bitrate") || strbuf_equals_cstr(key,"b")) {
         if(strbuf_caseends_cstr(value,"k")) {
             mult = 1000;
         }
@@ -142,7 +142,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
         return 0;
     }
 
-    if(strbuf_ends_cstr(key,"afterburner")) {
+    if(strbuf_equals_cstr(key,"afterburner")) {
         if(strbuf_truthy(value)) {
             userdata->afterburner = 1;
             return 0;
