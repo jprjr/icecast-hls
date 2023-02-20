@@ -172,6 +172,8 @@ enum fmp4_codec {
     FMP4_CODEC_ALAC = 0x616c6163,
     FMP4_CODEC_FLAC = 0x664c6143,
     FMP4_CODEC_OPUS = 0x4f707573,
+    FMP4_CODEC_AC3  = 0x61632d33,
+    FMP4_CODEC_EAC3 = 0x65632d33,
 };
 
 typedef enum fmp4_codec fmp4_codec;
@@ -1123,6 +1125,10 @@ enum fmp4_box_id {
     BOX_sbgp = BOX_ID('s','b','g','p'),
     BOX_Opus = BOX_ID('O','p','u','s'),
     BOX_dOps = BOX_ID('d','O','p','s'),
+    BOX_ac_3 = BOX_ID('a','c','-','3'),
+    BOX_dac3 = BOX_ID('d','a','c','3'),
+    BOX_ec_3 = BOX_ID('e','c','-','3'),
+    BOX_dec3 = BOX_ID('d','e','c','3'),
 };
 
 typedef enum fmp4_box_id fmp4_box_id;
@@ -1806,6 +1812,14 @@ fmp4_box_trak(fmp4_mux* mux, const fmp4_track* track, uint32_t id) {
                                     BOX_BEGIN(BOX_dOps);
                                     WRITE_DATA(track->dsi.x, track->dsi.len);
                                     BOX_END(BOX_dOps);
+                                } else if(track->codec == FMP4_CODEC_AC3) {
+                                    BOX_BEGIN(BOX_dac3);
+                                    WRITE_DATA(track->dsi.x, track->dsi.len);
+                                    BOX_END(BOX_dac3);
+                                } else if(track->codec == FMP4_CODEC_EAC3) {
+                                    BOX_BEGIN(BOX_dec3);
+                                    WRITE_DATA(track->dsi.x, track->dsi.len);
+                                    BOX_END(BOX_dec3);
                                 }
                             }
                         }
