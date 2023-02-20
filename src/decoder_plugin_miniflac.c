@@ -64,6 +64,7 @@ static void* plugin_create(void) {
     strbuf_init(&userdata->tmpstr);
     taglist_init(&userdata->list);
     userdata->input = NULL;
+    userdata->ignore_tags = 0;
     userdata->empty_tags = 0;
     return userdata;
 }

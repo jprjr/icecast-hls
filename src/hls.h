@@ -72,12 +72,12 @@ typedef struct hls_callback_handler hls_callback_handler;
 struct hls {
     strbuf txt; /* stores the actual, generated playlist */
     strbuf header; /* stores the header-type info */
-    strbuf fmt; /* generated snprintf-style format string */
     strbuf playlist_filename;
+    strbuf playlist_mimetype;
     strbuf init_filename;
-    strbuf init_mime;  /* the mimetype to use on init segments */
-    strbuf media_ext;   /* the file extension to use on media segments */
-    strbuf media_mime;  /* the mimetype to use on media segments */
+    strbuf init_mimetype;  /* the mimetype to use on init segments */
+    strbuf segment_format; /* generated snprintf-style format string for media segments */
+    strbuf segment_mimetype;  /* the mimetype to use on media segments */
     strbuf entry_prefix; /* user-configurable prefix on playlist entries */
 
     hls_playlist playlist;

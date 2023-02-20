@@ -7,6 +7,8 @@ static const char* codec_names[] = {
     "flac",
     "mp3",
     "opus"
+    "ac3",
+    "e-ac3",
 };
 
 const char *codec_name(codec_type t) {

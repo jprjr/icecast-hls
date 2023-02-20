@@ -159,12 +159,12 @@ void hls_init(hls* h) {
     thread_atomic_uint_store(&counter,0);
     strbuf_init(&h->txt);
     strbuf_init(&h->header);
-    strbuf_init(&h->fmt);
     strbuf_init(&h->init_filename);
+    strbuf_init(&h->init_mimetype);
+    strbuf_init(&h->segment_format);
+    strbuf_init(&h->segment_mimetype);
     strbuf_init(&h->playlist_filename);
-    strbuf_init(&h->init_mime);
-    strbuf_init(&h->media_ext);
-    strbuf_init(&h->media_mime);
+    strbuf_init(&h->playlist_mimetype);
     strbuf_init(&h->entry_prefix);
     hls_playlist_init(&h->playlist);
     hls_segment_init(&h->segment);
@@ -188,14 +188,14 @@ void hls_init(hls* h) {
 void hls_free(hls* h) {
     strbuf_free(&h->txt);
     strbuf_free(&h->header);
-    strbuf_free(&h->fmt);
     membuf_free(&h->segment.data);
     strbuf_free(&h->segment.expired_files);
-    strbuf_free(&h->init_filename);
     strbuf_free(&h->playlist_filename);
-    strbuf_free(&h->init_mime);
-    strbuf_free(&h->media_ext);
-    strbuf_free(&h->media_mime);
+    strbuf_free(&h->playlist_mimetype);
+    strbuf_free(&h->init_filename);
+    strbuf_free(&h->init_mimetype);
+    strbuf_free(&h->segment_format);
+    strbuf_free(&h->segment_mimetype);
     strbuf_free(&h->entry_prefix);
     hls_playlist_free(&h->playlist);
     hls_init(h);
@@ -211,29 +211,38 @@ int hls_open(hls* h, const segment_source* source) {
     h->target_samples = params.packets_per_segment * source->frame_len;
     h->time_base  = source->time_base;
 
-    if(source->media_mime != NULL) {
-        TRYS(strbuf_copy(&h->media_mime,source->media_mime));
+    if(h->init_mimetype.len == 0) {
+        /* if the source sets init_ext to NULL it's packed audio (no init segment) */
+        if(source->init_mimetype != NULL) {
+            TRYS(strbuf_copy(&h->init_mimetype,source->init_mimetype))
+        }
     }
 
-    if(source->media_ext != NULL) {
-        TRYS(strbuf_copy(&h->media_ext,source->media_ext))
-    }
+    if(h->init_filename.len == 0) {
 
-    if(source->init_mime != NULL) {
-        TRYS(strbuf_copy(&h->init_mime,source->init_mime))
-    }
-
-    if(source->init_ext != NULL) {
-
-        if(h->init_filename.len == 0) {
+        /* if the source sets init_ext to NULL it's packed audio (no init segment) */
+        if(source->init_ext != NULL) {
             TRYS(strbuf_append_cstr(&h->init_filename,"init"))
         }
-
         TRYS(strbuf_cat(&h->init_filename,source->init_ext))
     }
 
     if(h->playlist_filename.len == 0) {
         TRYS(strbuf_append_cstr(&h->playlist_filename,"stream.m3u8"));
+    }
+
+    if(h->playlist_mimetype.len == 0) {
+        TRYS(strbuf_copy(&h->playlist_mimetype,&mime_m3u8));
+    }
+
+    if(h->segment_format.len == 0) {
+      TRYS(strbuf_sprintf(&h->segment_format,"%%08u%.*s",
+        (int)source->media_ext->len,(char *)source->media_ext->x))
+      TRYS(strbuf_term(&h->segment_format));
+    }
+
+    if(h->segment_mimetype.len == 0) {
+        TRYS(strbuf_copy(&h->segment_mimetype,source->media_mimetype));
     }
 
     playlist_segments = (h->playlist_length / h->target_duration) + (source->time_base % source->frame_len <= (source->frame_len / 2));
@@ -245,10 +254,6 @@ int hls_open(hls* h, const segment_source* source) {
       "#EXT-X-TARGETDURATION:%u\n",
       h->version,
       h->target_duration),LOG0("out of memory"));
-
-    TRYS(strbuf_sprintf(&h->fmt,"%%08u%.*s",
-      (int)h->media_ext.len,(char *)h->media_ext.x))
-    TRYS(strbuf_term(&h->fmt));
 
 
     r = source->set_params(source->handle, &params);
@@ -329,7 +334,7 @@ static int hls_flush_segment(hls* h) {
     h->last_pts = h->segment.pts;
     h->next_pts = h->last_pts + h->segment.samples;
 
-    TRYS(strbuf_sprintf(&t->filename,(char*)h->fmt.x,++(h->counter)));
+    TRYS(strbuf_sprintf(&t->filename,(char*)h->segment_format.x,++(h->counter)));
 
     ich_time_to_tm(&tm,&h->now);
     TRYS(strbuf_sprintf(&t->tags,
@@ -348,7 +353,7 @@ static int hls_flush_segment(hls* h) {
       (int)h->entry_prefix.len, (const char*)h->entry_prefix.x,
       (int)t->filename.len, (const char*)t->filename.x));
 
-    TRY0(h->callbacks.write(h->callbacks.userdata, &t->filename, &h->segment.data, &h->media_mime),
+    TRY0(h->callbacks.write(h->callbacks.userdata, &t->filename, &h->segment.data, &h->segment_mimetype),
       LOGS("error writing file %.*s", t->filename));
 
     f.num = h->segment.samples;
@@ -372,7 +377,7 @@ int hls_add_segment(hls* h, const segment* s) {
         h->has_init = 1;
         tmp.x = (void*)s->data;
         tmp.len = s->len;
-        return h->callbacks.write(h->callbacks.userdata,&h->init_filename,&tmp,&h->init_mime);
+        return h->callbacks.write(h->callbacks.userdata,&h->init_filename,&tmp,&h->init_mimetype);
     }
 
     TRYS(membuf_append(&h->segment.data,s->data,s->len));
@@ -381,7 +386,7 @@ int hls_add_segment(hls* h, const segment* s) {
 
     if(h->segment.samples >= h->target_samples) { /* time to flush! */
         TRY0(hls_flush_segment(h),LOG0("error flushing segment"));
-        TRY0(h->callbacks.write(h->callbacks.userdata,&h->playlist_filename,&h->txt,&mime_m3u8),LOGS("error writing file %.*s",h->playlist_filename));
+        TRY0(h->callbacks.write(h->callbacks.userdata,&h->playlist_filename,&h->txt,&h->playlist_mimetype),LOGS("error writing file %.*s",h->playlist_filename));
     }
 
     cleanup:
@@ -398,7 +403,7 @@ int hls_flush(hls* h) {
 
     TRYS(strbuf_append_cstr(&h->txt,"#EXT-X-ENDLIST\n"));
 
-    r = h->callbacks.write(h->callbacks.userdata,&h->playlist_filename,&h->txt,&mime_m3u8);
+    r = h->callbacks.write(h->callbacks.userdata,&h->playlist_filename,&h->txt,&h->playlist_mimetype);
 
     cleanup:
     return r;
@@ -439,8 +444,13 @@ int hls_configure(hls* h, const strbuf* key, const strbuf* value) {
         return 0;
     }
 
-    if(strbuf_ends_cstr(key,"init-basename")) {
+    if(strbuf_ends_cstr(key,"init-filename")) {
         TRYS(strbuf_copy(&h->init_filename,value));
+        return 0;
+    }
+
+    if(strbuf_ends_cstr(key,"init-mimetype")) {
+        TRYS(strbuf_copy(&h->init_mimetype,value));
         return 0;
     }
 
@@ -449,8 +459,24 @@ int hls_configure(hls* h, const strbuf* key, const strbuf* value) {
         return 0;
     }
 
+    if(strbuf_ends_cstr(key,"playlist-mimetype")) {
+        TRYS(strbuf_copy(&h->playlist_mimetype,value));
+        return 0;
+    }
+
     if(strbuf_ends_cstr(key,"entry-prefix")) {
         TRYS(strbuf_copy(&h->entry_prefix,value));
+        return 0;
+    }
+
+    if(strbuf_ends_cstr(key,"segment-format")) {
+        TRYS(strbuf_copy(&h->segment_format,value));
+        TRYS(strbuf_term(&h->segment_format));
+        return 0;
+    }
+
+    if(strbuf_ends_cstr(key,"segment-mimetype")) {
+        TRYS(strbuf_copy(&h->segment_mimetype,value));
         return 0;
     }
 

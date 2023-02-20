@@ -42,9 +42,9 @@ struct segment_source {
     void* handle; /* a pointer back to whoever's providing this config */
     segment_source_set_params_cb set_params; /* the callback to provide params back down to the segment producer (muxer) */
     const strbuf* init_ext;
-    const strbuf* init_mime;
+    const strbuf* init_mimetype;
     const strbuf* media_ext;
-    const strbuf* media_mime;
+    const strbuf* media_mimetype;
     unsigned int time_base;
     unsigned int frame_len;
 };
@@ -72,7 +72,7 @@ typedef struct segment_receiver segment_receiver;
 
 #define SEGMENT_RECEIVER_ZERO { .handle = NULL, .open = segment_receiver_open_null, .submit_segment = segment_receiver_submit_segment_null, .flush = segment_receiver_flush_null }
 
-#define SEGMENT_SOURCE_ZERO { .handle = NULL, .set_params = segment_source_set_params_null, .init_ext = NULL, .init_mime = NULL, .media_ext = NULL, .media_mime = NULL, .time_base = 0, .frame_len = 0 }
+#define SEGMENT_SOURCE_ZERO { .handle = NULL, .set_params = segment_source_set_params_null, .init_ext = NULL, .init_mimetype = NULL, .media_ext = NULL, .media_mimetype = NULL, .time_base = 0, .frame_len = 0 }
 
 #define SEGMENT_SOURCE_PARAMS_ZERO { .segment_length = 0, .packets_per_segment = 0 }
 

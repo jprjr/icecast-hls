@@ -471,6 +471,14 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
             userdata->track->object_type = FMP4_OBJECT_TYPE_MP3;
             break;
         }
+        case CODEC_TYPE_AC3: {
+            userdata->track->codec = FMP4_CODEC_AC3;
+            break;
+        }
+        case CODEC_TYPE_EAC3: {
+            userdata->track->codec = FMP4_CODEC_EAC3;
+            break;
+        }
         default: {
             fprintf(stderr,"[muxer:fmp4] unsupported codec\n");
             return -1;
@@ -490,12 +498,12 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     fmp4_track_set_default_sample_info(userdata->track, &info);
 
     /* let the output plugin know what we're doing */
-    me.init_ext   = &ext_mp4;
-    me.media_ext  = &ext_m4s;
-    me.init_mime  = &mime_mp4;
-    me.media_mime = &mime_m4s;
-    me.time_base  = source->sample_rate;
-    me.frame_len  = source->frame_len;
+    me.init_ext       = &ext_mp4;
+    me.media_ext      = &ext_m4s;
+    me.init_mimetype  = &mime_mp4;
+    me.media_mimetype = &mime_m4s;
+    me.time_base      = source->sample_rate;
+    me.frame_len      = source->frame_len;
 
     me.handle = userdata;
     me.set_params = plugin_receive_params;

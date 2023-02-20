@@ -15,11 +15,15 @@
 #define TRY(exp, act) if(!(exp)) { act; }
 #define TRYNULL(exp, act) if((exp) == NULL) { act; }
 
-static STRBUF_CONST(mime_aac,"audio/x-hx-aac-adts");
+static STRBUF_CONST(mime_aac,"audio/aac");
 static STRBUF_CONST(mime_mp3,"audio/mpeg");
+static STRBUF_CONST(mime_ac3,"audio/ac3");
+static STRBUF_CONST(mime_eac3,"audio/eac3");
 
 static STRBUF_CONST(ext_aac,".aac");
 static STRBUF_CONST(ext_mp3,".mp3");
+static STRBUF_CONST(ext_ac3,".ac3");
+static STRBUF_CONST(ext_eac3,".eac3");
 
 static STRBUF_CONST(key_mpegts,"PRIV:com.apple.streaming.transportStreamTimestamp");
 
@@ -171,13 +175,27 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
             userdata->append_packet = append_packet_adts;
             userdata->profile = profile - 1;
             me.media_ext = &ext_aac;
-            me.media_mime = &mime_aac;
+            me.media_mimetype = &mime_aac;
             break;
         }
         case CODEC_TYPE_MP3: {
             userdata->append_packet = append_packet_passthrough;
             me.media_ext = &ext_mp3;
-            me.media_mime = &mime_mp3;
+            me.media_mimetype = &mime_mp3;
+            break;
+        }
+
+        case CODEC_TYPE_AC3: {
+            userdata->append_packet = append_packet_passthrough;
+            me.media_ext = &ext_ac3;
+            me.media_mimetype = &mime_ac3;
+            break;
+        }
+
+        case CODEC_TYPE_EAC3: {
+            userdata->append_packet = append_packet_passthrough;
+            me.media_ext = &ext_eac3;
+            me.media_mimetype = &mime_eac3;
             break;
         }
 

@@ -124,6 +124,8 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
 static int plugin_open(void* ud, const frame_source* source, const packet_receiver *dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
+    uint32_t tmp;
+    uint32_t u;
 
     packet_source me = PACKET_SOURCE_ZERO;
     frame_source_params params = FRAME_SOURCE_PARAMS_ZERO;
@@ -204,6 +206,179 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
 
         case AV_CODEC_ID_MP3: {
             me.codec = CODEC_TYPE_MP3;
+            break;
+        }
+
+        case AV_CODEC_ID_AC3: {
+            me.codec = CODEC_TYPE_AC3;
+            TRY0(membuf_ready(&dsi,4), LOG0("out of memory"));
+
+            switch(source->sample_rate) {
+                case 48000: {
+                    tmp = 0; break;
+                }
+                case 44100: {
+                    tmp = 1; break;
+                }
+                case 32000: {
+                    tmp = 2; break;
+                }
+                default: {
+                    LOG1("ac3: unsupported sample rate %u",
+                      source->sample_rate);
+                    return -1;
+                }
+            }
+
+            /* dsi is:
+               fscod, 2 bits
+               bsid, 5 bits
+               bsmod, 3 bits
+               acmod, 3 bits
+               lfeon, 1 bit
+               bit_rate_code, 5 bits
+               reserved, 5 bits */
+
+            tmp <<= (32 - 2);
+
+            /* bsid 8 = current AC3 standard */
+            tmp |= 8 << (32 - 2 - 5);
+
+            /* bsmod, 3 bits */
+            tmp |= 0 << (32 - 2 - 5 - 3);
+
+            /* acmod, 3 bits */
+            /* 001 = mono
+             * 002 = stereo */
+            tmp |= source->channels << (32 - 2 - 5 - 3 - 3);
+
+            /* lfeon, 1 bit, always false */
+            tmp |= 0 << (32 - 2 - 5 - 3 - 3 - 1);
+
+            /* bit_rate_code TODO */
+            u = 0;
+            switch(userdata->ctx->bit_rate) {
+                case 640000: u++; /* fall-through */
+                case 576000: u++; /* fall-through */
+                case 512000: u++; /* fall-through */
+                case 448000: u++; /* fall-through */
+                case 384000: u++; /* fall-through */
+                case 320000: u++; /* fall-through */
+                case 256000: u++; /* fall-through */
+                case 224000: u++; /* fall-through */
+                case 192000: u++; /* fall-through */
+                case 160000: u++; /* fall-through */
+                case 128000: u++; /* fall-through */
+                case 112000: u++; /* fall-through */
+                case 96000:  u++; /* fall-through */
+                case 80000:  u++; /* fall-through */
+                case 64000:  u++; /* fall-through */
+                case 56000:  u++; /* fall-through */
+                case 48000:  u++; /* fall-through */
+                case 40000:  u++; /* fall-through */
+                case 32000:  break;
+                default: {
+                    /* hard-code to 192 */
+                    u = 0x0a;
+                    break;
+                }
+            }
+
+            tmp |= u << (32 - 2 - 5 - 3 - 3 - 1 - 5);
+
+            /* reserved */
+            tmp |= 0 << (32 - 2 - 5 - 3 - 3 - 1 - 5 - 5);
+
+            pack_u32be(dsi.x,tmp);
+            dsi.len = 3;
+            break;
+        }
+
+        case AV_CODEC_ID_EAC3: {
+            me.codec = CODEC_TYPE_EAC3;
+
+            TRY0(membuf_ready(&dsi,8), LOG0("out of memory"));
+
+            /* dsi is:
+               data_rate, 13 bits
+               num_ind_sub, 3 bits
+               for each independent substream (only 1 for this app):
+                 fscod, 2 bits
+                 bsid, 5 bits
+                 reserved, 1 bit
+                 asvc, 1 bit
+                 bsmod, 3 bits
+                 acmod, 3 bits
+                 lfeon, 1 bit
+                 reserved, 3 bits
+                 num_dep_sub, 4 bits
+                 if num_dep_sub > 0:
+                      chan_loc, 9 bits
+                 else:
+                     reserved, 1 bit
+               */
+
+            if(userdata->ctx->bit_rate > 0) {
+                tmp = userdata->ctx->bit_rate / 1000;
+            } else {
+                tmp = 192; /* just hard-code as 192kbps */
+            }
+
+            tmp <<= 16 - 13;
+            /* num_ind_sub, hard-code to 0 */
+            tmp |= 0 << (16 - 13 - 3);
+            pack_u16be(&dsi.x[0],(uint16_t)tmp);
+
+            switch(source->sample_rate) {
+                case 48000: {
+                    tmp = 0; break;
+                }
+                case 44100: {
+                    tmp = 1; break;
+                }
+                case 32000: {
+                    tmp = 2; break;
+                }
+                default: {
+                    LOG1("eac3: unsupported sample rate %u",
+                      source->sample_rate);
+                    return -1;
+                }
+            }
+
+            tmp <<= (32 - 2);
+
+            /* bsid 16 = current EAC3 standard */
+            tmp |= 8 << (32 - 2 - 5);
+
+            /* reserved 1 bit */
+            tmp |= 0 << (32 - 2 - 5 - 1);
+
+            /* asvc 1 bit */
+            tmp |= 0 << (32 - 2 - 5 - 1 - 1);
+
+            /* bsmod, 3 bits */
+            tmp |= 0 << (32 - 2 - 5 - 1 - 1 - 3);
+
+            /* acmod, 3 bits */
+            /* 001 = mono
+             * 002 = stereo */
+            tmp |= source->channels << (32 - 2 - 5 - 1 - 1 - 3 - 3);
+
+            /* lfeon, 1 bit, always false */
+            tmp |= 0 << (32 - 2 - 5 - 1 - 1 - 3 - 3 - 1);
+
+            /* 3 reserved bits */
+            tmp |= 0 << (32 - 2 - 5 - 1 - 1 - 3 - 3 - 1 - 3);
+
+            /* num_dep_sub 4 bits */
+            tmp |= 0 << (32 - 2 - 5 - 1 - 1 - 3 - 3 - 1 - 3 - 4);
+
+            /* reserved 1 bit */
+            tmp |= 0 << (32 - 2 - 5 - 1 - 1 - 3 - 3 - 1 - 3 - 4 - 1);
+
+            pack_u32be(&dsi.x[2],tmp);
+            dsi.len = 5;
             break;
         }
 
