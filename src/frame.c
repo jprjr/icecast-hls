@@ -185,11 +185,9 @@ int frame_append_convert(frame* dest, const frame* src, samplefmt format) {
     }
 
     if(!src_planar && !dest_planar) {
-        for(i=0;i<src->channels;i++) {
-            src_buf  = frame_get_channel_int(src,i);
-            dest_buf = frame_get_channel_int(dest,i);
-            samplefmt_convert(&dest_buf->x[duration * samplefmt_size(dest->format) * src->channels],src_buf->x,src->format,dest->format, src->duration * src->channels, 1, 0, 1, 0);
-        }
+        src_buf  = frame_get_channel_int(src,0);
+        dest_buf = frame_get_channel_int(dest,0);
+        samplefmt_convert(&dest_buf->x[duration * samplefmt_size(dest->format) * dest->channels],src_buf->x,src->format,dest->format, src->duration * src->channels, 1, 0, 1, 0);
         return 0;
     }
 
