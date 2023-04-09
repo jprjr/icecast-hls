@@ -269,7 +269,7 @@ src/input_plugin_curl.o: src/input_plugin_curl.c
 src/output_plugin_curl.o: src/output_plugin_curl.c
 	$(CC) $(CFLAGS) $(CFLAGS_CURL) -c -o $@ $<
 
-src/decoder_plugin_miniflac.o: src/decoder_plugin_miniflac.c src/miniflac.h
+src/decoder_plugin_miniflac.o: src/decoder_plugin_miniflac.c src/miniflac.h src/base64decode.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 src/minifmp4.o: src/minifmp4.c src/minifmp4.h

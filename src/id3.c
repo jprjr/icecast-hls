@@ -43,7 +43,7 @@ int id3_ready(id3* id3) {
 
 static int id3_encode_apic_frame(id3* id3, const tag* t) {
     /* an incoming "APIC" frame is really a FLAC-style
-     * metadata_picture_block that will need to be converted 
+     * metadata_block_picture that will need to be converted 
      * a bit */
 
     /* the length for this is going to be:
@@ -174,7 +174,7 @@ int id3_add_tag(id3* id3, const tag* t) {
 
     /* this happens if a picture block isn't handled by a custom mapping,
      * we never want to send binary data as a text frame, so just don't encode it */
-    if(strbuf_caseequals_cstr(&t->key,"txxx:metadata_picture_block")) return 0;
+    if(strbuf_caseequals_cstr(&t->key,"txxx:metadata_block_picture")) return 0;
 
     if( (r = membuf_readyplus(id3,10)) != 0) return r;
 

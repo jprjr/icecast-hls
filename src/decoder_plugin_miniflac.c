@@ -1,6 +1,6 @@
 #include "decoder_plugin_miniflac.h"
 #include "miniflac.h"
-
+#include "base64decode.h"
 #include "pack_u32be.h"
 
 #include <stdlib.h>
@@ -42,6 +42,7 @@ struct plugin_userdata {
 
     const input* input;
     strbuf tmpstr;
+    strbuf picbuf;
     taglist list;
     uint8_t empty_tags; /* if 1 we keep empty tags */
     uint8_t ignore_tags; /* if 1 we ignore all tags */
@@ -62,6 +63,7 @@ static void* plugin_create(void) {
     if(userdata == NULL) return userdata;
     frame_init(&userdata->frame);
     strbuf_init(&userdata->tmpstr);
+    strbuf_init(&userdata->picbuf);
     taglist_init(&userdata->list);
     userdata->input = NULL;
     userdata->ignore_tags = 0;
@@ -224,6 +226,20 @@ static int plugin_process_vorbis_comment(plugin_userdata *userdata) {
         if(val.len == 0 && !userdata->empty_tags) continue;
 
         strbuf_lower(&key);
+        if(strbuf_equals_cstr(&key,"metadata_block_picture")) {
+            /* base64-decode the picture block */
+            if( (r = membuf_ready(&userdata->picbuf,val.len) != 0)) {
+                fprintf(stderr,"[decoder:miniflac] failed to allocate image buffer: r=%d\n",r);
+                return r;
+            }
+            userdata->picbuf.len = val.len;
+            if( (r = base64decode(val.x,val.len,userdata->picbuf.x,&userdata->picbuf.len)) != 0) {
+                fprintf(stderr,"[decoder:miniflac] base64 decode failed: r=%d\n",r);
+                return r;
+            }
+            val.x = userdata->picbuf.x;
+            val.len = userdata->picbuf.len;
+        }
 
         if( (r = taglist_add(&userdata->list,&key,&val)) != 0) return r;
     }
@@ -237,7 +253,7 @@ static int plugin_process_vorbis_comment(plugin_userdata *userdata) {
 }
 
 static int plugin_process_picture(plugin_userdata *userdata) {
-    /* we'll basically just save the whole block into a tag named METADATA_PICTURE_BLOCK,
+    /* we'll basically just save the whole block into a tag named metadata_block_picture,
      * which means re-creating it in a membuf */
     int r = -1;
     MFLAC_RESULT res = MFLAC_OK;
@@ -245,8 +261,8 @@ static int plugin_process_picture(plugin_userdata *userdata) {
     membuf t = MEMBUF_ZERO;
     strbuf key = STRBUF_ZERO;
 
-    key.x   = (uint8_t*)"metadata_picture_block";
-    key.len = strlen("metadata_picture_block");
+    key.x   = (uint8_t*)"metadata_block_picture";
+    key.len = strlen("metadata_block_picture");
 
     membuf_init(&t);
 
@@ -402,6 +418,7 @@ static void plugin_close(void* ud) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     frame_free(&userdata->frame);
     strbuf_free(&userdata->tmpstr);
+    strbuf_free(&userdata->picbuf);
     taglist_free(&userdata->list);
     free(userdata);
     return;
@@ -417,3 +434,6 @@ const decoder_plugin decoder_plugin_miniflac = {
     plugin_close,
     plugin_decode,
 };
+
+#define BASE64_DECODE_IMPLEMENTATION
+#include "base64decode.h"

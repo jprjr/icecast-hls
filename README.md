@@ -49,7 +49,8 @@ MIT, see the file `LICENSE`.
 
 Some files are third-party and have their own licensing:
 
+* `src/base64decode.h`: Public Domain.
 * `src/miniflac.h`: BSD Zero Clause License.
 * `src/minifmp4.h`: BSD Zero Clause License.
 * `src/ini.h`: New BSD License.
-* `src/thread.h`: Public Domain
+* `src/thread.h`: Public Domain.

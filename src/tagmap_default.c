@@ -60,7 +60,7 @@ int default_tagmap_init(void) {
     ADD(icy_url,WORS)
     ADD(icy_description,TXXX:icy_description)
 
-    ADD(metadata_picture_block,APIC)
+    ADD(metadata_block_picture,APIC)
 #undef ADD
     taglist_sort(DEFAULT_TAGMAP);
     return 0;
