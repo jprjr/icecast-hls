@@ -60,6 +60,9 @@ static enum AVSampleFormat find_best_format(const AVCodec *codec, enum AVSampleF
 }
 
 static int plugin_init(void) {
+#if LIBAVCODEC_VERSION_MAJOR < 58
+    avcodec_register_all();
+#endif
     return 0;
 }
 
@@ -82,7 +85,14 @@ static void* plugin_create(void) {
 static void plugin_close(void* ud) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     if(userdata->avframe != NULL) av_frame_free(&userdata->avframe);
-    if(userdata->avpacket != NULL) av_packet_free(&userdata->avpacket);
+    if(userdata->avpacket != NULL) {
+#if LIBAVCODEC_VERSION_MAJOR >= 57
+        av_packet_free(&userdata->avpacket);
+#else
+        av_free_packet(userdata->avpacket);
+        av_free(userdata->avpacket);
+#endif
+    }
     if(userdata->ctx != NULL) avcodec_free_context(&userdata->ctx);
     if(userdata->codec_config != NULL) av_dict_free(&userdata->codec_config);
     packet_free(&userdata->packet);
@@ -427,7 +437,12 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     TRY0(dest->submit_dsi(dest->handle, &dsi), LOG0("error: unable to submit dsi to muxer"));
 
     TRY( (userdata->avframe = av_frame_alloc()) != NULL, LOG0("out of memory"));
+#if LIBAVCODEC_VERSION_MAJOR >= 57
     TRY( (userdata->avpacket = av_packet_alloc()) != NULL, LOG0("out of memory"));
+#else
+    TRY( (userdata->avpacket = av_mallocz(sizeof(AVPacket))) != NULL, LOG0("out of memory"));
+    av_init_packet(userdata->avpacket);
+#endif
 
     TRY0(source->set_params(source->handle, &params),LOG0("error setting source params"));
 
@@ -439,9 +454,15 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
 
 static int drain_packets(plugin_userdata* userdata, const packet_receiver* dest, int flushing) {
     int av;
+#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(57,64,0) /* ffmpeg-3.2 */
+    int got;
+#endif
 
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(57,64,0) /* ffmpeg-3.2 */
     while( (av = avcodec_receive_packet(userdata->ctx, userdata->avpacket)) >= 0) {
-
+#else
+    while( (av = avcodec_encode_audio2(userdata->ctx, userdata->avpacket, NULL, &got)) >= 0 && got) {
+#endif
         if(userdata->avpacket->duration == 0) {
             if(!flushing) {
                 LOG0("error, received a packet with zero duration");
@@ -459,8 +480,11 @@ static int drain_packets(plugin_userdata* userdata, const packet_receiver* dest,
           LOG0("unable to send packet");
           return AVERROR_EXTERNAL;
         }
-
     }
+
+#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(57,64,0) /* ffmpeg-3.2 */
+    if(av == 0) av = AVERROR_EOF;
+#endif
 
     return av;
 }
@@ -469,11 +493,15 @@ static int plugin_submit_frame(void* ud, const frame* frame, const packet_receiv
     int r;
     int av;
     char averrbuf[128];
+#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(57,64,0) /* ffmpeg-3.2 */
+    int got;
+#endif
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
     TRY0(frame_to_avframe(userdata->avframe,frame),
       LOG0("unable to convert frame"));
 
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(57,64,0) /* ffmpeg-3.2 */
     TRY( (av = avcodec_send_frame(userdata->ctx,userdata->avframe)) >= 0,
       av_strerror(av, averrbuf, sizeof(averrbuf));
       LOG1("unable to send frame: %s",averrbuf));
@@ -481,6 +509,26 @@ static int plugin_submit_frame(void* ud, const frame* frame, const packet_receiv
     TRY( (av = drain_packets(userdata,dest, 0)) == AVERROR(EAGAIN),
       av_strerror(av, averrbuf, sizeof(averrbuf));
       LOG1("frame: error receiving packet: %s",averrbuf));
+#else
+    TRY( (av = avcodec_encode_audio2(userdata->ctx, userdata->avpacket, userdata->avframe, &got)) >= 0,
+      av_strerror(av, averrbuf, sizeof(averrbuf));
+      LOG1("error in avcodec_encode_audio2: %s",averrbuf));
+    if(got) {
+        if(userdata->avpacket->duration == 0) {
+            LOG0("error, received a packet with zero duration");
+            return AVERROR_EXTERNAL;
+        }
+        if(avpacket_to_packet(&userdata->packet,userdata->avpacket) != 0) {
+          LOG0("unable to convert packet");
+          return AVERROR_EXTERNAL;
+        }
+
+        if(dest->submit_packet(dest->handle, &userdata->packet) != 0) {
+          LOG0("unable to send packet");
+          return AVERROR_EXTERNAL;
+        }
+    }
+#endif
 
     cleanup:
     return r;
@@ -492,9 +540,11 @@ static int plugin_flush(void* ud, const packet_receiver* dest) {
     char averrbuf[128];
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(57,64,0) /* ffmpeg-3.2 */
     TRY( (av = avcodec_send_frame(userdata->ctx,NULL)) >= 0,
       av_strerror(av, averrbuf, sizeof(averrbuf));
       LOG1("unable to flush encoder: %s",averrbuf));
+#endif
 
     TRY( (av = drain_packets(userdata,dest,1)) == AVERROR_EOF,
       av_strerror(av, averrbuf, sizeof(averrbuf));

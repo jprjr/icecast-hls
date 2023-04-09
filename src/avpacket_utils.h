@@ -5,7 +5,7 @@
 
 #include "packet.h"
 
-#include <libavcodec/packet.h>
+#include <libavcodec/avcodec.h>
 
 #ifdef __cplusplus
 extern "C" {

@@ -14,12 +14,14 @@ samplefmt avsampleformat_to_samplefmt(enum AVSampleFormat f) {
         case AV_SAMPLE_FMT_S16P: return SAMPLEFMT_S16P;
         case AV_SAMPLE_FMT_S32:  return SAMPLEFMT_S32;
         case AV_SAMPLE_FMT_S32P: return SAMPLEFMT_S32P;
-        case AV_SAMPLE_FMT_S64:  return SAMPLEFMT_S64;
-        case AV_SAMPLE_FMT_S64P: return SAMPLEFMT_S64P;
         case AV_SAMPLE_FMT_FLT:  return SAMPLEFMT_FLOAT;
         case AV_SAMPLE_FMT_FLTP: return SAMPLEFMT_FLOATP;
         case AV_SAMPLE_FMT_DBL:  return SAMPLEFMT_DOUBLE;
         case AV_SAMPLE_FMT_DBLP: return SAMPLEFMT_DOUBLEP;
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(55,34,0)
+        case AV_SAMPLE_FMT_S64:  return SAMPLEFMT_S64;
+        case AV_SAMPLE_FMT_S64P: return SAMPLEFMT_S64P;
+#endif
         default: break;
     }
     return SAMPLEFMT_UNKNOWN;
@@ -33,12 +35,14 @@ enum AVSampleFormat samplefmt_to_avsampleformat(samplefmt f) {
         case SAMPLEFMT_S16P: return AV_SAMPLE_FMT_S16P;
         case SAMPLEFMT_S32:  return AV_SAMPLE_FMT_S32;
         case SAMPLEFMT_S32P: return AV_SAMPLE_FMT_S32P;
-        case SAMPLEFMT_S64:  return AV_SAMPLE_FMT_S64;
-        case SAMPLEFMT_S64P: return AV_SAMPLE_FMT_S64P;
         case SAMPLEFMT_FLOAT:  return AV_SAMPLE_FMT_FLT;
         case SAMPLEFMT_FLOATP: return AV_SAMPLE_FMT_FLTP;
         case SAMPLEFMT_DOUBLE:  return AV_SAMPLE_FMT_DBL;
         case SAMPLEFMT_DOUBLEP: return AV_SAMPLE_FMT_DBLP;
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(55,34,0)
+        case SAMPLEFMT_S64:  return AV_SAMPLE_FMT_S64;
+        case SAMPLEFMT_S64P: return AV_SAMPLE_FMT_S64P;
+#endif
         default: break;
     }
     return AV_SAMPLE_FMT_NONE;
@@ -52,12 +56,12 @@ int frame_to_avframe(AVFrame* out, const frame* in) {
 
     av_frame_unref(out);
 
-#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,17,100)
+#if LIBAVUTIL_VERSION_MAJOR >= 57
     out->time_base.num = 1;
     out->time_base.den = in->sample_rate;
 #endif
     out->sample_rate = in->sample_rate;
-#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
+#if LIBAVUTIL_VERSION_MAJOR >= 58
     av_channel_layout_default(&out->ch_layout,in->channels);
 #else
     out->channel_layout = av_get_default_channel_layout(in->channels);
@@ -93,7 +97,7 @@ int avframe_to_frame(frame* out, const AVFrame* in) {
 
     out->duration = in->nb_samples;
     out->format = avsampleformat_to_samplefmt(in->format);
-#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
+#if LIBAVUTIL_VERSION_MAJOR >= 58
     out->channels = in->ch_layout.nb_channels;
 #else
     out->channels = av_get_channel_layout_nb_channels(in->channel_layout);

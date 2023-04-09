@@ -29,6 +29,9 @@ struct plugin_userdata {
 typedef struct plugin_userdata plugin_userdata;
 
 static int plugin_init(void) {
+#if LIBAVFILTER_VERSION_MAJOR < 7
+    avfilter_register_all();
+#endif
     return 0;
 }
 
@@ -242,17 +245,29 @@ static int plugin_open(void* ud, const frame_source* source, const frame_receive
 
 #if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
     if(av_buffersink_get_ch_layout(userdata->buffersink, &ch_layout) < 0) return -1;
-#else
+#elif LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,71,0)
     channel_layout = av_buffersink_get_channel_layout(userdata->buffersink);
+#else
+    channel_layout = userdata->buffersink->inputs[0]->channel_layout;
 #endif
 
+#if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(57,71,0)
     userdata->dest_config.sample_rate = av_buffersink_get_sample_rate(userdata->buffersink);
+#else
+    userdata->dest_config.sample_rate = userdata->buffersink->inputs[0]->sample_rate;
+#endif
+
 #if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
     userdata->dest_config.channels = ch_layout.nb_channels;
 #else
     userdata->dest_config.channels = av_get_channel_layout_nb_channels(channel_layout);
 #endif
+#if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(57,71,0)
     userdata->dest_config.format = avsampleformat_to_samplefmt(av_buffersink_get_format(userdata->buffersink));
+#else
+    userdata->dest_config.format = avsampleformat_to_samplefmt(userdata->buffersink->inputs[0]->format);
+#endif
+
     userdata->dest_config.handle = userdata;
     userdata->dest_config.set_params = plugin_handle_frame_source_params;
 
@@ -283,7 +298,11 @@ static int plugin_flush(void* ud, const frame_receiver* dest) {
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
+#if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(6,107,0)
     if( (r = av_buffersrc_close(userdata->buffersrc,userdata->last_pts + userdata->last_nb_samples, 0)) < 0) return r;
+#else
+    if( (r = av_buffersrc_add_frame_flags(userdata->buffersrc,NULL,0)) < 0) return r;
+#endif
 
     return plugin_run(userdata,dest);
 }
