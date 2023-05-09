@@ -60,6 +60,10 @@ int output_submit_segment(const output* out, const segment* seg) {
     return out->plugin->submit_segment(out->userdata,seg);
 }
 
+int output_submit_tags(const output* out, const taglist* tags) {
+    return out->plugin->submit_tags(out->userdata,tags);
+}
+
 int output_submit_picture(const output* out, const picture* seg, picture* p) {
     return out->plugin->submit_picture(out->userdata,seg,p);
 }

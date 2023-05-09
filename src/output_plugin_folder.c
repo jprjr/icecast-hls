@@ -263,6 +263,12 @@ static int plugin_set_time(void* ud, const ich_time* now) {
     return 0;
 }
 
+static int plugin_submit_tags(void* ud, const taglist* tags) {
+    (void)ud;
+    (void)tags;
+    return 0;
+}
+
 const output_plugin output_plugin_folder = {
     { .a = 0, .len = 6, .x = (uint8_t*)"folder" },
     plugin_init,
@@ -274,5 +280,6 @@ const output_plugin output_plugin_folder = {
     plugin_set_time,
     plugin_submit_segment,
     plugin_submit_picture,
+    plugin_submit_tags,
     plugin_flush,
 };

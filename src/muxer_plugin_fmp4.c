@@ -433,7 +433,7 @@ static int plugin_receive_params(void* ud, const segment_source_params* params) 
     userdata->segment_length = params->segment_length;
     userdata->packets_per_segment = params->packets_per_segment;
 
-    if(userdata->segment_length == 0) userdata->segment_length = 1;
+    if(userdata->segment_length == 0) userdata->segment_length = 1000;
     return 0;
 }
 
@@ -514,7 +514,11 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
      * the encoder our tune in period */
     params.packets_per_segment = userdata->packets_per_segment;
     if(params.packets_per_segment == 0) {
-        params.packets_per_segment = (userdata->segment_length * source->sample_rate / source->frame_len);
+        params.packets_per_segment = (userdata->segment_length * source->sample_rate / source->frame_len / 1000);
+    }
+    if(params.packets_per_segment == 0) {
+        /* fallback to just sending a single packet per segment if something's gone wrong */
+        params.packets_per_segment = 1;
     }
     userdata->samples_per_segment = params.packets_per_segment * source->frame_len;
 

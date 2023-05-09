@@ -29,9 +29,8 @@ int output_open(const output*, const segment_source* source);
 
 int output_set_time(const output*, const ich_time*);
 
-/* called during the muxer's setup, specifies stuff like the file
- * extensions, mimetypes, and time_base */
 int output_submit_segment(const output*, const segment*);
+int output_submit_tags(const output*, const taglist*);
 int output_submit_picture(const output*, const picture*, picture*);
 int output_flush(const output*);
 

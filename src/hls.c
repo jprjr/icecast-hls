@@ -173,7 +173,7 @@ void hls_init(hls* h) {
     h->callbacks.userdata = NULL;
     h->time_base = 0;
     h->target_samples = 0;
-    h->target_duration = 2;
+    h->target_duration = 2000;
     h->playlist_length = 60 * 15;
     h->media_sequence = 0;
     h->disc_sequence = 0;
@@ -207,7 +207,7 @@ int hls_open(hls* h, const segment_source* source) {
     segment_source_params params = SEGMENT_SOURCE_PARAMS_ZERO;
 
     params.segment_length = h->target_duration;
-    params.packets_per_segment = (params.segment_length * source->time_base / source->frame_len);
+    params.packets_per_segment = (params.segment_length * source->time_base / source->frame_len / 1000);
     h->target_samples = params.packets_per_segment * source->frame_len;
     h->time_base  = source->time_base;
 
@@ -245,7 +245,7 @@ int hls_open(hls* h, const segment_source* source) {
         TRYS(strbuf_copy(&h->segment_mimetype,source->media_mimetype));
     }
 
-    playlist_segments = (h->playlist_length / h->target_duration) + (source->time_base % source->frame_len <= (source->frame_len / 2));
+    playlist_segments = (h->playlist_length / (h->target_duration / 1000)) + (source->time_base % source->frame_len <= (source->frame_len / 2));
     TRYS(hls_playlist_open(&h->playlist, playlist_segments))
 
     TRY0(strbuf_sprintf(&h->header,
@@ -253,7 +253,7 @@ int hls_open(hls* h, const segment_source* source) {
       "#EXT-X-VERSION:%u\n"
       "#EXT-X-TARGETDURATION:%u\n",
       h->version,
-      h->target_duration),LOG0("out of memory"));
+      (h->target_duration / 1000)),LOG0("out of memory"));
 
 
     r = source->set_params(source->handle, &params);
@@ -427,6 +427,7 @@ int hls_configure(hls* h, const strbuf* key, const strbuf* value) {
             LOGS("invalid target-duration %.*s",(*value));
             return -1;
         }
+        h->target_duration *= 1000;
         return 0;
     }
 

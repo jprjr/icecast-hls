@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include "strbuf.h"
+#include "tag.h"
 
 /* segments are produced by muxers and sent into outputs */
 enum segment_type {
@@ -28,8 +29,8 @@ typedef struct segment segment;
  * receiver (output) to send params back into the segment producer
  * (muxer), to request things like - a particular segment length */
 struct segment_source_params {
-    unsigned int segment_length;
-    unsigned int packets_per_segment;
+    size_t segment_length; /* given in milliseconds */
+    size_t packets_per_segment;
 };
 typedef struct segment_source_params segment_source_params;
 
@@ -57,12 +58,14 @@ typedef struct segment_source segment_source;
 
 typedef int (*segment_receiver_open_cb)(void* handle, const segment_source* source);
 typedef int (*segment_receiver_submit_segment_cb)(void* handle, const segment* segment);
+typedef int (*segment_receiver_submit_tags_cb)(void* handle, const taglist* tags);
 typedef int (*segment_receiver_flush_cb)(void* handle);
 
 struct segment_receiver {
     void* handle;
     segment_receiver_open_cb open;
     segment_receiver_submit_segment_cb submit_segment;
+    segment_receiver_submit_tags_cb submit_tags;
     segment_receiver_flush_cb flush;
 };
 
@@ -70,7 +73,7 @@ typedef struct segment_receiver segment_receiver;
 
 /* finally some defines for allocating these things on the stack */
 
-#define SEGMENT_RECEIVER_ZERO { .handle = NULL, .open = segment_receiver_open_null, .submit_segment = segment_receiver_submit_segment_null, .flush = segment_receiver_flush_null }
+#define SEGMENT_RECEIVER_ZERO { .handle = NULL, .open = segment_receiver_open_null, .submit_segment = segment_receiver_submit_segment_null, .submit_tags = segment_receiver_submit_tags_null, .flush = segment_receiver_flush_null }
 
 #define SEGMENT_SOURCE_ZERO { .handle = NULL, .set_params = segment_source_set_params_null, .init_ext = NULL, .init_mimetype = NULL, .media_ext = NULL, .media_mimetype = NULL, .time_base = 0, .frame_len = 0 }
 
@@ -90,6 +93,7 @@ extern const segment segment_zero;
 int segment_source_set_params_null(void* userdata, const segment_source_params* params);
 int segment_receiver_open_null(void* handle, const segment_source*);
 int segment_receiver_submit_segment_null(void* handle, const segment*);
+int segment_receiver_submit_tags_null(void* handle, const taglist*);
 int segment_receiver_flush_null(void* handle);
 
 int segment_source_set_params_ignore(void* userdata, const segment_source_params* params);

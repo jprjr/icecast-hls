@@ -116,6 +116,7 @@ int destination_open(destination* dest, const ich_time* now) {
 
     dest->muxer.segment_receiver.open             = (segment_receiver_open_cb)output_open;
     dest->muxer.segment_receiver.submit_segment   = (segment_receiver_submit_segment_cb)output_submit_segment;
+    dest->muxer.segment_receiver.submit_tags      = (segment_receiver_submit_tags_cb)output_submit_tags;
     dest->muxer.segment_receiver.flush            = (segment_receiver_flush_cb)output_flush;
     dest->muxer.segment_receiver.handle           = &dest->output;
 

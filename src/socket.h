@@ -32,6 +32,9 @@ void ich_socket_close(SOCKET);
 int ich_socket_recv(SOCKET sock, char *buf, unsigned int len, unsigned long timeout);
 int ich_socket_send(SOCKET sock, const char *buf, unsigned int len, unsigned long timeout);
 
+int ich_socket_nonblocking(SOCKET sock);
+int ich_socket_blocking(SOCKET sock);
+
 #ifdef __cplusplus
 }
 #endif

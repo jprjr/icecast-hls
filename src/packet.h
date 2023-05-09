@@ -17,7 +17,7 @@ typedef struct packet packet;
 /* this struct is sent by muxers (packet receivers) to
  * set params on the encoder (packet source) */
 struct packet_source_params {
-    unsigned int packets_per_segment;
+    size_t packets_per_segment;
 };
 
 typedef struct packet_source_params packet_source_params;

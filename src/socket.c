@@ -19,7 +19,7 @@
 #include <stdio.h>
 #include <errno.h>
 
-static int ich_socket_nonblocking(SOCKET sock) {
+int ich_socket_nonblocking(SOCKET sock) {
 #ifdef ICH_SOCKET_WINDOWS
     unsigned long mode = 1;
     int res = ioctlsocket(sock,FIONBIO,&mode);
@@ -30,7 +30,7 @@ static int ich_socket_nonblocking(SOCKET sock) {
 #endif
 }
 
-static int ich_socket_blocking(SOCKET sock) {
+int ich_socket_blocking(SOCKET sock) {
 #ifdef ICH_SOCKET_WINDOWS
     unsigned long mode = 0;
     int res = ioctlsocket(sock,FIONBIO,&mode);

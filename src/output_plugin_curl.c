@@ -676,6 +676,12 @@ static int output_plugin_curl_flush(void* ud) {
     return hls_flush(&userdata->hls);
 }
 
+static int output_plugin_curl_submit_tags(void* ud, const taglist* tags) {
+    (void)ud;
+    (void)tags;
+    return 0;
+}
+
 const output_plugin output_plugin_curl = {
     { .a = 0, .len = 6, .x = (uint8_t*)"curl" },
     output_plugin_curl_init,
@@ -687,5 +693,6 @@ const output_plugin output_plugin_curl = {
     output_plugin_curl_set_time,
     output_plugin_curl_submit_segment,
     output_plugin_curl_submit_picture,
+    output_plugin_curl_submit_tags,
     output_plugin_curl_flush,
 };

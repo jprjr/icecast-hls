@@ -4,6 +4,7 @@
 #include "strbuf.h"
 #include "segment.h"
 #include "picture.h"
+#include "tag.h"
 #include "ich_time.h"
 
 /* perform global-init/deinit type stuff on a plugin */
@@ -18,6 +19,7 @@ typedef int (*output_plugin_open)(void* userdata, const segment_source* source);
 
 typedef int (*output_plugin_submit_segment)(void* userdata, const segment* segment);
 typedef int (*output_plugin_submit_picture)(void* userdata, const picture* src, picture* out);
+typedef int (*output_plugin_submit_tags)(void* userdata, const taglist* tags);
 typedef int (*output_plugin_flush)(void* userdata);
 typedef int (*output_plugin_set_time)(void* userdata, const ich_time* now);
 
@@ -34,6 +36,7 @@ struct output_plugin {
     output_plugin_set_time set_time;
     output_plugin_submit_segment submit_segment;
     output_plugin_submit_picture submit_picture;
+    output_plugin_submit_tags submit_tags;
     output_plugin_flush flush;
 };
 

@@ -18,6 +18,14 @@ int segment_receiver_submit_segment_null(void* handle, const segment* segment) {
     return -1;
 }
 
+int segment_receiver_submit_tags_null(void* handle, const taglist* tags) {
+    (void)handle;
+    (void)tags;
+    fprintf(stderr,"[app error] segment_receiver submit_tags not set\n");
+    abort();
+    return -1;
+}
+
 int segment_receiver_flush_null(void* handle) {
     (void)handle;
     fprintf(stderr,"[app error] segment_receiver flush not set\n");

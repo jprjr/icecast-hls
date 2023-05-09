@@ -117,7 +117,7 @@ static int plugin_receive_params(void* ud, const segment_source_params* params) 
     userdata->segment_length = params->segment_length;
     userdata->packets_per_segment = params->packets_per_segment;
 
-    if(userdata->segment_length == 0) userdata->segment_length = 1;
+    if(userdata->segment_length == 0) userdata->segment_length = 1000;
     return 0;
 }
 
@@ -219,7 +219,11 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     if( (r = id3_ready(&userdata->id3)) != 0) return r;
 
     if(userdata->packets_per_segment == 0) {
-        userdata->packets_per_segment = userdata->segment_length * source->sample_rate / source->frame_len;
+        userdata->packets_per_segment = userdata->segment_length * source->sample_rate / source->frame_len / 1000;
+        if(userdata->packets_per_segment == 0) {
+            /* this shouldn't happen but, just in case */
+            userdata->packets_per_segment = 1;
+        }
     }
     userdata->ts -= (uint64_t)source->padding * (uint64_t)90000 / (uint64_t)source->sample_rate;
 
@@ -323,7 +327,7 @@ static int plugin_submit_tags(void* ud, const taglist* tags, const segment_recei
     (void)dest;
 
     if( (r = taglist_deep_copy(&userdata->taglist,tags)) != 0) { 
-        LOGERRNO("error copying tagS");
+        LOGERRNO("error copying tags");
         return r;
     }
 

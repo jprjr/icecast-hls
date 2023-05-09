@@ -1,6 +1,7 @@
 #include "output_plugin_stdout.h"
 #include "output_plugin_file.h"
 #include "output_plugin_folder.h"
+#include "output_plugin_icecast.h"
 
 #ifndef OUTPUT_PLUGIN_CURL
 #define OUTPUT_PLUGIN_CURL 0
@@ -14,6 +15,7 @@ const output_plugin* output_plugin_list[] = {
     &output_plugin_stdout,
     &output_plugin_file,
     &output_plugin_folder,
+    &output_plugin_icecast,
 #if OUTPUT_PLUGIN_CURL
     &output_plugin_curl,
 #endif

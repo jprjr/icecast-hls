@@ -87,6 +87,12 @@ static int plugin_submit_picture(void* userdata, const picture* src, picture* ou
     return 0;
 }
 
+static int plugin_submit_tags(void* ud, const taglist* tags) {
+    (void)ud;
+    (void)tags;
+    return 0;
+}
+
 static int plugin_set_time(void* userdata, const ich_time* now) {
     (void)userdata;
     (void)now;
@@ -109,5 +115,6 @@ const output_plugin output_plugin_stdout = {
     plugin_set_time,
     plugin_submit_segment,
     plugin_submit_picture,
+    plugin_submit_tags,
     plugin_flush,
 };
