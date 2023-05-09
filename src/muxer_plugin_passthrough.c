@@ -209,10 +209,8 @@ static int muxer_plugin_passthrough_flush(void* ud, const segment_receiver* dest
 
 static int muxer_plugin_passthrough_submit_tags(void* ud, const taglist* tags, const segment_receiver* dest) {
     (void)ud;
-    (void)tags;
-    (void)dest;
 
-    return 0;
+    return dest->submit_tags(dest->handle,tags);
 }
 
 static int muxer_plugin_passthrough_init(void) {

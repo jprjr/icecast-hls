@@ -90,13 +90,11 @@ int muxer_submit_tags(const muxer* m, const taglist* tags) {
     apic_idx = taglist_find_cstr(tags,"APIC",0);
     /* if there's no APIC there's nothing to do */
     if(apic_idx == taglist_len(tags)) {
-        if( (r = m->segment_receiver.submit_tags(m->segment_receiver.handle,tags)) != 0) return r;
         return m->plugin->submit_tags(m->userdata, tags, &m->segment_receiver);
     }
 
     /* if we're keeping and keeping in-band, nothing to do */
     if( (m->image_mode & IMAGE_MODE_KEEP) && (m->image_mode & IMAGE_MODE_INBAND)) {
-        if( (r = m->segment_receiver.submit_tags(m->segment_receiver.handle,tags)) != 0) return r;
         return m->plugin->submit_tags(m->userdata, tags, &m->segment_receiver);
     }
 
@@ -107,8 +105,7 @@ int muxer_submit_tags(const muxer* m, const taglist* tags) {
     taglist_remove_tag(&list,apic_idx);
 
     if(! (m->image_mode & IMAGE_MODE_KEEP)) {
-        r = m->segment_receiver.submit_tags(m->segment_receiver.handle,tags);
-        if(r) r = m->plugin->submit_tags(m->userdata,&list, &m->segment_receiver);
+        r = m->plugin->submit_tags(m->userdata,&list, &m->segment_receiver);
         taglist_shallow_free(&list);
         return r;
     }
@@ -127,7 +124,6 @@ int muxer_submit_tags(const muxer* m, const taglist* tags) {
     if(strbuf_equals_cstr(&src.mime, "-->")) {
         /* image is already a link! */
         taglist_shallow_free(&list);
-        if( (r = m->segment_receiver.submit_tags(m->segment_receiver.handle,tags)) != 0) return r;
         return m->plugin->submit_tags(m->userdata, tags, &m->segment_receiver);
     }
 
@@ -171,8 +167,7 @@ int muxer_submit_tags(const muxer* m, const taglist* tags) {
     }
 
     if( (r = taglist_add_tag(&list,&tmp_tag)) != 0) goto cleanup;
-    r = m->segment_receiver.submit_tags(m->segment_receiver.handle,tags);
-    if(r) r = m->plugin->submit_tags(m->userdata,&list, &m->segment_receiver);
+    r = m->plugin->submit_tags(m->userdata,&list, &m->segment_receiver);
 
     cleanup:
 

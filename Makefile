@@ -42,14 +42,17 @@ SOURCES = \
 	src/muxer_plugin.c \
 	src/muxer_plugin_fmp4.c \
 	src/muxer_plugin_packedaudio.c \
+	src/muxer_plugin_passthrough.c \
 	src/output.c \
 	src/output_plugin.c \
 	src/output_plugin_file.c \
+	src/output_plugin_icecast.c \
 	src/output_plugin_stdout.c \
 	src/output_plugin_folder.c \
 	src/packet.c \
 	src/samplefmt.c \
 	src/segment.c \
+	src/socket.c \
 	src/source.c \
 	src/sourcelist.c \
 	src/source_sync.c \
@@ -94,14 +97,17 @@ REQUIRED_OBJS = \
 	src/muxer_plugin.o \
 	src/muxer_plugin_fmp4.o \
 	src/muxer_plugin_packedaudio.o \
+	src/muxer_plugin_passthrough.o \
 	src/output.o \
 	src/output_plugin.o \
 	src/output_plugin_file.o \
+	src/output_plugin_icecast.o \
 	src/output_plugin_stdout.o \
 	src/output_plugin_folder.o \
 	src/packet.o \
 	src/samplefmt.o \
-	src/segment.c \
+	src/segment.o \
+	src/socket.o \
 	src/source.o \
 	src/sourcelist.o \
 	src/source_sync.o \
