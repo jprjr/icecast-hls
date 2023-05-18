@@ -322,6 +322,7 @@ static int output_plugin_icecast_open(void* ud, const segment_source* source) {
     }
 
     /* all good to go! */
+    ich_socket_blocking(userdata->socket);
     /* set out segment length to 1ms, basically flush the packet as soon as its received */
     params.segment_length = 250;
     r = 0;
@@ -336,8 +337,9 @@ static int output_plugin_icecast_submit_segment(void* ud, const segment* seg) {
     output_plugin_icecast_userdata* userdata = (output_plugin_icecast_userdata*)ud;
 
     TRY(ich_socket_send(userdata->socket,seg->data,seg->len,5000) == (int)seg->len,
-      LOG1("error writing segment: %s", strerror(errno))
+      LOG0("error writing segment")
     );
+
     r = 0;
 
     cleanup:

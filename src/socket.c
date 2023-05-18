@@ -154,6 +154,17 @@ int ich_socket_recv(SOCKET sock, char *buf, unsigned int len, unsigned long time
         events = -1;
     }
 
+#ifdef ICH_SOCKET_WINDOWS
+    if(!FD_ISSET(sock, &fds)) {
+        events = -1;
+    }
+#else
+    if(pfd.revents != POLLIN) {
+        /* we have a HUP or something on the socket */
+        events = -1;
+    }
+#endif
+
     if(events < 0) return events;
 
     return recv(sock,buf,len,0);
@@ -191,7 +202,20 @@ int ich_socket_send(SOCKET sock, const char *buf, unsigned int len, unsigned lon
         events = -1;
     }
 
-    if(events < 0) return events;
+#ifdef ICH_SOCKET_WINDOWS
+    if(!FD_ISSET(sock, &fds)) {
+        events = -1;
+    }
+#else
+    if(pfd.revents != POLLOUT) {
+        /* we have a HUP or something on the socket */
+        events = -1;
+    }
+#endif
+
+    if(events < 0) {
+        return events;
+    }
 
     return send(sock,buf,len,0);
 }
