@@ -8,6 +8,11 @@
 #include "map.h"
 #include "id3.h"
 
+#include "pack_u32be.h"
+#include "pack_u16be.h"
+#include "unpack_u32le.h"
+#include "unpack_u16le.h"
+
 static const char* AOID3_SCHEME_ID_URI = "https://aomedia.org/emsg/ID3";
 static const char* AOID3_VALUE = "0";
 
@@ -42,6 +47,7 @@ struct plugin_userdata {
     fmp4_loudness* loudness;
     fmp4_measurement* measurement;
     fmp4_emsg* emsg;
+    membuf dsi;
     membuf expired_emsgs;
     unsigned int packets_per_segment;
     unsigned int samples_per_segment;
@@ -80,6 +86,7 @@ static void* plugin_create(void) {
     userdata->emsg = NULL;
 
     membuf_init(&userdata->expired_emsgs);
+    membuf_init(&userdata->dsi);
     return userdata;
 }
 
@@ -99,6 +106,7 @@ static void plugin_close(void* ud) {
     fmp4_mux_close(&userdata->mux);
     expire_emsgs(userdata);
     membuf_free(&userdata->expired_emsgs);
+    membuf_free(&userdata->dsi);
     id3_free(&userdata->id3);
     free(userdata);
 }
@@ -418,7 +426,21 @@ static int plugin_submit_dsi(void* ud, const membuf* data,const segment_receiver
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
     if(data->len > 0) {
-        if( fmp4_track_set_dsi(userdata->track, data->x, data->len) != FMP4_OK) {
+        if(membuf_copy(&userdata->dsi,data) != 0) {
+            fprintf(stderr,"[muxer:fmp4] error copying dsi\n");
+            return -1;
+        }
+
+        if(userdata->track->codec == FMP4_CODEC_OPUS) {
+            /* the dsi we get is a whole OpusHead for Ogg, convert
+             * to mp4 */
+            membuf_trim(&userdata->dsi,8);
+            userdata->dsi.x[0] = 0x00;
+            pack_u16be(&userdata->dsi.x[2],unpack_u16le(&userdata->dsi.x[2]));
+            pack_u32be(&userdata->dsi.x[4],unpack_u32le(&userdata->dsi.x[4]));
+            pack_u16be(&userdata->dsi.x[8],unpack_u16le(&userdata->dsi.x[8]));
+        }
+        if( fmp4_track_set_dsi(userdata->track, userdata->dsi.x, userdata->dsi.len) != FMP4_OK) {
             fprintf(stderr,"[muxer:fmp4] error setting dsi\n");
             return -1;
         }

@@ -118,7 +118,10 @@ int frame_append(frame*, const frame*);
 int frame_move(frame* dest, frame* src, unsigned int len);
 
 /* throw away samples from the beginning of the frame */
-int frame_discard(frame*, unsigned int len);
+int frame_trim(frame*, unsigned int len);
+
+/* pad the frame with zeroes */
+int frame_fill(frame*, unsigned int duration);
 
 
 int frame_receiver_open_null(void* handle, const frame_source* source);

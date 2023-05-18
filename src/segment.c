@@ -49,5 +49,5 @@ int segment_source_set_params_ignore(void* segment_producer, const segment_sourc
 
 const segment_receiver segment_receiver_zero = SEGMENT_RECEIVER_ZERO;
 const segment_source segment_source_zero = SEGMENT_SOURCE_ZERO;
-const segment_source_params segment_receiver_parms_zero = SEGMENT_SOURCE_PARAMS_ZERO;
+const segment_source_params segment_source_params_zero = SEGMENT_SOURCE_PARAMS_ZERO;
 const segment segment_zero = SEGMENT_ZERO;

@@ -117,6 +117,39 @@ int frame_buffer(frame* f) {
     return 0;
 }
 
+int frame_fill(frame* f, unsigned int duration) {
+    int r;
+    size_t i;
+    unsigned int old_duration;
+    size_t samplesize;
+    size_t llen;
+    size_t rlen;
+    membuf* m;
+
+    if(duration <= f->duration) return 0;
+
+    old_duration = f->duration;
+    samplesize = samplefmt_size(f->format);
+    llen = (size_t)old_duration * samplesize;
+    rlen = ((size_t)duration - (size_t)old_duration) * samplesize;
+
+    f->duration = duration;
+    if( (r = frame_buffer(f)) != 0) return r;
+
+    if(samplefmt_is_planar(f->format)) {
+        for(i=0;i<f->channels;i++) {
+            m = frame_get_channel_int(f,i);
+            memset(&m->x[llen],0,rlen);
+        }
+    } else {
+        m = frame_get_channel_int(f,0);
+        llen *= (size_t)f->channels;
+        rlen *= (size_t)f->channels;
+        memset(&m->x[llen],0,rlen);
+    }
+    return 0;
+}
+
 int frame_copy(frame* dest, const frame* src) {
     int r;
     size_t i;
@@ -263,6 +296,33 @@ int frame_move(frame* dest, frame* src, unsigned int len) {
 
     src->duration -= len;
     src->pts += len;
+    return 0;
+}
+
+int frame_trim(frame* f, unsigned int len) {
+    membuf *buf;
+    size_t i;
+    size_t samplesize;
+    size_t llen;
+    size_t rlen;
+
+    samplesize = samplefmt_size(f->format);
+    llen = (size_t)len * samplesize;
+    rlen = ((size_t)f->duration - (size_t) len) * samplesize;
+
+    if(samplefmt_is_planar(f->format)) {
+        for(i=0;i<f->channels;i++) {
+            buf = frame_get_channel_int(f,i);
+            memmove(&buf->x[0],&buf->x[llen],rlen);
+        }
+    } else {
+        llen *= (size_t)f->channels;
+        rlen *= (size_t)f->channels;
+        buf = frame_get_channel_int(f,0);
+        memmove(&buf->x[0],&buf->x[llen],rlen);
+    }
+
+    f->duration -= len;
     return 0;
 }
 

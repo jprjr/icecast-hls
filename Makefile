@@ -1,7 +1,7 @@
 .PHONY: all clean
 
-CFLAGS = -Wall -Wextra -g -O3
-LDFLAGS = 
+CFLAGS = -Wall -Wextra -g -O3 -fPIC
+LDFLAGS =
 
 SOURCES = \
 	src/avframe_utils.c \
@@ -25,6 +25,7 @@ SOURCES = \
 	src/encoder_plugin_avcodec.c \
 	src/encoder_plugin_exhale.c \
 	src/encoder_plugin_fdk_aac.c \
+	src/encoder_plugin_opus.c \
 	src/filter.c \
 	src/filter_plugin.c \
 	src/filter_plugin_avfilter.c \
@@ -41,6 +42,9 @@ SOURCES = \
 	src/muxer.c \
 	src/muxer_plugin.c \
 	src/muxer_plugin_fmp4.c \
+	src/muxer_plugin_ogg.c \
+	src/muxer_plugin_ogg_flac.c \
+	src/muxer_plugin_ogg_opus.c \
 	src/muxer_plugin_packedaudio.c \
 	src/muxer_plugin_passthrough.c \
 	src/output.c \
@@ -61,7 +65,8 @@ SOURCES = \
 	src/tag.c \
 	src/tagmap.c \
 	src/tagmap_default.c \
-	src/thread.c
+	src/thread.c \
+	src/version.c
 
 OBJS = $(SOURCES:%.c=%.o)
 
@@ -96,6 +101,9 @@ REQUIRED_OBJS = \
 	src/muxer.o \
 	src/muxer_plugin.o \
 	src/muxer_plugin_fmp4.o \
+	src/muxer_plugin_ogg.o \
+	src/muxer_plugin_ogg_flac.o \
+	src/muxer_plugin_ogg_opus.o \
 	src/muxer_plugin_packedaudio.o \
 	src/muxer_plugin_passthrough.o \
 	src/output.o \
@@ -116,28 +124,34 @@ REQUIRED_OBJS = \
 	src/tag.o \
 	src/tagmap.o \
 	src/tagmap_default.o \
-	src/thread.o
+	src/thread.o \
+	src/version.o
+
+PKGCONFIG=pkg-config
 
 CFLAGS_EXHALE =
 LDFLAGS_EXHALE = -lexhale
 
-CFLAGS_CURL = $(shell pkg-config --cflags libcurl)
-LDFLAGS_CURL = $(shell pkg-config --libs libcurl)
+CFLAGS_CURL = $(shell $(PKGCONFIG) --cflags libcurl)
+LDFLAGS_CURL = $(shell $(PKGCONFIG) --libs libcurl)
 
-CFLAGS_FDK_AAC = $(shell pkg-config --cflags fdk-aac)
-LDFLAGS_FDK_AAC = $(shell pkg-config --libs fdk-aac)
+CFLAGS_FDK_AAC = $(shell $(PKGCONFIG) --cflags fdk-aac)
+LDFLAGS_FDK_AAC = $(shell $(PKGCONFIG) --libs fdk-aac)
 
-CFLAGS_AVFORMAT = $(shell pkg-config --cflags libavformat)
-LDFLAGS_AVFORMAT = $(shell pkg-config --libs libavformat)
+CFLAGS_OPUS = $(shell $(PKGCONFIG) --cflags opus)
+LDFLAGS_OPUS = $(shell $(PKGCONFIG) --libs opus)
 
-CFLAGS_AVFILTER = $(shell pkg-config --cflags libavfilter)
-LDFLAGS_AVFILTER = $(shell pkg-config --libs libavfilter)
+CFLAGS_AVFORMAT = $(shell $(PKGCONFIG) --cflags libavformat)
+LDFLAGS_AVFORMAT = $(shell $(PKGCONFIG) --libs libavformat)
 
-CFLAGS_AVUTIL = $(shell pkg-config --cflags libavutil)
-LDFLAGS_AVUTIL = $(shell pkg-config --libs libavutil)
+CFLAGS_AVFILTER = $(shell $(PKGCONFIG) --cflags libavfilter)
+LDFLAGS_AVFILTER = $(shell $(PKGCONFIG) --libs libavfilter)
 
-CFLAGS_AVCODEC = $(shell pkg-config --cflags libavcodec)
-LDFLAGS_AVCODEC = $(shell pkg-config --libs libavcodec)
+CFLAGS_AVUTIL = $(shell $(PKGCONFIG) --cflags libavutil)
+LDFLAGS_AVUTIL = $(shell $(PKGCONFIG) --libs libavutil)
+
+CFLAGS_AVCODEC = $(shell $(PKGCONFIG) --cflags libavcodec)
+LDFLAGS_AVCODEC = $(shell $(PKGCONFIG) --libs libavcodec)
 
 ENCODER_PLUGIN_CFLAGS =
 FILTER_PLUGIN_CFLAGS =
@@ -145,6 +159,7 @@ FILTER_PLUGIN_CFLAGS =
 # temp because I just want to build everything while testing
 ENABLE_FDK_AAC=1
 ENABLE_EXHALE=1
+ENABLE_OPUS=1
 ENABLE_AVFILTER=1
 ENABLE_AVCODEC=1
 ENABLE_CURL=1
@@ -189,12 +204,22 @@ REQUIRED_OBJS += src/output_plugin_curl.o
 CURL_REQUIRED=1
 endif
 
+ifeq ($(ENABLE_OPUS),1)
+ENCODER_PLUGIN_CFLAGS += -DENCODER_PLUGIN_OPUS=1
+REQUIRED_OBJS += src/encoder_plugin_opus.o
+OPUS_REQUIRED=1
+endif
+
 ifeq ($(EXHALE_REQUIRED),1)
 LDFLAGS += $(LDFLAGS_EXHALE)
 endif
 
 ifeq ($(FDK_AAC_REQUIRED),1)
 LDFLAGS += $(LDFLAGS_FDK_AAC)
+endif
+
+ifeq ($(OPUS_REQUIRED),1)
+LDFLAGS += $(LDFLAGS_OPUS)
 endif
 
 ifeq ($(AVFORMAT_REQUIRED),1)
@@ -259,6 +284,9 @@ src/filter_plugin_avfilter.o: src/filter_plugin_avfilter.c
 
 src/encoder_plugin_exhale.o: src/encoder_plugin_exhale.c
 	$(CC) $(CFLAGS) $(CFLAGS_EXHALE) -c -o $@ $<
+
+src/encoder_plugin_opus.o: src/encoder_plugin_opus.c
+	$(CC) $(CFLAGS) $(CFLAGS_OPUS) -c -o $@ $<
 
 src/decoder_plugin_avcodec.o: src/decoder_plugin_avcodec.c
 	$(CC) $(CFLAGS) $(CFLAGS_AVFORMAT) $(CFLAGS_AVCODEC) $(CFLAGS_AVUTIL) -c -o $@ $<

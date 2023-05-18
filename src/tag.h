@@ -52,6 +52,7 @@ typedef enum tagmap_unknownmode tagmap_unknownmode;
 struct taglist_map_flags {
     tagmap_mergemode mergemode;
     tagmap_unknownmode unknownmode;
+    int passthrough;
 };
 
 typedef struct taglist_map_flags taglist_map_flags;

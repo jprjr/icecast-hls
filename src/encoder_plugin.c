@@ -12,6 +12,10 @@
 #define ENCODER_PLUGIN_FDK_AAC 0
 #endif
 
+#ifndef ENCODER_PLUGIN_OPUS
+#define ENCODER_PLUGIN_OPUS 0
+#endif
+
 #if ENCODER_PLUGIN_AVCODEC
 #include "encoder_plugin_avcodec.h"
 #endif
@@ -24,6 +28,10 @@
 #include "encoder_plugin_fdk_aac.h"
 #endif
 
+#if ENCODER_PLUGIN_OPUS
+#include "encoder_plugin_opus.h"
+#endif
+
 const encoder_plugin* encoder_plugin_list[] = {
 #if ENCODER_PLUGIN_AVCODEC
     &encoder_plugin_avcodec,
@@ -33,6 +41,9 @@ const encoder_plugin* encoder_plugin_list[] = {
 #endif
 #if ENCODER_PLUGIN_FDK_AAC
     &encoder_plugin_fdk_aac,
+#endif
+#if ENCODER_PLUGIN_OPUS
+    &encoder_plugin_opus,
 #endif
     NULL,
 };

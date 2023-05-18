@@ -323,7 +323,7 @@ static int output_plugin_icecast_open(void* ud, const segment_source* source) {
 
     /* all good to go! */
     /* set out segment length to 1ms, basically flush the packet as soon as its received */
-    params.segment_length = 1;
+    params.segment_length = 250;
     r = 0;
 
     cleanup:

@@ -39,6 +39,7 @@ void destination_init(destination* dest) {
     dest->configuring = 0;
     dest->map_flags.mergemode = TAGMAP_MERGE_IGNORE;
     dest->map_flags.unknownmode = TAGMAP_UNKNOWN_IGNORE;
+    dest->map_flags.passthrough = 0;
     dest->image_mode = 0;
 }
 
@@ -146,6 +147,12 @@ int destination_config(destination* dest, const strbuf* key, const strbuf* val) 
     }
 
     if(strbuf_equals_cstr(key,"tagmap")) {
+        if(strbuf_caseequals_cstr(val,"disable") ||
+           strbuf_caseequals_cstr(val,"disabled") ||
+           strbuf_caseequals_cstr(val,"false")) {
+            dest->map_flags.passthrough = 1;
+            return 0;
+        }
         if( (r = strbuf_copy(&dest->tagmap_id,val)) != 0) return r;
         return 0;
     }

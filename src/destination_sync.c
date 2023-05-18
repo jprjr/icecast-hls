@@ -27,6 +27,7 @@ int destination_sync_run(destination_sync *sync) {
     frame f;
     taglist tags;
     taglist id3_tags;
+    taglist* cur_tags;
     destination_sync_type type;
 
     type = DESTINATION_SYNC_UNKNOWN;
@@ -75,12 +76,17 @@ int destination_sync_run(destination_sync *sync) {
                 thread_atomic_int_store(&sync->status,0);
                 thread_signal_raise(&sync->consumed);
 
-                if(taglist_map(sync->tagmap,&tags,sync->map_flags,&id3_tags) < 0) {
-                    ret = -1;
-                    goto cleanup;
+                if(sync->map_flags->passthrough) {
+                    cur_tags = &tags;
+                } else {
+                    if(taglist_map(sync->tagmap,&tags,sync->map_flags,&id3_tags) < 0) {
+                        ret = -1;
+                        goto cleanup;
+                    }
+                    cur_tags = &id3_tags;
                 }
 
-                if(sync->on_tags.cb(sync->on_tags.userdata,&id3_tags) < 0) {
+                if(sync->on_tags.cb(sync->on_tags.userdata,cur_tags) < 0) {
                     ret = -1;
                     goto cleanup;
                 }

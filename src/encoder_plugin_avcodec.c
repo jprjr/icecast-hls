@@ -10,8 +10,6 @@
 
 #include "pack_u32be.h"
 #include "pack_u16be.h"
-#include "unpack_u32le.h"
-#include "unpack_u16le.h"
 
 #include <stdlib.h>
 
@@ -29,6 +27,10 @@ struct plugin_userdata {
     AVFrame* avframe;
     AVPacket* avpacket;
     packet packet;
+
+    unsigned int sample_rate;
+    unsigned int channels;
+    enum AVSampleFormat sample_fmt;
 };
 typedef struct plugin_userdata plugin_userdata;
 
@@ -57,6 +59,83 @@ static enum AVSampleFormat find_best_format(const AVCodec *codec, enum AVSampleF
     }
 
     return outFmt;
+}
+
+static int drain_packets(plugin_userdata* userdata, const packet_receiver* dest, int flushing) {
+    int av;
+#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(57,64,0) /* ffmpeg-3.2 */
+    int got;
+#endif
+
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(57,64,0) /* ffmpeg-3.2 */
+    while( (av = avcodec_receive_packet(userdata->ctx, userdata->avpacket)) >= 0) {
+#else
+    while( (av = avcodec_encode_audio2(userdata->ctx, userdata->avpacket, NULL, &got)) >= 0 && got) {
+#endif
+        if(userdata->avpacket->duration == 0) {
+            if(!flushing) {
+                LOG0("error, received a packet with zero duration");
+                return AVERROR_EXTERNAL;
+            }
+            return AVERROR_EOF;
+        }
+
+        if(avpacket_to_packet(&userdata->packet,userdata->avpacket) != 0) {
+          LOG0("unable to convert packet");
+          return AVERROR_EXTERNAL;
+        }
+
+        if(dest->submit_packet(dest->handle, &userdata->packet) != 0) {
+          LOG0("unable to send packet");
+          return AVERROR_EXTERNAL;
+        }
+    }
+
+#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(57,64,0) /* ffmpeg-3.2 */
+    if(av == 0) av = AVERROR_EOF;
+#endif
+
+    return av;
+}
+
+static int open_encoder(plugin_userdata* userdata) {
+    int r = -1;
+    AVDictionary *opts = NULL;
+    AVDictionaryEntry *t = NULL;
+
+    TRY( (userdata->ctx = avcodec_alloc_context3(userdata->codec)) != NULL,
+        LOG0("out of memory"));
+
+    userdata->ctx->time_base.num = 1;
+    userdata->ctx->time_base.den = userdata->sample_rate;
+    userdata->ctx->sample_rate   = userdata->sample_rate;
+    userdata->ctx->sample_fmt    = userdata->sample_fmt;
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
+    av_channel_layout_default(&userdata->ctx->ch_layout,userdata->channels);
+#else
+    userdata->ctx->channel_layout = av_get_default_channel_layout(userdata->channels);
+#endif
+
+    if(userdata->codec_config != NULL) {
+        TRY(av_dict_copy(&opts,userdata->codec_config,0) == 0,
+            LOG0("error copying codec_config"));
+    }
+
+    TRY(avcodec_open2(userdata->ctx, userdata->codec, &opts) >= 0,
+        LOG0("unable to open codec context"));
+
+    if(opts != NULL) {
+        while( (t = av_dict_get(opts, "", t, AV_DICT_IGNORE_SUFFIX)) != NULL) {
+            LOG2("warning: unused option %s=%s",
+              t->key, t->value);
+        }
+    }
+
+    r = 0;
+
+    cleanup:
+    if(opts != NULL) av_dict_free(&opts);
+    return r;
 }
 
 static int plugin_init(void) {
@@ -131,6 +210,57 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
     return r;
 }
 
+static int set_keyframes(void* ud, unsigned int keyframes) {
+    (void)ud;
+    (void)keyframes;
+    return -1;
+}
+
+struct reset_wrapper {
+    void* dest;
+    int (*cb)(void*, const packet*);
+};
+
+typedef struct reset_wrapper reset_wrapper;
+
+static int reset_wrapper_cb(void* handle, const packet* p) {
+    reset_wrapper* wrap = (reset_wrapper*) handle;
+    return wrap->cb(wrap->dest,p);
+}
+
+static int reset_encoder(void* ud, void* dest, int (*cb)(void*, const packet*)) {
+    plugin_userdata* userdata = (plugin_userdata*)ud;
+
+    int r;
+    int av;
+    char averrbuf[128];
+
+    reset_wrapper wrap;
+    wrap.dest = dest;
+    wrap.cb = cb;
+
+    packet_receiver recv;
+    recv.handle = &wrap;
+    recv.submit_packet = reset_wrapper_cb;
+
+    if(userdata->ctx != NULL) {
+
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(57,64,0) /* ffmpeg-3.2 */
+        TRY( (av = avcodec_send_frame(userdata->ctx,NULL)) >= 0,
+          av_strerror(av, averrbuf, sizeof(averrbuf));
+          LOG1("unable to flush encoder: %s",averrbuf));
+#endif
+        TRY( (av = drain_packets(userdata,&recv,1)) == AVERROR_EOF,
+          av_strerror(av, averrbuf, sizeof(averrbuf));
+          LOG1("flush: error receiving packet: %s",averrbuf));
+        avcodec_free_context(&userdata->ctx);
+    }
+
+    r = open_encoder(userdata);
+    cleanup:
+    return r;
+}
+
 static int plugin_open(void* ud, const frame_source* source, const packet_receiver *dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
@@ -139,7 +269,6 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
 
     packet_source me = PACKET_SOURCE_ZERO;
     frame_source_params params = FRAME_SOURCE_PARAMS_ZERO;
-    AVDictionaryEntry *t = NULL;
     membuf dsi = STRBUF_ZERO; /* STRBUF_ZERO uses a smaller blocksize */
 
     if(userdata->codec == NULL) {
@@ -147,30 +276,12 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
             LOG0("no encoder specified and unable to find a default"));
     }
 
-    TRY( (userdata->ctx = avcodec_alloc_context3(userdata->codec)) != NULL,
-        LOG0("out of memory"));
-
-    userdata->ctx->time_base.num = 1;
-    userdata->ctx->time_base.den = source->sample_rate;
-    userdata->ctx->sample_rate   = source->sample_rate;
-
-    TRY( (userdata->ctx->sample_fmt = find_best_format(userdata->codec,samplefmt_to_avsampleformat(source->format))) != AV_SAMPLE_FMT_NONE,
+    userdata->sample_rate = source->sample_rate;
+    userdata->channels = source->channels;
+    TRY( (userdata->sample_fmt = find_best_format(userdata->codec,samplefmt_to_avsampleformat(source->format))) != AV_SAMPLE_FMT_NONE,
         LOG0("unable to find a suitable sample format"));
-#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
-    av_channel_layout_default(&userdata->ctx->ch_layout,source->channels);
-#else
-    userdata->ctx->channel_layout = av_get_default_channel_layout(source->channels);
-#endif
 
-    TRY(avcodec_open2(userdata->ctx, userdata->codec, &userdata->codec_config) >= 0,
-        LOG0("unable to open codec context"));
-
-    if(userdata->codec_config != NULL) {
-        while( (t = av_dict_get(userdata->codec_config, "", t, AV_DICT_IGNORE_SUFFIX)) != NULL) {
-            LOG2("warning: unused option %s=%s",
-              t->key, t->value);
-        }
-    }
+    TRY(open_encoder(userdata) == 0, LOG0("error opening encoder"));
 
     switch(userdata->codec->id) {
         case AV_CODEC_ID_AAC: {
@@ -398,21 +509,9 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
              * which is 3840 samples @48kHz */
             me.roll_distance = -3840 / userdata->ctx->frame_size;
 
-            /* the extradata from avcodec is the pull header packet including OpusHead,
-             * so we just copy it in and swap a few bytes (OpusHead uses little-endian,
-             * mp4 uses big-endian */
-
-            TRY(userdata->ctx->extradata_size > 8,
-                LOG1("opus extradatasize is %u, expected at least 9",
-                  userdata->ctx->extradata_size));
-            TRY0(membuf_ready(&dsi,userdata->ctx->extradata_size-8), LOG0("out of memory"));
-            memcpy(dsi.x,&userdata->ctx->extradata[8],userdata->ctx->extradata_size-8);
-            dsi.len = userdata->ctx->extradata_size-8;
-
-            dsi.x[0] = 0x00;
-            pack_u16be(&dsi.x[2],unpack_u16le(&dsi.x[2]));
-            pack_u32be(&dsi.x[4],unpack_u32le(&dsi.x[4]));
-            pack_u16be(&dsi.x[8],unpack_u16le(&dsi.x[8]));
+            TRY0(membuf_ready(&dsi,userdata->ctx->extradata_size), LOG0("out of memory"));
+            memcpy(dsi.x,&userdata->ctx->extradata[0],userdata->ctx->extradata_size);
+            dsi.len = userdata->ctx->extradata_size;
             break;
         }
 
@@ -424,12 +523,16 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     params.format   = avsampleformat_to_samplefmt(find_best_format(userdata->codec,samplefmt_to_avsampleformat(source->format)));
     params.duration = userdata->ctx->frame_size;
 
+    me.handle = userdata;
     me.channels = source->channels;
     me.sample_rate = source->sample_rate;
     me.frame_len = userdata->ctx->frame_size;
     me.sync_flag = userdata->ctx->codec_descriptor->props & AV_CODEC_PROP_INTRA_ONLY;
     me.padding = userdata->ctx->initial_padding;
     me.set_params = packet_source_set_params_ignore;
+    me.set_keyframes = set_keyframes;
+    me.reset = reset_encoder;
+
     if(me.frame_len == 0) me.frame_len = 1024;
 
     TRY0(dest->open(dest->handle, &me), LOG0("error configuring muxer"));
@@ -452,42 +555,6 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
 
 }
 
-static int drain_packets(plugin_userdata* userdata, const packet_receiver* dest, int flushing) {
-    int av;
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(57,64,0) /* ffmpeg-3.2 */
-    int got;
-#endif
-
-#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(57,64,0) /* ffmpeg-3.2 */
-    while( (av = avcodec_receive_packet(userdata->ctx, userdata->avpacket)) >= 0) {
-#else
-    while( (av = avcodec_encode_audio2(userdata->ctx, userdata->avpacket, NULL, &got)) >= 0 && got) {
-#endif
-        if(userdata->avpacket->duration == 0) {
-            if(!flushing) {
-                LOG0("error, received a packet with zero duration");
-                return AVERROR_EXTERNAL;
-            }
-            return AVERROR_EOF;
-        }
-
-        if(avpacket_to_packet(&userdata->packet,userdata->avpacket) != 0) {
-          LOG0("unable to convert packet");
-          return AVERROR_EXTERNAL;
-        }
-
-        if(dest->submit_packet(dest->handle, &userdata->packet) != 0) {
-          LOG0("unable to send packet");
-          return AVERROR_EXTERNAL;
-        }
-    }
-
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(57,64,0) /* ffmpeg-3.2 */
-    if(av == 0) av = AVERROR_EOF;
-#endif
-
-    return av;
-}
 
 static int plugin_submit_frame(void* ud, const frame* frame, const packet_receiver* dest) {
     int r;

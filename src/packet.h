@@ -2,6 +2,7 @@
 #define PACKET_H
 
 #include "membuf.h"
+#include "strbuf.h"
 #include "codecs.h"
 
 struct packet {
@@ -24,13 +25,24 @@ typedef struct packet_source_params packet_source_params;
 
 typedef int (*packet_source_set_params_cb)(void* handle, const packet_source_params* params);
 
+/* state that the next (x) packets need to be keyframe packets,
+ * used by the ogg muxer + libopus */
+typedef int (*packet_source_set_keyframes_cb)(void* handle, unsigned int keyframes);
+
+/* used to reset the state entirely - used by the ogg muxer + avcodec,
+ * will flush the codec and send remaining packets to cb */
+typedef int (*packet_source_reset_cb)(void* handle, void* dest, int (*cb)(void*, const packet*));
+
 /* this struct is a small wrapper around the encoder (packet source),
  * used during the muxer open (packet receiver) so it knows
  * some stuff about the incoming packets - default frame length, sample rate,
  * the codec, etc */
 struct packet_source {
     void* handle;
+    const strbuf* name;
     packet_source_set_params_cb set_params;
+    packet_source_set_keyframes_cb set_keyframes;
+    packet_source_reset_cb reset;
     codec_type codec;
     unsigned int profile; /* codec-specific profile */
     unsigned int channels;
@@ -92,7 +104,10 @@ typedef struct packet_receiver packet_receiver;
 
 #define PACKET_SOURCE_ZERO { \
     .handle = NULL, \
+    .name = NULL, \
     .set_params = packet_source_set_params_null, \
+    .set_keyframes = packet_source_set_keyframes_null, \
+    .reset = packet_source_reset_null, \
     .codec = CODEC_TYPE_UNKNOWN, \
     .channels = 0, \
     .sample_rate = 0, \
@@ -116,6 +131,8 @@ int packet_receiver_submit_dsi_null(void* handle, const membuf* dsi);
 int packet_receiver_submit_packet_null(void* handle, const packet* packet);
 int packet_receiver_flush_null(void* handle);
 int packet_source_set_params_null(void* handle, const packet_source_params* params);
+int packet_source_set_keyframes_null(void* handle, unsigned int keyframes);
+int packet_source_reset_null(void* handle, void* dest, int (*cb)(void*, const packet*));
 int packet_source_set_params_ignore(void* handle, const packet_source_params* params);
 
 extern const packet packet_zero;

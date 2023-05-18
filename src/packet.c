@@ -58,6 +58,23 @@ int packet_source_set_params_null(void* handle, const packet_source_params* para
     return -1;
 }
 
+int packet_source_set_keyframes_null(void* handle, unsigned int keyframes) {
+    (void)handle;
+    (void)keyframes;
+    fprintf(stderr,"[app error] packet_source set_keyframes not set\n");
+    abort();
+    return -1;
+}
+
+int packet_source_reset_null(void* handle, void* dest, int (*cb)(void*, const packet*)) {
+    (void)handle;
+    (void)dest;
+    (void)cb;
+    fprintf(stderr,"[app error] packet_source reset not set\n");
+    abort();
+    return -1;
+}
+
 int packet_source_set_params_ignore(void* handle, const packet_source_params* params) {
     (void)handle;
     (void)params;
