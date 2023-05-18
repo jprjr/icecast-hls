@@ -45,6 +45,8 @@ struct ogg_flac_plugin {
     uint64_t samples;
     uint8_t flag;
     strbuf scratch;
+
+    uint8_t chaining;
 };
 
 typedef struct ogg_flac_plugin ogg_flac_plugin;
@@ -140,6 +142,7 @@ static void* plugin_create(void) {
     userdata->psource = packet_source_zero;
     userdata->segment_params = segment_source_params_zero;
     userdata->samples_per_segment = 0;
+    userdata->chaining = 1;
 
     strbuf_init(&userdata->head);
     strbuf_init(&userdata->tags);
@@ -334,6 +337,10 @@ static int plugin_submit_tags(void* ud, const taglist* tags, const segment_recei
     size_t total = 0;
     size_t len = 0;
 
+    if(!userdata->chaining) {
+        return dest->submit_tags(dest->handle,tags);
+    }
+
     if(userdata->flag == 1) {
         wrap.userdata = userdata;
         wrap.dest = dest;
@@ -393,8 +400,21 @@ static int plugin_submit_tags(void* ud, const taglist* tags, const segment_recei
 
 
 static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
-    (void)ud;
-    (void)value;
+    ogg_flac_plugin* userdata = (ogg_flac_plugin*)ud;
+
+    if(strbuf_equals_cstr(key,"chaining")) {
+        if(strbuf_truthy(value)) {
+            userdata->chaining = 1;
+            return 0;
+        }
+        if(strbuf_falsey(value)) {
+            userdata->chaining = 0;
+            return 0;
+        }
+        LOGS("unsupported value for chaining: %.*s",(*value));
+        return -1;
+    }
+
     LOGS("unknown key %.*s",(*key));
     return -1;
 }

@@ -66,6 +66,7 @@ void tag_free(tag*);
 
 int tag_clone(tag*, const tag*);
 
+/* copies the key/value into the tag, must be free'd later */
 int tag_set_key(tag*, const strbuf* key);
 int tag_set_value(tag*, const strbuf* val);
 

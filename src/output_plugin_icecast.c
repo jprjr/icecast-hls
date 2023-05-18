@@ -440,13 +440,6 @@ static int rfc3986_buf(strbuf* dest, const strbuf* src) {
     return 0;
 }
 
-static int rfc3986_buf_cstr(strbuf* dest, const char* str) {
-    strbuf t = STRBUF_ZERO;
-    t.x = (uint8_t *)str;
-    t.len = strlen(str);
-    return rfc3986_buf(dest,&t);
-}
-
 static int output_plugin_icecast_submit_tags(void *ud, const taglist* tags) {
     int r = 0;
     size_t i;

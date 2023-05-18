@@ -22,6 +22,7 @@
 struct muxer_plugin_ogg_userdata {
     const muxer_plugin* plugin;
     void* handle;
+    taglist config;
 };
 
 typedef struct muxer_plugin_ogg_userdata muxer_plugin_ogg_userdata;
@@ -30,7 +31,8 @@ static void* muxer_plugin_ogg_create(void) {
     muxer_plugin_ogg_userdata* userdata = (muxer_plugin_ogg_userdata*)malloc(sizeof(muxer_plugin_ogg_userdata));
     if(userdata == NULL) return NULL;
     userdata->plugin = NULL;
-    userdata->handle= NULL;
+    userdata->handle = NULL;
+    taglist_init(&userdata->config);
     return userdata;
 }
 
@@ -39,11 +41,17 @@ static void muxer_plugin_ogg_close(void* ud) {
     if(userdata->plugin != NULL) {
         userdata->plugin->close(userdata->handle);
     }
+    taglist_free(&userdata->config);
     free(userdata);
 }
 
 static int muxer_plugin_ogg_open(void* ud, const packet_source* source, const segment_receiver* dest) {
     muxer_plugin_ogg_userdata* userdata = (muxer_plugin_ogg_userdata*)ud;
+    int r;
+    const tag* t;
+    size_t i;
+    size_t len;
+
     switch(source->codec) {
         case CODEC_TYPE_OPUS: {
             userdata->plugin = &muxer_plugin_ogg_opus;
@@ -63,6 +71,12 @@ static int muxer_plugin_ogg_open(void* ud, const packet_source* source, const se
     if(userdata->handle == NULL) {
         LOGERRNO("error allocating sub-plugin");
         return -1;
+    }
+
+    len = taglist_len(&userdata->config);
+    for(i=0;i<len;i++) {
+        t = taglist_get_tag(&userdata->config,i);
+        if( (r = userdata->plugin->config(userdata->handle,&t->key,&t->value)) != 0) return r;
     }
 
     return userdata->plugin->open(userdata->handle, source, dest);
@@ -95,10 +109,9 @@ static int muxer_plugin_ogg_get_caps(void* ud, packet_receiver_caps* caps) {
 }
 
 static int muxer_plugin_ogg_config(void* ud, const strbuf* key, const strbuf* value) {
-    (void)ud;
-    (void)value;
-    LOGS("unknown key %.*s",(*key));
-    return -1;
+    /* store the config for later, when we instantiate a plugin */
+    muxer_plugin_ogg_userdata* userdata = (muxer_plugin_ogg_userdata*)ud;
+    return taglist_add(&userdata->config,key,value);
 }
 
 static int muxer_plugin_ogg_init(void) {
