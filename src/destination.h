@@ -67,11 +67,13 @@ int destination_config(destination*, const strbuf* key, const strbuf* val);
 
 int destination_open(destination*, const ich_time* now);
 
-int destination_submit_frame(const destination*, const frame* frame);
+int destination_submit_frame(destination*, const frame* frame);
 int destination_flush(const destination*);
 int destination_submit_tags(const destination*, const taglist* tags);
 
 void destination_run(void*);
+
+void destination_dump_counters(const destination*, const strbuf* prefix);
 
 #ifdef __cplusplus
 }

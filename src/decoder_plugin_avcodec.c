@@ -138,7 +138,7 @@ static int decoder_plugin_avcodec_config(void* ud, const strbuf* key, const strb
 }
 
 static int decoder_plugin_avcodec_read(void *ud, uint8_t *buf, int buf_size) {
-    const input* in = (const input* )ud;
+    input* in = (input*)ud;
     size_t r = input_read(in, buf, (size_t)buf_size);
 
 	if(r == 0) return AVERROR_EOF;
@@ -155,7 +155,7 @@ static int decoder_plugin_avcodec_handle_source_params(void* ud, const frame_sou
     return -1;
 }
 
-static int decoder_plugin_avcodec_open(void* ud, const input* in, const frame_receiver* dest) {
+static int decoder_plugin_avcodec_open(void* ud, input* in, const frame_receiver* dest) {
     decoder_plugin_avcodec_userdata* userdata = (decoder_plugin_avcodec_userdata*)ud;
     frame_source me = FRAME_SOURCE_ZERO;
     char av_errbuf[128];

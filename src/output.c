@@ -40,11 +40,13 @@ int output_create(output* out, const strbuf* name) {
     return 0;
 }
 
-int output_open(const output* out, const segment_source* source) {
+int output_open(output* out, const segment_source* source) {
     if(out->plugin == NULL || out->userdata == NULL) {
         fprintf(stderr,"[output] plugin not selected\n");
         return -1;
     }
+    ich_time_now(&out->ts);
+    out->counter = 0;
     return out->plugin->open(out->userdata, source);
 }
 
@@ -56,8 +58,13 @@ int output_set_time(const output* out, const ich_time* now) {
     return out->plugin->set_time(out->userdata,now);
 }
 
-int output_submit_segment(const output* out, const segment* seg) {
-    return out->plugin->submit_segment(out->userdata,seg);
+int output_submit_segment(output* out, const segment* seg) {
+    int r = out->plugin->submit_segment(out->userdata,seg);
+    if(r == 0) {
+        ich_time_now(&out->ts);
+        out->counter++;
+    }
+    return r;
 }
 
 int output_submit_tags(const output* out, const taglist* tags) {
@@ -78,4 +85,15 @@ int output_global_init(void) {
 
 void output_global_deinit(void) {
     output_plugin_global_deinit();
+}
+
+void output_dump_counters(const output* in, const strbuf* prefix) {
+    ich_tm tm;
+    ich_time_to_tm(&tm,&in->ts);
+
+    fprintf(stderr,"%.*s output: outputs=%zu last_output=%4u-%02u-%02u %02u:%02u:%02u\n",
+      (int)prefix->len,(const char*)prefix->x,
+      in->counter,
+      tm.year,tm.month,tm.day,
+      tm.hour,tm.min,tm.sec);
 }

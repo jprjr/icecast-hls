@@ -35,6 +35,15 @@ void destinationlist_entry_free(destinationlist_entry* entry) {
     destination_free(&entry->destination);
 }
 
+void destinationlist_entry_dump_counters(const destinationlist_entry* entry) {
+    strbuf tmp = STRBUF_ZERO;
+    if(strbuf_append_cstr(&tmp,"[destination.")) abort();
+    if(strbuf_cat(&tmp,&entry->id)) abort();
+    if(strbuf_append_cstr(&tmp,"]")) abort();
+    destination_dump_counters(&entry->destination, &tmp);
+    strbuf_free(&tmp);
+}
+
 destinationlist_entry* destinationlist_find(const destinationlist* list, const strbuf* id) {
     size_t i;
     size_t len;
@@ -141,4 +150,18 @@ int destinationlist_wait(const destinationlist* list) {
     }
 
     return 0;
+}
+
+void destinationlist_dump_counters(const destinationlist* list) {
+    size_t i;
+    size_t len;
+
+
+    destinationlist_entry* entry = (destinationlist_entry *)list->x;
+    len = list->len / sizeof(destinationlist_entry);
+
+    for(i=0;i<len;i++) {
+        destinationlist_entry_dump_counters(&entry[i]);
+    }
+
 }

@@ -40,7 +40,7 @@ struct plugin_userdata {
     uint8_t channels;
     uint8_t bps;
 
-    const input* input;
+    input* input;
     strbuf tmpstr;
     strbuf picbuf;
     taglist list;
@@ -147,7 +147,7 @@ static int plugin_handle_source_params(void* ud, const frame_source_params* para
     return -1;
 }
 
-static int plugin_open(void* ud, const input* in, const frame_receiver* dest) {
+static int plugin_open(void* ud, input* in, const frame_receiver* dest) {
     MFLAC_RESULT res;
     plugin_userdata* userdata = (plugin_userdata*)ud;
 

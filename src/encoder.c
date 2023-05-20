@@ -39,11 +39,13 @@ int encoder_create(encoder* e, const strbuf* name) {
     return 0;
 }
 
-int encoder_open(const encoder* e, const frame_source* source) {
+int encoder_open(encoder* e, const frame_source* source) {
     if(e->plugin == NULL || e->userdata == NULL) {
         fprintf(stderr,"[encoder] unable to open: plugin not selected\n");
         return -1;
     }
+    ich_time_now(&e->ts);
+    e->counter = 0;
     return e->plugin->open(e->userdata, source, &e->packet_receiver);
 }
 
@@ -51,8 +53,13 @@ int encoder_config(const encoder* e, const strbuf* name, const strbuf* value) {
     return e->plugin->config(e->userdata,name,value);
 }
 
-int encoder_submit_frame(const encoder* e, const frame* frame) {
-    return e->plugin->submit_frame(e->userdata, frame, &e->packet_receiver);
+int encoder_submit_frame(encoder* e, const frame* frame) {
+    int r = e->plugin->submit_frame(e->userdata, frame, &e->packet_receiver);
+    if(r == 0) {
+        ich_time_now(&e->ts);
+        e->counter++;
+    }
+    return r;
 }
 
 int encoder_flush(const encoder* e) {
@@ -67,3 +74,13 @@ void encoder_global_deinit(void) {
     return encoder_plugin_global_deinit();
 }
 
+void encoder_dump_counters(const encoder* in, const strbuf* prefix) {
+    ich_tm tm;
+    ich_time_to_tm(&tm,&in->ts);
+
+    fprintf(stderr,"%.*s encoder: encodes=%zu last_encode=%4u-%02u-%02u %02u:%02u:%02u\n",
+      (int)prefix->len,(const char*)prefix->x,
+      in->counter,
+      tm.year,tm.month,tm.day,
+      tm.hour,tm.min,tm.sec);
+}

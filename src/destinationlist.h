@@ -27,6 +27,7 @@ void destinationlist_free(destinationlist*);
 
 void destinationlist_entry_init(destinationlist_entry*);
 void destinationlist_entry_free(destinationlist_entry*);
+void destinationlist_entry_dump_counters(const destinationlist_entry*);
 
 destinationlist_entry* destinationlist_find(const destinationlist* list, const strbuf* id);
 destinationlist_entry* destinationlist_get(const destinationlist* list, size_t index);
@@ -42,6 +43,8 @@ int destinationlist_start(const destinationlist* list);
 
 /* waits for all threads to complete */
 int destinationlist_wait(const destinationlist* list);
+
+void destinationlist_dump_counters(const destinationlist* list);
 
 #ifdef __cplusplus
 }

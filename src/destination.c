@@ -52,7 +52,7 @@ void destination_free(destination* dest) {
     return;
 }
 
-int destination_submit_frame(const destination* dest, const frame* frame) {
+int destination_submit_frame(destination* dest, const frame* frame) {
     return filter_submit_frame(&dest->filter, frame);
 }
 
@@ -297,3 +297,9 @@ int destination_config(destination* dest, const strbuf* key, const strbuf* val) 
     return r;
 }
 
+void destination_dump_counters(const destination* dest, const strbuf* prefix) {
+    filter_dump_counters(&dest->filter,prefix);
+    encoder_dump_counters(&dest->encoder,prefix);
+    muxer_dump_counters(&dest->muxer,prefix);
+    output_dump_counters(&dest->output,prefix);
+}

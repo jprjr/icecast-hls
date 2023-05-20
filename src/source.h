@@ -46,10 +46,12 @@ int source_open(source* s);
  * call this to get the pipeline ready */
 int source_open_dest(const source* s, const frame_receiver* dest);
 
-int source_run(const source* s);
+int source_run(source* s);
 
 int source_set_tag_handler(source* s, const tag_handler* dest);
 int source_set_frame_receiver(source* s, const frame_receiver* dest);
+
+void source_dump_counters(const source* s, const strbuf* prefix);
 
 #ifdef __cplusplus
 }

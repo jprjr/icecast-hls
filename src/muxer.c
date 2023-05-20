@@ -46,11 +46,13 @@ int muxer_create(muxer* m, const strbuf* name) {
     return 0;
 }
 
-int muxer_open(const muxer* m, const packet_source* source) {
+int muxer_open(muxer* m, const packet_source* source) {
     if(m->plugin == NULL || m->userdata == NULL) {
         fprintf(stderr,"[muxer] unable to open: plugin not selected\n");
         return -1;
     }
+    ich_time_now(&m->ts);
+    m->counter = 0;
     return m->plugin->open(m->userdata, source, &m->segment_receiver);
 }
 
@@ -70,8 +72,13 @@ int muxer_submit_dsi(const muxer* m, const membuf* dsi) {
     return m->plugin->submit_dsi(m->userdata, dsi, &m->segment_receiver);
 }
 
-int muxer_submit_packet(const muxer* m, const packet* p) {
-    return m->plugin->submit_packet(m->userdata, p, &m->segment_receiver);
+int muxer_submit_packet(muxer* m, const packet* p) {
+    int r = m->plugin->submit_packet(m->userdata, p, &m->segment_receiver);
+    if(r == 0) {
+        ich_time_now(&m->ts);
+        m->counter++;
+    }
+    return r;
 }
 
 int muxer_submit_tags(const muxer* m, const taglist* tags) {
@@ -186,4 +193,15 @@ int muxer_flush(const muxer* m) {
 
 int muxer_get_caps(const muxer* m, packet_receiver_caps* caps) {
     return m->plugin->get_caps(m->userdata, caps);
+}
+
+void muxer_dump_counters(const muxer* in, const strbuf* prefix) {
+    ich_tm tm;
+    ich_time_to_tm(&tm,&in->ts);
+
+    fprintf(stderr,"%.*s muxer: muxes=%zu last_mux=%4u-%02u-%02u %02u:%02u:%02u\n",
+      (int)prefix->len,(const char*)prefix->x,
+      in->counter,
+      tm.year,tm.month,tm.day,
+      tm.hour,tm.min,tm.sec);
 }

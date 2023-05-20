@@ -11,6 +11,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <signal.h>
 
 struct app_config {
     uint8_t shortflag;
@@ -172,13 +173,23 @@ static int link_destinations(sourcelist* slist, destinationlist* dlist, tagmap *
     return 0;
 }
 
+static sourcelist slist;
+static destinationlist dlist;
+
+void sig_handler(int sig) {
+    if(sig == SIGUSR1) {
+        sourcelist_dump_counters(&slist);
+        destinationlist_dump_counters(&dlist);
+    }
+}
+
 int main(int argc, const char* argv[]) {
     int r;
     int ret = 1;
     app_config config;
 
-    sourcelist slist;
-    destinationlist dlist;
+    signal(SIGUSR1,sig_handler);
+
     tagmap tagmap;
     ich_time now;
 

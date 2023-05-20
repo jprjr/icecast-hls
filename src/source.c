@@ -185,7 +185,7 @@ int source_set_tag_handler(source* s, const tag_handler* thandler) {
     return 0;
 }
 
-int source_run(const source* s) {
+int source_run(source* s) {
     int r;
 
     if(taglist_len(&s->tagcache) > 0) {
@@ -193,4 +193,10 @@ int source_run(const source* s) {
     }
 
     return decoder_decode(&s->decoder);
+}
+
+void source_dump_counters(const source* s, const strbuf* prefix) {
+    input_dump_counters(&s->input,prefix);
+    decoder_dump_counters(&s->decoder,prefix);
+    filter_dump_counters(&s->filter,prefix);
 }

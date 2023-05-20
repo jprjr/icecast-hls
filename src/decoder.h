@@ -2,12 +2,15 @@
 #define DECODER_H
 
 #include "decoder_plugin.h"
+#include "ich_time.h"
 
 struct decoder {
     void* userdata;
     const decoder_plugin* plugin;
     tag_handler tag_handler;
     frame_receiver frame_receiver;
+    size_t counter;
+    ich_time ts;
 };
 
 typedef struct decoder decoder;
@@ -31,11 +34,13 @@ int decoder_create(decoder *dec, const strbuf* plugin_name);
 int decoder_config(const decoder* dec, const strbuf* name, const strbuf* value);
 
 /* try to open the decoder */
-int decoder_open(const decoder* dec, const input* in);
+int decoder_open(decoder* dec, input* in);
 
 /* runs the decoder, keeps decoding frames and submitting them to the
  * frame handler until EOF/error */
-int decoder_decode(const decoder* dec);
+int decoder_decode(decoder* dec);
+
+void decoder_dump_counters(const decoder* dec, const strbuf* prefix);
 
 #ifdef __cplusplus
 }

@@ -42,6 +42,15 @@ void sourcelist_entry_init(sourcelist_entry* entry) {
     entry->samplecount = 0;
 }
 
+void sourcelist_entry_dump_counters(const sourcelist_entry* entry) {
+    strbuf tmp = STRBUF_ZERO;
+    if(strbuf_append_cstr(&tmp,"[source.")) abort();
+    if(strbuf_cat(&tmp,&entry->id)) abort();
+    if(strbuf_append_cstr(&tmp,"]")) abort();
+    source_dump_counters(&entry->source, &tmp);
+    strbuf_free(&tmp);
+}
+
 void sourcelist_entry_free(sourcelist_entry* entry) {
     strbuf_free(&entry->id);
     source_free(&entry->source);
@@ -298,5 +307,19 @@ void sourcelist_quit(const sourcelist* list, int status) {
     for(i=0;i<len;i++) {
         thread_atomic_int_store(&entry->status,status);
     }
+}
+
+void sourcelist_dump_counters(const sourcelist* list) {
+    size_t i;
+    size_t len;
+
+
+    sourcelist_entry* entry = (sourcelist_entry *)list->x;
+    len = list->len / sizeof(sourcelist_entry);
+
+    for(i=0;i<len;i++) {
+        sourcelist_entry_dump_counters(&entry[i]);
+    }
+
 }
 

@@ -15,7 +15,7 @@ typedef void* (*decoder_plugin_create)(void);
 
 typedef int (*decoder_plugin_config)(void* userdata, const strbuf* key, const strbuf* value);
 
-typedef int (*decoder_plugin_open)(void* userdata, const input *in, const frame_receiver* dest);
+typedef int (*decoder_plugin_open)(void* userdata, input *in, const frame_receiver* dest);
 
 typedef int (*decoder_plugin_decode)(void* userdata, const tag_handler* tag_handler, const frame_receiver* frame_dest);
 

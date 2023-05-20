@@ -6,6 +6,7 @@
 #include "codecs.h"
 #include "tag.h"
 #include "imagemode.h"
+#include "ich_time.h"
 
 struct muxer {
     void* userdata;
@@ -13,6 +14,8 @@ struct muxer {
     segment_receiver segment_receiver;
     picture_handler picture_handler;
     image_mode image_mode;
+    size_t counter;
+    ich_time ts;
 };
 
 typedef struct muxer muxer;
@@ -32,16 +35,17 @@ void muxer_free(muxer*);
 int muxer_create(muxer*, const strbuf* plugin_name);
 int muxer_config(const muxer*, const strbuf* name, const strbuf* value);
 
-int muxer_open(const muxer*, const packet_source* source);
+int muxer_open(muxer*, const packet_source* source);
 
 /* dsi will trigger writing an init segment, if appropriate */
 int muxer_submit_dsi(const muxer* m, const membuf* dsi);
-int muxer_submit_packet(const muxer*, const packet*);
+int muxer_submit_packet(muxer*, const packet*);
 int muxer_submit_tags(const muxer*, const taglist* tags);
 
 int muxer_flush(const muxer*);
 int muxer_get_caps(const muxer*, packet_receiver_caps* caps);
 
+void muxer_dump_counters(const muxer*, const strbuf*);
 
 #ifdef __cplusplus
 }
