@@ -68,7 +68,7 @@ void decoder_global_deinit(void) {
     decoder_plugin_global_deinit();
 }
 
-int decoder_decode(decoder* dec) {
+int decoder_run(decoder* dec) {
     int r = dec->plugin->decode(dec->userdata, &dec->tag_handler, &dec->frame_receiver);
     if(r == 0) {
         ich_time_now(&dec->ts);

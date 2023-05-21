@@ -19,6 +19,14 @@ int packet_set_data(packet* p, const void* src, size_t len) {
     return membuf_append(&p->data,src,len);
 }
 
+int packet_copy(packet* dest, const packet* source) {
+    dest->duration = source->duration;
+    dest->sample_rate = source->sample_rate;
+    dest->pts = source->pts;
+    dest->sync = source->sync;
+    return membuf_copy(&dest->data,&source->data);
+}
+
 int packet_receiver_open_null(void* handle, const packet_source* source) {
     (void)handle;
     (void)source;

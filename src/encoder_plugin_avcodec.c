@@ -31,6 +31,7 @@ struct plugin_userdata {
     unsigned int sample_rate;
     unsigned int channels;
     enum AVSampleFormat sample_fmt;
+    packet_receiver_caps receiver_caps;
 };
 typedef struct plugin_userdata plugin_userdata;
 
@@ -119,6 +120,10 @@ static int open_encoder(plugin_userdata* userdata) {
     if(userdata->codec_config != NULL) {
         TRY(av_dict_copy(&opts,userdata->codec_config,0) == 0,
             LOG0("error copying codec_config"));
+    }
+
+    if(userdata->receiver_caps.has_global_header) {
+        userdata->ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     }
 
     TRY(avcodec_open2(userdata->ctx, userdata->codec, &opts) >= 0,
@@ -270,6 +275,10 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     packet_source me = PACKET_SOURCE_ZERO;
     frame_source_params params = FRAME_SOURCE_PARAMS_ZERO;
     membuf dsi = STRBUF_ZERO; /* STRBUF_ZERO uses a smaller blocksize */
+
+    if( (r = dest->get_caps(dest->handle,&userdata->receiver_caps)) != 0) {
+        return r;
+    }
 
     if(userdata->codec == NULL) {
         TRY( (userdata->codec = avcodec_find_encoder_by_name("aac")) != NULL,

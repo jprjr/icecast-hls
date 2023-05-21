@@ -43,12 +43,13 @@ static int check_sample_rate(unsigned int sample_rate) {
 struct plugin_userdata {
     HANDLE_AACENCODER aacEncoder;
     packet packet;
+    packet packet2;
+    frame buffer;
     AUDIO_OBJECT_TYPE aot;
     unsigned int vbr;
     unsigned int bitrate;
     unsigned int afterburner;
     size_t frame_len;
-    int16_t* samples;
 };
 
 typedef struct plugin_userdata plugin_userdata;
@@ -65,8 +66,9 @@ static void* plugin_create(void) {
     userdata->bitrate = 128000;
     userdata->vbr = 0;
     userdata->afterburner = 1;
-    userdata->samples = 0;
     packet_init(&userdata->packet);
+    packet_init(&userdata->packet2);
+    frame_init(&userdata->buffer);
     return userdata;
 }
 
@@ -266,11 +268,11 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
     }
     memset(userdata->packet.data.x,0,sizeof(uint8_t) * (6144/8) * source->channels);
 
-    userdata->samples = (int16_t*)malloc(sizeof(int16_t) * MAX_CHANNELS * userdata->frame_len);
-    if(userdata->samples == NULL) {
-        LOGERRNO("error allocating sample buffer");
+    if( (r = membuf_ready(&userdata->packet2.data,sizeof(uint8_t) * (6144/8) * MAX_CHANNELS)) != 0) {
+        LOGERRNO("error allocating packet2 buffer");
         return r;
     }
+    memset(userdata->packet2.data.x,0,sizeof(uint8_t) * (6144/8) * source->channels);
 
     me.codec   = CODEC_TYPE_AAC;
     switch(userdata->aot) {
@@ -292,16 +294,26 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
         }
     }
 
-    /* TODO: should I use info.nDelay or info.nDelayCore here ? */
+    /* TODO: should I use info.nDelay or info.nDelayCore here ?
+     *
+     * info.nDelay is delay with SBR delay, info.nDelayCore
+     * is just the "core" delay.
+     *
+     * the fdkaac CLI states that including the SBR encoder delay
+     * is not iTunes-compatible. The fdkaac CLI also halves
+     * the samplerate reported in the MP4 headers and reports
+     * nDelay and nDelayCore halved to compensate. Need to test
+     * that apple decodes everything properly.
+     *
+     * the ffmpeg CLI records the original samplerate in the
+     * MP4 headers and uses info.nDelay's values in the edit
+     * list box.
+     */
 
     me.channels = source->channels;
     me.sample_rate = source->sample_rate;
     me.frame_len = userdata->frame_len;
     me.padding = info.nDelay;
-    if(me.profile == CODEC_PROFILE_AAC_HE2 || me.profile == CODEC_PROFILE_AAC_HE) {
-        /* I think delay is "doubled" since SBR halves the sampling rate? */
-        me.padding >>= 1;
-    }
     me.roll_distance = -1;
     me.sync_flag = 1;
     me.handle = userdata;
@@ -324,19 +336,29 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
 
     userdata->packet.sample_rate = source->sample_rate;
 
+    userdata->buffer.format = SAMPLEFMT_S16;
+    userdata->buffer.channels = source->channels;
+    userdata->buffer.sample_rate = source->sample_rate;
+    userdata->buffer.duration = 0;
+#if 0
+    if( (r = frame_fill(&userdata->buffer,me.padding)) != 0) {
+        LOGERRNO("error allocating buffer frame");
+        return r;
+    }
+#else
+    if( (r = frame_ready(&userdata->buffer)) != 0) {
+        LOGERRNO("error allocating buffer frame");
+        return r;
+    }
+#endif
+
     return source->set_params(source->handle, &params);
 }
 
-static int plugin_flush(void* ud, const packet_receiver* dest) {
-    (void)ud;
-    return dest->flush(dest->handle);
-}
+static int plugin_encode_frame(plugin_userdata* userdata, const packet_receiver* dest) {
 
-static int plugin_submit_frame(void* ud, const frame* frame, const packet_receiver* dest) {
-    plugin_userdata* userdata = (plugin_userdata*)ud;
     AACENC_ERROR e = AACENC_OK;
     int16_t* sample_ptr = NULL;
-    size_t i = 0;
     int r = 0;
 
     AACENC_BufDesc inBufDesc = { 0 };
@@ -347,23 +369,16 @@ static int plugin_submit_frame(void* ud, const frame* frame, const packet_receiv
     INT inBufId = IN_AUDIO_DATA;
     INT outBufId = OUT_BITSTREAM_DATA;
 
-    INT inBufSize = sizeof(int16_t) * frame->channels * userdata->frame_len;
+    INT inBufSize = sizeof(int16_t) * userdata->buffer.channels * userdata->frame_len;
     INT inBufElSize = sizeof(int16_t);
-    
+
     INT outBufSize = sizeof(uint8_t) * MAX_CHANNELS * (6144/8);
     INT outBufElSize = sizeof(uint8_t);
 
-    sample_ptr = (int16_t*)frame_get_channel_samples(frame,0);
-
-    for(i=0; i< frame->duration * frame->channels; i++) {
-        userdata->samples[i] = sample_ptr[i];
-    }
-    for(;i<userdata->frame_len * frame->channels;i++) {
-        userdata->samples[i] = 0;
-    }
+    sample_ptr = (int16_t*)frame_get_channel_samples(&userdata->buffer,0);
 
     inBufDesc.numBufs = 1;
-    inBufDesc.bufs = (void **)&userdata->samples;
+    inBufDesc.bufs = (void **)&sample_ptr;
     inBufDesc.bufferIdentifiers = &inBufId;
     inBufDesc.bufSizes = &inBufSize;
     inBufDesc.bufElSizes = &inBufElSize;
@@ -374,7 +389,7 @@ static int plugin_submit_frame(void* ud, const frame* frame, const packet_receiv
     outBufDesc.bufSizes = &outBufSize;
     outBufDesc.bufElSizes = &outBufElSize;
 
-    inArgs.numInSamples = userdata->frame_len * frame->channels;
+    inArgs.numInSamples = userdata->frame_len * userdata->buffer.channels;
     inArgs.numAncBytes = 0;
 
     if( (e = aacEncEncode(userdata->aacEncoder, &inBufDesc, &outBufDesc, &inArgs, &outArgs)) != AACENC_OK) {
@@ -388,16 +403,119 @@ static int plugin_submit_frame(void* ud, const frame* frame, const packet_receiv
 
     if( (r = dest->submit_packet(dest->handle, &userdata->packet)) != 0) {
         LOG0("error sending packet to muxer");
+        return r;
     }
     userdata->packet.pts += userdata->frame_len;
-    return r;
 
+    return 0;
+}
+
+static int plugin_drain(plugin_userdata*  userdata, const packet_receiver* dest) {
+    int r;
+
+    while(userdata->buffer.duration >= userdata->frame_len) {
+        if( (r = plugin_encode_frame(userdata,dest)) != 0) return r;
+        frame_trim(&userdata->buffer,userdata->frame_len);
+    }
+    return 0;
+}
+
+static int plugin_flush(void* ud, const packet_receiver* dest) {
+    int r;
+    plugin_userdata* userdata = (plugin_userdata*)ud;
+    unsigned int final_len = userdata->frame_len;
+    AACENC_ERROR e = AACENC_OK;
+
+    AACENC_BufDesc inBufDesc = { 0 };
+    AACENC_BufDesc outBufDesc = { 0 };
+    AACENC_InArgs inArgs = { 0 };
+    AACENC_OutArgs outArgs = { 0 };
+
+    INT inBufId = IN_AUDIO_DATA;
+    INT outBufId = OUT_BITSTREAM_DATA;
+
+    INT outBufSize = sizeof(uint8_t) * MAX_CHANNELS * (6144/8);
+    INT outBufElSize = sizeof(uint8_t);
+
+    if(userdata->buffer.duration > 0) {
+        final_len = userdata->buffer.duration;
+
+        if(userdata->buffer.duration < userdata->frame_len) {
+            if( (r = frame_fill(&userdata->buffer, userdata->frame_len)) != 0) {
+                LOG0("error filling frame buffer");
+                return r;
+            }
+        }
+        if( (r = plugin_drain(userdata,dest)) != 0) return r;
+    }
+
+    assert(userdata->buffer.duration == 0);
+
+    inBufDesc.numBufs = 0;
+    inBufDesc.bufs = NULL;
+    inBufDesc.bufferIdentifiers = &inBufId;
+    inBufDesc.bufSizes = 0;
+    inBufDesc.bufElSizes = 0;
+
+    outBufDesc.numBufs = 1;
+    outBufDesc.bufs = (void **)&userdata->packet2.data.x;
+    outBufDesc.bufferIdentifiers = &outBufId;
+    outBufDesc.bufSizes = &outBufSize;
+    outBufDesc.bufElSizes = &outBufElSize;
+
+    inArgs.numInSamples = -1;
+    inArgs.numAncBytes = 0;
+
+    if( (e = aacEncEncode(userdata->aacEncoder, &inBufDesc, &outBufDesc, &inArgs, &outArgs)) != AACENC_OK) {
+        LOG1("error starting flush: %d",e);
+        return -1;
+    }
+
+    do {
+        userdata->packet2.data.len = outArgs.numOutBytes;
+        userdata->packet2.duration = userdata->frame_len;
+        userdata->packet2.sync = 1;
+
+        packet_copy(&userdata->packet,&userdata->packet2);
+
+        if( (e = aacEncEncode(userdata->aacEncoder, &inBufDesc, &outBufDesc, &inArgs, &outArgs)) == AACENC_ENCODE_EOF) {
+            userdata->packet.duration = final_len;
+        }
+
+        if( (r = dest->submit_packet(dest->handle, &userdata->packet)) != 0) {
+            LOG0("error sending packet to muxer");
+            return r;
+        }
+        userdata->packet.pts += userdata->packet.duration;
+
+    } while(e == AACENC_OK);
+
+    if(e != AACENC_ENCODE_EOF) {
+        LOG1("error flushing final packet: %d",e);
+        return -1;
+    }
+
+    return dest->flush(dest->handle);
+}
+
+static int plugin_submit_frame(void* ud, const frame* frame, const packet_receiver* dest) {
+    plugin_userdata* userdata = (plugin_userdata*)ud;
+    int r;
+
+    if( (r = frame_append(&userdata->buffer,frame)) != 0) {
+        LOG1("error appending frame to internval buffer: %d",r);
+        return r;
+    }
+
+    return plugin_drain(userdata,dest);
 }
 
 static void plugin_close(void *ud) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     if(userdata->aacEncoder != NULL) aacEncClose(&userdata->aacEncoder);
     packet_free(&userdata->packet);
+    packet_free(&userdata->packet2);
+    frame_free(&userdata->buffer);
 }
 
 static int plugin_init(void) {

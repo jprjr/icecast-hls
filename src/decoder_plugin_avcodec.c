@@ -22,6 +22,7 @@ struct decoder_plugin_avcodec_userdata {
     AVFormatContext* fmt_ctx;
     AVCodecContext *codec_ctx;
     AVPacket *packet;
+    AVFrame *avframe;
 #if LIBAVCODEC_VERSION_MAJOR >= 59
     const AVCodec* codec;
 #else
@@ -60,6 +61,7 @@ static void* decoder_plugin_avcodec_create(void) {
     userdata->codec     = NULL;
     userdata->codec_ctx = NULL;
     userdata->packet    = NULL;
+    userdata->avframe   = NULL;
     userdata->tags_type = 1; /* default to stream tags */
 
     frame_init(&userdata->frame);
@@ -170,6 +172,12 @@ static int decoder_plugin_avcodec_open(void* ud, input* in, const frame_receiver
 
     if(userdata->packet == NULL) {
         LOG0("failed to allocate packet");
+        return -1;
+    }
+
+    userdata->avframe = av_frame_alloc();
+    if(userdata->avframe == NULL) {
+        LOG0("failed to allocate avframe");
         return -1;
     }
 
@@ -311,6 +319,7 @@ static void decoder_plugin_avcodec_close(void* ud) {
         userdata->buffer = NULL;
     }
     if(userdata->buffer != NULL) av_free(userdata->io_ctx);
+    if(userdata->avframe != NULL) av_frame_free(&userdata->avframe);
 
     frame_free(&userdata->frame);
     taglist_free(&userdata->list);
@@ -338,7 +347,8 @@ static int decoder_plugin_avcodec_decode(void* ud, const tag_handler* tag_handle
         if( (r = tag_handler->cb(tag_handler->userdata, &userdata->list)) != 0) return r;
     }
 
-    while( (av_err = av_read_frame(userdata->fmt_ctx, userdata->packet)) == 0) {
+    tryagain:
+    if( (av_err = av_read_frame(userdata->fmt_ctx, userdata->packet)) == 0) {
         switch(userdata->tags_type) {
             case 1: /* stream tags */ {
                 if(userdata->fmt_ctx->streams[userdata->audioStreamIndex]->event_flags & AVSTREAM_EVENT_FLAG_METADATA_UPDATED) {
@@ -365,7 +375,7 @@ static int decoder_plugin_avcodec_decode(void* ud, const tag_handler* tag_handle
             if( (av_err = avcodec_send_packet(userdata->codec_ctx, userdata->packet)) != 0) {
                 av_strerror(av_err, av_errbuf, sizeof(av_errbuf));
                 LOG1("error with avcodec_send_packet: %s", av_errbuf);
-                goto cleanup;
+                return -1;
             }
 
             av_err = avcodec_receive_frame(userdata->codec_ctx, frame);
@@ -374,7 +384,7 @@ static int decoder_plugin_avcodec_decode(void* ud, const tag_handler* tag_handle
             if( (av_err = avcodec_decode_audio4(userdata->codec_ctx, frame, &got, userdata->packet)) < 0) {
                 av_strerror(av_err, av_errbuf, sizeof(av_errbuf));
                 LOG1("error with avcodec_decode_audio4: %s", av_errbuf);
-                goto cleanup;
+                return -1;
             }
             av_err = 0;
             if(got) {
@@ -383,24 +393,28 @@ static int decoder_plugin_avcodec_decode(void* ud, const tag_handler* tag_handle
                 av_frame_unref(frame);
                 if(av_err != 0) {
                     LOG0("error converting avframe to frame");
-                    goto cleanup;
+                    return -1;
                 }
-                frame_dest->submit_frame(frame_dest->handle,&userdata->frame);
+                if(frame_dest->submit_frame(frame_dest->handle,&userdata->frame) != 0) {
+                    LOG0("error submitting audio frame");
+                    return -1;
+                }
             }
 #if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(57,48,0) /* ffmpeg-3.1 */
             else {
-                if(av_err != AVERROR(EAGAIN)) goto cleanup;
+                if(av_err == AVERROR(EAGAIN)) goto tryagain;
+                return -1;
             }
 #endif
         }
         av_packet_unref(userdata->packet);
+        return 0;
     }
 
-    cleanup:
-    av_frame_free(&frame);
-
-    if(av_err != AVERROR_EOF) return -1;
-    return frame_dest->flush(frame_dest->handle);
+    if(av_err == AVERROR_EOF) {
+        if(frame_dest->flush(frame_dest->handle) == 0) return 1;
+    }
+    return -1;
 }
 
 const decoder_plugin decoder_plugin_avcodec = {

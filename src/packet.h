@@ -123,6 +123,7 @@ extern "C" {
 
 void packet_init(packet*);
 void packet_free(packet*);
+int packet_copy(packet* dest, const packet* source);
 
 int packet_set_data(packet*, const void* src, size_t len);
 

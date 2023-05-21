@@ -192,7 +192,10 @@ int source_run(source* s) {
         if( (r = s->tag_handler.cb(s->tag_handler.userdata,&s->tagcache)) != 0) return r;
     }
 
-    return decoder_decode(&s->decoder);
+    do {
+        r = decoder_run(&s->decoder);
+    } while(r == 0);
+    return r != 1;
 }
 
 void source_dump_counters(const source* s, const strbuf* prefix) {

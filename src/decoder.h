@@ -36,9 +36,9 @@ int decoder_config(const decoder* dec, const strbuf* name, const strbuf* value);
 /* try to open the decoder */
 int decoder_open(decoder* dec, input* in);
 
-/* runs the decoder, keeps decoding frames and submitting them to the
- * frame handler until EOF/error */
-int decoder_decode(decoder* dec);
+/* runs the decoder plugin for 1 frame of audio, submitting any
+ * metadata it finds as it goes, returns 1 on EOF, -1 on error */
+int decoder_run(decoder* dec);
 
 void decoder_dump_counters(const decoder* dec, const strbuf* prefix);
 

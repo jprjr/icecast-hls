@@ -341,7 +341,6 @@ static int encoder_plugin_opus_open(void *ud, const frame_source* source, const 
         LOGERRNO("error allocating buffer frame");
         return r;
     }
-    memset(frame_get_channel_samples(&userdata->buffer,0),0,sizeof(float) * userdata->buffer.channels * userdata->buffer.duration);
 
     if( (r = strbuf_append_cstr(&userdata->name,opus_get_version_string())) != 0) {
         LOGERRNO("error appending name string");

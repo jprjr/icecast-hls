@@ -381,36 +381,37 @@ static int plugin_decode(void* ud, const tag_handler* tag_handler, const frame_r
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
-    while( (res = mflac_sync(&userdata->m)) == MFLAC_OK) {
-        if(! (userdata->m.flac.state == MINIFLAC_METADATA || userdata->m.flac.state == MINIFLAC_FRAME)) return -1;
-
-        if(userdata->m.flac.state == MINIFLAC_METADATA) {
-            if(userdata->ignore_tags) continue;
-            /* we want to get through all metadata blocks to gather
-             * pictures etc in a single go */
-            taglist_reset(&userdata->list);
-            while(userdata->m.flac.state == MINIFLAC_METADATA) {
-                if( (r = plugin_process_metadata(userdata)) != 0) return r;
-                if( (res = mflac_sync(&userdata->m)) != MFLAC_OK) goto end;
-            }
-            if(taglist_len(&userdata->list) > 0) {
-                if( (r = tag_handler->cb(tag_handler->userdata, &userdata->list)) != 0) return r;
-            }
+    sync:
+    if( (res = mflac_sync(&userdata->m)) != MFLAC_OK) {
+        end:
+        if(res == MFLAC_EOF) {
+            r = frame_dest->flush(frame_dest->handle);
+            if(r == 0) return 1;
+            return r;
         }
-
-        if(userdata->m.flac.state == MINIFLAC_FRAME) {
-            if( (r = plugin_process_frame(userdata, frame_dest)) != 0) return r;
-        }
-    }
-
-    end:
-
-    if(res != MFLAC_EOF) {
         plugin_strerror((MINIFLAC_RESULT)res);
         return -1;
     }
 
-    return frame_dest->flush(frame_dest->handle);
+    if(! (userdata->m.flac.state == MINIFLAC_METADATA || userdata->m.flac.state == MINIFLAC_FRAME)) return -1;
+
+    if(userdata->m.flac.state == MINIFLAC_METADATA) {
+        if(userdata->ignore_tags) goto sync; /* get the next frame */
+        /* we want to get through all metadata blocks to gather
+         * pictures etc in a single go */
+        taglist_reset(&userdata->list);
+        while(userdata->m.flac.state == MINIFLAC_METADATA) {
+            if( (r = plugin_process_metadata(userdata)) != 0) return r;
+            if( (res = mflac_sync(&userdata->m)) != MFLAC_OK) goto end;
+        }
+        if(taglist_len(&userdata->list) > 0) {
+            if( (r = tag_handler->cb(tag_handler->userdata, &userdata->list)) != 0) return r;
+        }
+        /* double-check our state is MINIFLAC_FRAME */
+        if(userdata->m.flac.state != MINIFLAC_FRAME) return -1;
+    }
+
+    return plugin_process_frame(userdata, frame_dest);
 }
 
 
