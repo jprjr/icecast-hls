@@ -223,8 +223,8 @@ int hls_open(hls* h, const segment_source* source) {
         /* if the source sets init_ext to NULL it's packed audio (no init segment) */
         if(source->init_ext != NULL) {
             TRYS(strbuf_append_cstr(&h->init_filename,"init"))
+            TRYS(strbuf_cat(&h->init_filename,source->init_ext))
         }
-        TRYS(strbuf_cat(&h->init_filename,source->init_ext))
     }
 
     if(h->playlist_filename.len == 0) {
