@@ -136,6 +136,7 @@ void hls_init(hls*);
 void hls_free(hls*);
 
 int hls_configure(hls*, const strbuf* key, const strbuf* val);
+int hls_get_segment_params(hls*, const segment_source_info* info, segment_params* params);
 int hls_open(hls*, const segment_source* source);
 
 /* buffers a segment and maybe triggers writing callbacks */

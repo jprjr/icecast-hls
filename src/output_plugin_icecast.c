@@ -222,10 +222,17 @@ static int output_plugin_icecast_config(void* ud, const strbuf* key, const strbu
     return -1;
 }
 
+static int output_plugin_icecast_get_segment_params(void* ud, const segment_source_info* info, segment_params* params) {
+    (void)ud;
+    (void)info;
+
+    params->segment_length = 250;
+    return 0;
+}
+
 static int output_plugin_icecast_open(void* ud, const segment_source* source) {
     int r;
     strbuf t = STRBUF_ZERO;
-    segment_source_params params = SEGMENT_SOURCE_PARAMS_ZERO;
     output_plugin_icecast_userdata* userdata = (output_plugin_icecast_userdata*)ud;
 
     TRY(userdata->host.len != 0, LOG0("no host given"));
@@ -323,12 +330,10 @@ static int output_plugin_icecast_open(void* ud, const segment_source* source) {
 
     /* all good to go! */
     ich_socket_blocking(userdata->socket);
-    /* set out segment length to 1ms, basically flush the packet as soon as its received */
-    params.segment_length = 250;
+
     r = 0;
 
     cleanup:
-    if(r == 0) r = source->set_params(source->handle, &params);
     return r;
 }
 
@@ -543,6 +548,7 @@ const output_plugin output_plugin_icecast = {
     output_plugin_icecast_deinit,
     output_plugin_icecast_create,
     output_plugin_icecast_config,
+    output_plugin_icecast_get_segment_params,
     output_plugin_icecast_open,
     output_plugin_icecast_close,
     output_plugin_icecast_set_time,

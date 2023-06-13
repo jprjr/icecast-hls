@@ -449,26 +449,30 @@ static int plugin_submit_dsi(void* ud, const membuf* data,const segment_receiver
     return fmp4_mux_write_init(&userdata->mux, plugin_write_init_callback, (void *)dest) == FMP4_OK ? 0 : -1;
 }
 
-static int plugin_receive_params(void* ud, const segment_source_params* params) {
-    plugin_userdata* userdata = (plugin_userdata*)ud;
-
-    userdata->segment_length = params->segment_length;
-    userdata->packets_per_segment = params->packets_per_segment;
-
-    if(userdata->segment_length == 0) userdata->segment_length = 1000;
-    return 0;
-}
-
-
 static int plugin_open(void* ud, const packet_source* source, const segment_receiver* dest) {
     int r;
     fmp4_sample_info info;
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
     segment_source me = SEGMENT_SOURCE_ZERO;
+    segment_source_info s_info = SEGMENT_SOURCE_INFO_ZERO;
+    segment_params s_params = SEGMENT_PARAMS_ZERO;
     packet_source_params params = PACKET_SOURCE_PARAMS_ZERO;
 
+    s_info.time_base = source->sample_rate;
+    s_info.frame_len = source->frame_len;
+    dest->get_segment_params(dest->handle,&s_info,&s_params);
+    params.packets_per_segment = s_params.packets_per_segment;
+
+    userdata->samples_per_segment = params.packets_per_segment * source->frame_len;
+
     userdata->track->stream_type = FMP4_STREAM_TYPE_AUDIO;
+
+    me.handle         = userdata;
+    me.init_ext       = &ext_mp4;
+    me.media_ext      = &ext_m4s;
+    me.init_mimetype  = &mime_mp4;
+    me.media_mimetype = &mime_m4s;
 
     switch(source->codec) {
         case CODEC_TYPE_AAC: {
@@ -507,6 +511,8 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
         }
     }
 
+    if( (r = dest->open(dest->handle, &me)) != 0) return r;
+
     fmp4_track_set_language(userdata->track,"und");
     userdata->track->time_scale = source->sample_rate;
     userdata->track->info.audio.channels = source->channels;
@@ -519,30 +525,10 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     fmp4_track_set_default_sample_info(userdata->track, &info);
 
-    /* let the output plugin know what we're doing */
-    me.init_ext       = &ext_mp4;
-    me.media_ext      = &ext_m4s;
-    me.init_mimetype  = &mime_mp4;
-    me.media_mimetype = &mime_m4s;
+#if 0
     me.time_base      = source->sample_rate;
     me.frame_len      = source->frame_len;
-
-    me.handle = userdata;
-    me.set_params = plugin_receive_params;
-
-    if( (r = dest->open(dest->handle, &me)) != 0) return r;
-
-    /* now we have the frame length and a segment length set, tell
-     * the encoder our tune in period */
-    params.packets_per_segment = userdata->packets_per_segment;
-    if(params.packets_per_segment == 0) {
-        params.packets_per_segment = (userdata->segment_length * source->sample_rate / source->frame_len / 1000);
-    }
-    if(params.packets_per_segment == 0) {
-        /* fallback to just sending a single packet per segment if something's gone wrong */
-        params.packets_per_segment = 1;
-    }
-    userdata->samples_per_segment = params.packets_per_segment * source->frame_len;
+#endif
 
     return source->set_params(source->handle, &params);
 

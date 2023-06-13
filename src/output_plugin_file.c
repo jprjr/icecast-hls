@@ -106,10 +106,17 @@ static void* plugin_create(void) {
     return userdata;
 }
 
+static int plugin_get_segment_params(void*  ud, const segment_source_info* info, segment_params* params) {
+    (void)ud;
+    (void)info;
+    (void)params;
+    return 0;
+}
+
 static int plugin_open(void* ud, const segment_source* source) {
     int r;
-    segment_source_params params = SEGMENT_SOURCE_PARAMS_ZERO;
     strbuf tmp = STRBUF_ZERO;
+    (void)source;
 #if defined(_WIN32) || defined(_WIN64) || defined(_MSC_VER)
     strbuf tmp2 = STRBUF_ZERO;
 #endif
@@ -134,7 +141,6 @@ static int plugin_open(void* ud, const segment_source* source) {
     }
 
     cleanup:
-    if(r == 0) r = source->set_params(source->handle, &params);
     return r;
 }
 
@@ -237,6 +243,7 @@ const output_plugin output_plugin_file = {
     plugin_deinit,
     plugin_create,
     plugin_config,
+    plugin_get_segment_params,
     plugin_open,
     plugin_close,
     plugin_set_time,

@@ -111,25 +111,30 @@ static void plugin_close(void* ud) {
     free(userdata);
 }
 
-static int plugin_receive_params(void* ud, const segment_source_params* params) {
-    plugin_userdata* userdata = (plugin_userdata*)ud;
-
-    userdata->segment_length = params->segment_length;
-    userdata->packets_per_segment = params->packets_per_segment;
-
-    if(userdata->segment_length == 0) userdata->segment_length = 1000;
-    return 0;
-}
-
 static int plugin_open(void* ud, const packet_source* source, const segment_receiver* dest) {
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
     segment_source me = SEGMENT_SOURCE_ZERO;
+    segment_source_info s_info = SEGMENT_SOURCE_INFO_ZERO;
+    segment_params s_params = SEGMENT_PARAMS_ZERO;
     packet_source_params params = PACKET_SOURCE_PARAMS_ZERO;
+
     unsigned int sample_rate = source->sample_rate;
     unsigned int channels = source->channels;
     unsigned int profile = source->profile;
+
+    if( (source->frame_len * 90000) % source->sample_rate != 0) {
+        LOG1("WARNING, sample rate %u prevents MPEG-TS timestamps from aligning, consider resampling", source->sample_rate);
+    }
+
+    userdata->mpeg_samples_per_packet = source->frame_len * 90000 / source->sample_rate;
+
+    s_info.time_base = 90000;
+    s_info.frame_len = userdata->mpeg_samples_per_packet;
+    dest->get_segment_params(dest->handle,&s_info, &s_params);
+    params.packets_per_segment = s_params.packets_per_segment;
+    me.handle = userdata;
 
     switch(source->codec) {
         case CODEC_TYPE_AAC: {
@@ -205,29 +210,10 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
         }
     }
 
-    if( (source->frame_len * 90000) % source->sample_rate != 0) {
-        LOG1("WARNING, sample rate %u prevents MPEG-TS timestamps from aligning, consider resampling", source->sample_rate);
-    }
-    userdata->mpeg_samples_per_packet = source->frame_len * 90000 / source->sample_rate;
-
-    me.time_base = 90000;
-    me.frame_len = userdata->mpeg_samples_per_packet;
-    me.handle = userdata;
-    me.set_params = plugin_receive_params;
-
     if( (r = dest->open(dest->handle, &me)) != 0) return r;
     if( (r = id3_ready(&userdata->id3)) != 0) return r;
 
-    if(userdata->packets_per_segment == 0) {
-        userdata->packets_per_segment = userdata->segment_length * source->sample_rate / source->frame_len / 1000;
-        if(userdata->packets_per_segment == 0) {
-            /* this shouldn't happen but, just in case */
-            userdata->packets_per_segment = 1;
-        }
-    }
     userdata->ts -= (uint64_t)source->padding * (uint64_t)90000 / (uint64_t)source->sample_rate;
-
-    params.packets_per_segment = userdata->packets_per_segment;
 
     return source->set_params(source->handle, &params);
 }

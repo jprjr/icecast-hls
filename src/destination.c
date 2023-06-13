@@ -115,8 +115,9 @@ int destination_open(destination* dest, const ich_time* now) {
     dest->encoder.packet_receiver.get_caps      = (packet_receiver_get_caps_cb)muxer_get_caps;
     dest->encoder.packet_receiver.handle        = &dest->muxer;
 
-    dest->muxer.segment_receiver.open             = (segment_receiver_open_cb)output_open;
-    dest->muxer.segment_receiver.submit_segment   = (segment_receiver_submit_segment_cb)output_submit_segment;
+    dest->muxer.segment_receiver.get_segment_params  = (segment_receiver_get_segment_params_cb)output_get_segment_params;
+    dest->muxer.segment_receiver.open                = (segment_receiver_open_cb)output_open;
+    dest->muxer.segment_receiver.submit_segment      = (segment_receiver_submit_segment_cb)output_submit_segment;
     dest->muxer.segment_receiver.submit_tags      = (segment_receiver_submit_tags_cb)output_submit_tags;
     dest->muxer.segment_receiver.flush            = (segment_receiver_flush_cb)output_flush;
     dest->muxer.segment_receiver.handle           = &dest->output;

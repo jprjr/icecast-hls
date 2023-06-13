@@ -28,6 +28,8 @@ int output_create(output *, const strbuf* plugin_name);
 
 int output_config(const output*, const strbuf* name, const strbuf* value);
 
+int output_get_segment_params(const output*, const segment_source_info* info, segment_params* params);
+
 int output_open(output*, const segment_source* source);
 
 int output_set_time(const output*, const ich_time*);

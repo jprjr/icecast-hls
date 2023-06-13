@@ -33,7 +33,7 @@ int segment_receiver_flush_null(void* handle) {
     return -1;
 }
 
-int segment_source_set_params_null(void* segment_producer, const segment_source_params* params) {
+int segment_source_set_params_null(void* segment_producer, const segment_params* params) {
     (void)segment_producer;
     (void)params;
     fprintf(stderr,"[app error] segment_producer set_params not set\n");
@@ -41,7 +41,16 @@ int segment_source_set_params_null(void* segment_producer, const segment_source_
     return -1;
 }
 
-int segment_source_set_params_ignore(void* segment_producer, const segment_source_params* params) {
+int segment_receiver_get_segment_params_null(void* segment_receiver, const segment_source_info* info, segment_params* params) {
+    (void)segment_receiver;
+    (void)info;
+    (void)params;
+    fprintf(stderr,"[app error] segment_receiver get_segment_params not set\n");
+    abort();
+    return -1;
+}
+
+int segment_source_set_params_ignore(void* segment_producer, const segment_params* params) {
     (void)segment_producer;
     (void)params;
     return 0;
@@ -49,5 +58,5 @@ int segment_source_set_params_ignore(void* segment_producer, const segment_sourc
 
 const segment_receiver segment_receiver_zero = SEGMENT_RECEIVER_ZERO;
 const segment_source segment_source_zero = SEGMENT_SOURCE_ZERO;
-const segment_source_params segment_source_params_zero = SEGMENT_SOURCE_PARAMS_ZERO;
+const segment_params segment_params_zero = SEGMENT_PARAMS_ZERO;
 const segment segment_zero = SEGMENT_ZERO;

@@ -15,6 +15,8 @@ typedef void* (*output_plugin_create)(void);
 typedef void (*output_plugin_close)(void* userdata);
 
 typedef int (*output_plugin_config)(void* userdata, const strbuf* key, const strbuf* value);
+
+typedef int (*output_plugin_get_segment_params)(void* userdata, const segment_source_info* info, segment_params* params);
 typedef int (*output_plugin_open)(void* userdata, const segment_source* source);
 
 typedef int (*output_plugin_submit_segment)(void* userdata, const segment* segment);
@@ -31,6 +33,7 @@ struct output_plugin {
     output_plugin_deinit deinit;
     output_plugin_create create;
     output_plugin_config config;
+    output_plugin_get_segment_params get_segment_params;
     output_plugin_open open;
     output_plugin_close close;
     output_plugin_set_time set_time;

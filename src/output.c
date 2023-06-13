@@ -40,6 +40,38 @@ int output_create(output* out, const strbuf* name) {
     return 0;
 }
 
+int output_get_segment_params(const output* out, const segment_source_info* info, segment_params* params) {
+    int r = -1;
+    uint64_t t;
+    if(out->plugin == NULL || out->userdata == NULL) {
+        fprintf(stderr,"[output] plugin not selected\n");
+        return r;
+    }
+    if( (r = out->plugin->get_segment_params(out->userdata,info,params)) != 0) return r;
+
+    if(params->segment_length == 0) {
+        /* plugin didn't set a length so we set
+         * a default of 1s */
+        params->segment_length = 1000;
+    }
+
+    if(params->packets_per_segment == 0) {
+        /* plugin didn't request a number of
+         * packets per segment so we'll calculate
+         * it here */
+        t  = (uint64_t)params->segment_length;
+        t *= (uint64_t)info->time_base;
+        t /= (uint64_t)1000;
+        t /= (uint64_t)info->frame_len;
+        params->packets_per_segment = t;
+    }
+
+    /* just in case we had some very small value for segment length */
+    if(params->packets_per_segment == 0) params->packets_per_segment = 1;
+
+    return 0;
+}
+
 int output_open(output* out, const segment_source* source) {
     if(out->plugin == NULL || out->userdata == NULL) {
         fprintf(stderr,"[output] plugin not selected\n");

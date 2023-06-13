@@ -201,15 +201,17 @@ void hls_free(hls* h) {
     hls_init(h);
 }
 
+int hls_get_segment_params(hls* h, const segment_source_info* info, segment_params* params) {
+    params->segment_length = h->target_duration;
+    params->packets_per_segment = (params->segment_length * info->time_base / info->frame_len / 1000);
+    h->target_samples = params->packets_per_segment * info->frame_len;
+    h->time_base  = info->time_base;
+    return 0;
+}
+
 int hls_open(hls* h, const segment_source* source) {
     int r;
     unsigned int playlist_segments;
-    segment_source_params params = SEGMENT_SOURCE_PARAMS_ZERO;
-
-    params.segment_length = h->target_duration;
-    params.packets_per_segment = (params.segment_length * source->time_base / source->frame_len / 1000);
-    h->target_samples = params.packets_per_segment * source->frame_len;
-    h->time_base  = source->time_base;
 
     if(h->init_mimetype.len == 0) {
         /* if the source sets init_ext to NULL it's packed audio (no init segment) */
@@ -219,7 +221,6 @@ int hls_open(hls* h, const segment_source* source) {
     }
 
     if(h->init_filename.len == 0) {
-
         /* if the source sets init_ext to NULL it's packed audio (no init segment) */
         if(source->init_ext != NULL) {
             TRYS(strbuf_append_cstr(&h->init_filename,"init"))
@@ -245,7 +246,7 @@ int hls_open(hls* h, const segment_source* source) {
         TRYS(strbuf_copy(&h->segment_mimetype,source->media_mimetype));
     }
 
-    playlist_segments = (h->playlist_length / (h->target_duration / 1000)) + (source->time_base % source->frame_len <= (source->frame_len / 2));
+    playlist_segments = (h->playlist_length / (h->target_duration / 1000)) + 1;
     TRYS(hls_playlist_open(&h->playlist, playlist_segments))
 
     TRY0(strbuf_sprintf(&h->header,
@@ -255,8 +256,7 @@ int hls_open(hls* h, const segment_source* source) {
       h->version,
       (h->target_duration / 1000)),LOG0("out of memory"));
 
-
-    r = source->set_params(source->handle, &params);
+    r = 0;
 
     cleanup:
     return r;

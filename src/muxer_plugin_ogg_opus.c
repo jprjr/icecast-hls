@@ -50,7 +50,6 @@ struct ogg_opus_plugin {
     ogg_opus_stream streams[2];
     uint8_t cur_stream;
     uint64_t samples_per_segment;
-    segment_source_params segment_params;
     strbuf scratch;
     uint8_t chaining;
 };
@@ -148,7 +147,6 @@ static void* plugin_create(void) {
     userdata->keyframes = 0;
     userdata->psource = packet_source_zero;
     userdata->cur_stream = 2;
-    userdata->segment_params = segment_source_params_zero;
     userdata->samples_per_segment = 0;
     userdata->chaining = 1;
     strbuf_init(&userdata->scratch);
@@ -179,18 +177,23 @@ static void plugin_close(void* ud) {
     free(userdata);
 }
 
-static int receive_params(void* ud, const segment_source_params* params) {
-    ogg_opus_plugin* userdata = (ogg_opus_plugin*)ud;
-    userdata->segment_params = *params;
-    return 0;
-}
-
 static int plugin_open(void* ud, const packet_source* source, const segment_receiver* dest) {
     int r = -1;
-    uint64_t samples_per_segment = 0;
     unsigned int i = 0;
     ogg_opus_plugin* userdata = (ogg_opus_plugin*)ud;
     ogg_opus_stream* stream = NULL;
+
+    segment_source me = SEGMENT_SOURCE_ZERO;
+    segment_source_info info = SEGMENT_SOURCE_INFO_ZERO;
+    segment_params s_params = SEGMENT_PARAMS_ZERO;
+    packet_source_params params = PACKET_SOURCE_PARAMS_ZERO;
+
+    info.time_base = source->sample_rate;
+    info.frame_len = source->frame_len;
+    dest->get_segment_params(dest->handle,&info,&s_params);
+    params.packets_per_segment = s_params.packets_per_segment;
+
+    userdata->samples_per_segment = s_params.packets_per_segment * source->frame_len;
 
     /* prep the tag buffers */
     for(i=0;i<2;i++) {
@@ -211,44 +214,16 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     userdata->psource = *source;
 
-    segment_source me = SEGMENT_SOURCE_ZERO;
-    packet_source_params params = PACKET_SOURCE_PARAMS_ZERO;
-
     me.media_ext = &ext_ogg;
     me.media_mimetype = &mime_ogg;
+#if 0
     me.time_base = source->sample_rate;
     me.frame_len = source->frame_len;
+#endif
 
     me.handle = userdata;
-    me.set_params = receive_params;
 
     TRY0(dest->open(dest->handle,&me),LOG0("error opening destination"));
-
-    if(userdata->segment_params.segment_length == 0) {
-        /* output plugin didn't set a length so we'll set a default */
-        userdata->segment_params.segment_length = 1000;
-    }
-
-    if(userdata->segment_params.packets_per_segment == 0) {
-        samples_per_segment  = (uint64_t) userdata->segment_params.segment_length;
-        samples_per_segment *= (uint64_t) source->sample_rate;
-        samples_per_segment /= (uint64_t) 1000;
-        userdata->samples_per_segment = samples_per_segment;
-        userdata->segment_params.packets_per_segment = (size_t)samples_per_segment / (size_t)source->frame_len;
-    } else {
-        userdata->samples_per_segment = (uint64_t) userdata->segment_params.packets_per_segment;
-        userdata->samples_per_segment *= (uint64_t) source->frame_len;
-    }
-
-    if(userdata->segment_params.packets_per_segment == 0) {
-        userdata->segment_params.packets_per_segment = 1;
-    }
-
-    if(userdata->samples_per_segment == 0) {
-        userdata->samples_per_segment = userdata->segment_params.packets_per_segment * source->frame_len;
-    }
-
-    params.packets_per_segment = userdata->segment_params.packets_per_segment;
 
     TRY0(source->set_params(source->handle,&params),LOG0("error setting source params"));
 

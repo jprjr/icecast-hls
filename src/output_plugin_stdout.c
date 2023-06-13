@@ -48,19 +48,26 @@ static int plugin_config(void* userdata, const strbuf* key, const strbuf* value)
     return 0;
 }
 
+static int plugin_get_segment_params(void* userdata, const segment_source_info* info, segment_params* params) {
+    (void)userdata;
+    (void)info;
+    (void)params;
+    return 0;
+}
+
 static int plugin_open(void* userdata, const segment_source* source) {
     int r;
     (void)userdata;
-    segment_source_params params = SEGMENT_SOURCE_PARAMS_ZERO;
+    (void)source;
 #if defined(_WIN32) || defined(_WIN64) || defined(_MSC_VER)
     TRY0(_setmode( _fileno(stdout), _O_BINARY), LOG0("error setting stdout mode to binary") );
 #else
-    (void)r;
+    r = 0;
     /* just so the compiler doesn't complain this isn't used */
     goto cleanup;
 #endif
     cleanup:
-    return source->set_params(source->handle, &params);
+    return r;
 }
 
 static void plugin_close(void* userdata) {
@@ -110,6 +117,7 @@ const output_plugin output_plugin_stdout = {
     plugin_deinit,
     plugin_create,
     plugin_config,
+    plugin_get_segment_params,
     plugin_open,
     plugin_close,
     plugin_set_time,

@@ -37,10 +37,12 @@ SOURCES = \
 	src/id3.c \
 	src/input.c \
 	src/input_plugin.c \
+	src/input_plugin_curl.c \
 	src/input_plugin_file.c \
 	src/input_plugin_stdin.c \
 	src/muxer.c \
 	src/muxer_plugin.c \
+	src/muxer_plugin_adts.c \
 	src/muxer_plugin_fmp4.c \
 	src/muxer_plugin_ogg.c \
 	src/muxer_plugin_ogg_flac.c \
@@ -49,6 +51,7 @@ SOURCES = \
 	src/muxer_plugin_passthrough.c \
 	src/output.c \
 	src/output_plugin.c \
+	src/output_plugin_curl.c \
 	src/output_plugin_file.c \
 	src/output_plugin_icecast.c \
 	src/output_plugin_stdout.c \
@@ -100,6 +103,7 @@ REQUIRED_OBJS = \
 	src/input_plugin_stdin.o \
 	src/muxer.o \
 	src/muxer_plugin.o \
+	src/muxer_plugin_adts.o \
 	src/muxer_plugin_fmp4.o \
 	src/muxer_plugin_ogg.o \
 	src/muxer_plugin_ogg_flac.o \
