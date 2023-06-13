@@ -136,9 +136,8 @@ static int muxer_plugin_passthrough_config(void* ud, const strbuf* key, const st
     return 0;
 }
 
-static int muxer_plugin_passthrough_get_caps(void* ud, packet_receiver_caps* caps) {
+static uint32_t muxer_plugin_passthrough_get_caps(void* ud) {
     (void)ud;
-    caps->has_global_header = 0;
     return 0;
 }
 

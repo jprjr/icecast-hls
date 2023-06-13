@@ -1,4 +1,5 @@
 #include "encoder_plugin.h"
+#include "muxer_caps.h"
 
 #include <fdk-aac/aacenc_lib.h>
 #include "packet.h"
@@ -178,11 +179,11 @@ static int plugin_handle_packet_source_params(void* ud, const packet_source_para
 
 static int plugin_open(void *ud, const frame_source* source, const packet_receiver* dest) {
     int r = 0;
+    uint32_t muxer_caps;
     plugin_userdata* userdata = (plugin_userdata*)ud;
     AACENC_ERROR e = AACENC_OK;
     AACENC_InfoStruct info;
     packet_source me = PACKET_SOURCE_ZERO;
-    packet_receiver_caps receiver_caps = PACKET_RECEIVER_CAPS_ZERO;
     frame_source_params params = FRAME_SOURCE_PARAMS_ZERO;
     membuf dsi = MEMBUF_ZERO;
 
@@ -201,9 +202,7 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
         userdata->aot = AOT_SBR;
     }
 
-    if( (r = dest->get_caps(dest->handle,&receiver_caps)) != 0) {
-        return r;
-    }
+    muxer_caps = dest->get_caps(dest->handle);
 
     if( (e = aacEncOpen(&userdata->aacEncoder, 0, 0)) !=  AACENC_OK) {
         LOG1("error opening AAC encoder: %u", e);
@@ -245,7 +244,7 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
         return -1;
     }
 
-    if( (e = aacEncoder_SetParam(userdata->aacEncoder, AACENC_SIGNALING_MODE, receiver_caps.has_global_header ? 2 : 0)) != AACENC_OK) {
+    if( (e = aacEncoder_SetParam(userdata->aacEncoder, AACENC_SIGNALING_MODE, muxer_caps & MUXER_CAP_GLOBAL_HEADERS ? 2 : 0)) != AACENC_OK) {
         LOG1("error setting AAC signaling mode: %u", e);
         return -1;
     }

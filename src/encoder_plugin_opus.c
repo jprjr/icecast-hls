@@ -1,4 +1,5 @@
 #include "encoder_plugin_opus.h"
+#include "muxer_caps.h"
 
 #include <opus.h>
 
@@ -292,11 +293,11 @@ static int encoder_plugin_opus_reset(void* ud, void* dest, int (*cb)(void*, cons
 
 static int encoder_plugin_opus_open(void *ud, const frame_source* source, const packet_receiver* dest) {
     int r = -1;
+    uint32_t muxer_caps;
     opus_int32 lookahead;
     encoder_plugin_opus_userdata* userdata = (encoder_plugin_opus_userdata*)ud;
 
     packet_source me = PACKET_SOURCE_ZERO;
-    packet_receiver_caps receiver_caps = PACKET_RECEIVER_CAPS_ZERO;
     frame_source_params params = FRAME_SOURCE_PARAMS_ZERO;
 
     if(source->channels < 1 || source->channels > MAX_CHANNELS) {
@@ -309,11 +310,9 @@ static int encoder_plugin_opus_open(void *ud, const frame_source* source, const 
         return r;
     }
 
-    if( (r = dest->get_caps(dest->handle,&receiver_caps)) != 0) {
-        return r;
-    }
+    muxer_caps = dest->get_caps(dest->handle);
 
-    if(!receiver_caps.has_global_header) {
+    if(!(muxer_caps & MUXER_CAP_GLOBAL_HEADERS)) {
         LOG0("selected muxer does not have global header, select a different muxer");
         return -1;
     }

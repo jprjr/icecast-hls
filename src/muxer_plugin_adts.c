@@ -201,9 +201,8 @@ static int muxer_plugin_adts_config(void* ud, const strbuf* key, const strbuf* v
     return 0;
 }
 
-static int muxer_plugin_adts_get_caps(void* ud, packet_receiver_caps* caps) {
+static uint32_t muxer_plugin_adts_get_caps(void* ud) {
     (void)ud;
-    caps->has_global_header = 0;
     return 0;
 }
 

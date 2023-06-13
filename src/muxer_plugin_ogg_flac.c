@@ -1,4 +1,5 @@
 #include "muxer_plugin_ogg_flac.h"
+#include "muxer_caps.h"
 
 #include <stdlib.h>
 #include <errno.h>
@@ -404,10 +405,9 @@ static void plugin_deinit(void) {
     return;
 }
 
-static int plugin_get_caps(void* ud, packet_receiver_caps* caps) {
+static uint32_t plugin_get_caps(void* ud) {
     (void)ud;
-    caps->has_global_header = 1;
-    return 0;
+    return MUXER_CAP_GLOBAL_HEADERS;
 }
 
 const muxer_plugin muxer_plugin_ogg_flac = {

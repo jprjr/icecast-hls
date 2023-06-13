@@ -68,7 +68,7 @@ typedef int (*packet_receiver_open_cb)(void* handle, const packet_source* source
 typedef int (*packet_receiver_submit_packet_cb)(void* handle, const packet*);
 typedef int (*packet_receiver_submit_dsi_cb)(void* handle, const membuf*);
 typedef int (*packet_receiver_flush_cb)(void* handle);
-typedef int (*packet_receiver_get_caps_cb)(void* handle, packet_receiver_caps* caps);
+typedef uint32_t (*packet_receiver_get_caps_cb)(void* handle);
 
 struct packet_receiver {
     void* handle;

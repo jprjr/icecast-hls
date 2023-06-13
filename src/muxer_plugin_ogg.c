@@ -1,4 +1,5 @@
 #include "muxer_plugin_ogg.h"
+#include "muxer_caps.h"
 
 #include <stdlib.h>
 #include <errno.h>
@@ -102,10 +103,9 @@ static int muxer_plugin_ogg_flush(void* ud, const segment_receiver* dest) {
     return userdata->plugin->flush(userdata->handle,dest);
 }
 
-static int muxer_plugin_ogg_get_caps(void* ud, packet_receiver_caps* caps) {
+static uint32_t muxer_plugin_ogg_get_caps(void* ud) {
     (void)ud;
-    caps->has_global_header = 1;
-    return 0;
+    return MUXER_CAP_GLOBAL_HEADERS;
 }
 
 static int muxer_plugin_ogg_config(void* ud, const strbuf* key, const strbuf* value) {

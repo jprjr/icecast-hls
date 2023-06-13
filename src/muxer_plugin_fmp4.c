@@ -1,4 +1,5 @@
 #include "muxer_plugin_fmp4.h"
+#include "muxer_caps.h"
 
 #include "minifmp4.h"
 
@@ -534,10 +535,9 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
 }
 
-static int plugin_get_caps(void* ud, packet_receiver_caps* caps) {
+static uint32_t plugin_get_caps(void* ud) {
     (void)ud;
-    caps->has_global_header = 1;
-    return 0;
+    return MUXER_CAP_GLOBAL_HEADERS;
 }
 
 static int plugin_init(void) {

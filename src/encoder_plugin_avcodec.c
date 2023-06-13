@@ -1,4 +1,5 @@
 #include "encoder_plugin.h"
+#include "muxer_caps.h"
 
 #include "avframe_utils.h"
 #include "avpacket_utils.h"
@@ -31,7 +32,7 @@ struct plugin_userdata {
     unsigned int sample_rate;
     unsigned int channels;
     enum AVSampleFormat sample_fmt;
-    packet_receiver_caps receiver_caps;
+    uint32_t muxer_caps;
 };
 typedef struct plugin_userdata plugin_userdata;
 
@@ -122,7 +123,7 @@ static int open_encoder(plugin_userdata* userdata) {
             LOG0("error copying codec_config"));
     }
 
-    if(userdata->receiver_caps.has_global_header) {
+    if(userdata->muxer_caps & MUXER_CAP_GLOBAL_HEADERS) {
         userdata->ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     }
 
@@ -276,9 +277,7 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     frame_source_params params = FRAME_SOURCE_PARAMS_ZERO;
     membuf dsi = STRBUF_ZERO; /* STRBUF_ZERO uses a smaller blocksize */
 
-    if( (r = dest->get_caps(dest->handle,&userdata->receiver_caps)) != 0) {
-        return r;
-    }
+    userdata->muxer_caps = dest->get_caps(dest->handle);
 
     if(userdata->codec == NULL) {
         TRY( (userdata->codec = avcodec_find_encoder_by_name("aac")) != NULL,
