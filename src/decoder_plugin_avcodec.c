@@ -143,18 +143,8 @@ static int decoder_plugin_avcodec_read(void *ud, uint8_t *buf, int buf_size) {
     input* in = (input*)ud;
     size_t r = input_read(in, buf, (size_t)buf_size);
 
-	if(r == 0) return AVERROR_EOF;
+    if(r == 0) return AVERROR_EOF;
     return (int)r;
-}
-
-static int decoder_plugin_avcodec_handle_source_params(void* ud, const frame_source_params* params) {
-    decoder_plugin_avcodec_userdata* userdata = (decoder_plugin_avcodec_userdata*)ud;
-
-    if(params->format == SAMPLEFMT_UNKNOWN) return 0;
-    if(params->format == userdata->frame.format) return 0;
-
-    LOG0("an upstream source is trying to change our format");
-    return -1;
 }
 
 static int decoder_plugin_avcodec_open(void* ud, input* in, const frame_receiver* dest) {
@@ -275,9 +265,6 @@ static int decoder_plugin_avcodec_open(void* ud, input* in, const frame_receiver
     me.channels = userdata->frame.channels;
     me.format = userdata->frame.format;
     me.sample_rate = userdata->codec_ctx->sample_rate;
-
-    me.set_params = decoder_plugin_avcodec_handle_source_params;
-    me.handle = userdata;
 
     if(dest->open(dest->handle, &me) != 0) {
         LOG0("error opening audio destination");

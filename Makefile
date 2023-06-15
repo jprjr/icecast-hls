@@ -29,7 +29,6 @@ SOURCES = \
 	src/filter.c \
 	src/filter_plugin.c \
 	src/filter_plugin_avfilter.c \
-	src/filter_plugin_buffer.c \
 	src/filter_plugin_passthrough.c \
 	src/frame.c \
 	src/hls.c \
@@ -91,7 +90,6 @@ REQUIRED_OBJS = \
 	src/encoder_plugin.o \
 	src/filter.o \
 	src/filter_plugin.o \
-	src/filter_plugin_buffer.o \
 	src/filter_plugin_passthrough.o \
 	src/frame.o \
 	src/hls.o \

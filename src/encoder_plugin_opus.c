@@ -31,7 +31,6 @@ struct encoder_plugin_opus_userdata {
     membuf dsi;
 
     frame buffer;
-    frame frame;
     int complexity;
     int signal;
     int vbr;
@@ -58,7 +57,6 @@ static void* encoder_plugin_opus_create(void) {
     packet_init(&userdata->packet);
     membuf_init(&userdata->dsi);
     frame_init(&userdata->buffer);
-    frame_init(&userdata->frame);
     strbuf_init(&userdata->name);
 
     userdata->complexity = 10;
@@ -80,7 +78,6 @@ static void encoder_plugin_opus_close(void* ud) {
     packet_free(&userdata->packet);
     membuf_free(&userdata->dsi);
     frame_free(&userdata->buffer);
-    frame_free(&userdata->frame);
     strbuf_free(&userdata->name);
 
     if(userdata->enc != NULL) {
@@ -298,7 +295,6 @@ static int encoder_plugin_opus_open(void *ud, const frame_source* source, const 
     encoder_plugin_opus_userdata* userdata = (encoder_plugin_opus_userdata*)ud;
 
     packet_source me = PACKET_SOURCE_ZERO;
-    frame_source_params params = FRAME_SOURCE_PARAMS_ZERO;
 
     if(source->channels < 1 || source->channels > MAX_CHANNELS) {
         LOG2("unsupported channel config - requested %u channels, max is %u channels",(unsigned int)source->channels, (unsigned int)MAX_CHANNELS);
@@ -335,6 +331,11 @@ static int encoder_plugin_opus_open(void *ud, const frame_source* source, const 
     userdata->buffer.channels = source->channels;
     userdata->buffer.duration = 0;
     userdata->buffer.sample_rate = 48000;
+
+    if( (r = frame_ready(&userdata->buffer)) != 0) {
+        LOGERRNO("error allocating buffer frame");
+        return r;
+    }
 
     if( (r = frame_fill(&userdata->buffer,lookahead)) != 0) {
         LOGERRNO("error allocating buffer frame");
@@ -386,14 +387,8 @@ static int encoder_plugin_opus_open(void *ud, const frame_source* source, const 
     userdata->dsi.x[18] = 0;
     userdata->dsi.len = 19;
 
-    if( (r = dest->submit_dsi(dest->handle,&userdata->dsi)) != 0) {
-        return r;
-    }
+    return dest->submit_dsi(dest->handle,&userdata->dsi);
 
-    params.format = SAMPLEFMT_FLOAT;
-    params.duration = userdata->framelen;
-
-    return source->set_params(source->handle, &params);
 }
 
 

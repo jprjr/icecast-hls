@@ -6,7 +6,7 @@
 #define CONFIGURING_MUXER 3
 #define CONFIGURING_OUTPUT 4
 
-static strbuf DEFAULT_FILTER = { .a = 0, .len = 6, .x = (uint8_t*)"buffer" };
+static strbuf DEFAULT_FILTER = { .a = 0, .len = 11, .x = (uint8_t*)"passthrough" };
 static strbuf DEFAULT_ENCODER = { .a = 0, .len = 6, .x = (uint8_t*)"exhale" };
 static strbuf DEFAULT_MUXER = { .a = 0, .len = 4, .x = (uint8_t*)"fmp4" };
 

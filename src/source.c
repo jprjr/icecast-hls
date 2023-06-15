@@ -18,9 +18,8 @@ static int source_default_tag_handler(void* ud, const taglist* tags) {
 
 static int source_open_intercept(void* ud, const frame_source* fsource) {
     source *s = (source *)ud;
-    frame_source_params params = FRAME_SOURCE_PARAMS_ZERO;
     s->frame_source = *fsource;
-    return fsource->set_params(fsource->handle, &params);
+    return 0;
 }
 
 /* wrappers to forward calls from the input/decoder to whatever the
@@ -42,7 +41,6 @@ static int source_flush_wrapper(void* ud) {
 
 int source_open_dest(const source* s, const frame_receiver* dest) {
     frame_source me = s->frame_source;
-    me.set_params = frame_source_set_params_ignore;
     return dest->open(dest->handle,&me);
 }
 

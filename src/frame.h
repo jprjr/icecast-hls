@@ -23,21 +23,9 @@ struct frame {
 };
 typedef struct frame frame;
 
-/* this is sent by encoders/filters (frame receivers) to
- * set params on the source (decoders, filters) */
-struct frame_source_params {
-    samplefmt format;
-    unsigned int channels;
-    unsigned int duration;
-};
-typedef struct frame_source_params frame_source_params;
-
-typedef int (*frame_source_set_params_cb)(void* handle, const frame_source_params* params);
-
 /* the frame source is used to inform frame receivers (encoders, filters) about the kind of incoming frame data */
 struct frame_source {
     void* handle;
-    frame_source_set_params_cb set_params;
     samplefmt format;
     unsigned int channels;
     unsigned int duration;
@@ -75,7 +63,6 @@ typedef struct frame_receiver frame_receiver;
 
 #define FRAME_SOURCE_ZERO { \
     .handle = NULL, \
-    .set_params = frame_source_set_params_null, \
     .format = SAMPLEFMT_UNKNOWN, \
     .channels = 0, \
     .duration = 0, \
@@ -127,13 +114,10 @@ int frame_fill(frame*, unsigned int duration);
 int frame_receiver_open_null(void* handle, const frame_source* source);
 int frame_receiver_submit_frame_null(void* handle, const frame* frame);
 int frame_receiver_flush_null(void* handle);
-int frame_source_set_params_null(void* handle, const frame_source_params* params);
-int frame_source_set_params_ignore(void* handle, const frame_source_params* params);
 
 extern const frame_receiver frame_receiver_zero;
 extern const frame_source frame_source_zero;
 extern const frame frame_zero;
-extern const frame_source_params frame_source_params_zero;
 
 #ifdef __cplusplus
 }

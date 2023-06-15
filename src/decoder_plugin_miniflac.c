@@ -136,17 +136,6 @@ static size_t plugin_mflac_read(uint8_t* buffer, size_t len, void* ud) {
     return input_read(userdata->input, buffer, len);
 }
 
-static int plugin_handle_source_params(void* ud, const frame_source_params* params) {
-    (void)ud;
-    switch(params->format) {
-        case SAMPLEFMT_UNKNOWN: /* fall-through */
-        case SAMPLEFMT_S32P: return 0;
-        default: break;
-    }
-    fprintf(stderr,"[decoder:miniflac] an upstream source is trying to change our format\n");
-    return -1;
-}
-
 static int plugin_open(void* ud, input* in, const frame_receiver* dest) {
     MFLAC_RESULT res;
     plugin_userdata* userdata = (plugin_userdata*)ud;
@@ -186,7 +175,6 @@ static int plugin_open(void* ud, input* in, const frame_receiver* dest) {
     me.sample_rate = userdata->sample_rate;
     me.format = SAMPLEFMT_S32P;
     me.handle = userdata;
-    me.set_params = plugin_handle_source_params;
 
     if(dest->open(dest->handle,&me) != 0) {
         fprintf(stderr,"[decoder:miniflac] error opening audio destination\n");

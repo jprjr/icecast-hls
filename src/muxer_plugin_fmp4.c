@@ -400,6 +400,7 @@ static int plugin_submit_packet(void* ud, const packet* packet, const segment_re
     info.duration = packet->duration;
     info.size = packet->data.len;
     info.flags.is_non_sync = !packet->sync;
+    info.flags.depends_on = packet->sync ? 2 : 1;
 
     if(fmp4_track_add_sample(userdata->track, packet->data.x, &info) != FMP4_OK) return -1;
 
@@ -519,6 +520,9 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     userdata->track->info.audio.channels = source->channels;
     fmp4_track_set_roll_distance(userdata->track,source->roll_distance);
     fmp4_track_set_encoder_delay(userdata->track,source->padding);
+    if(source->roll_type == 1) {
+        fmp4_track_set_roll_type(userdata->track, FMP4_ROLL_TYPE_PROL);
+    }
 
     fmp4_sample_info_init(&info);
     info.duration = source->frame_len;

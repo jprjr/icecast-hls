@@ -158,6 +158,13 @@ enum fmp4_stream_type {
 
 typedef enum fmp4_stream_type fmp4_stream_type;
 
+enum fmp4_roll_type {
+    FMP4_ROLL_TYPE_ROLL,
+    FMP4_ROLL_TYPE_PROL,
+};
+
+typedef enum fmp4_roll_type fmp4_roll_type;
+
 enum fmp4_object_type {
     FMP4_OBJECT_TYPE_FORBIDDEN = 0x00,
     FMP4_OBJECT_TYPE_AAC = 0x40, /* covers AAC, HE-AAC, xHE-AAC, etc */
@@ -257,6 +264,7 @@ struct fmp4_track {
     uint8_t language[4];
     uint32_t encoder_delay;
     int16_t roll_distance;
+    fmp4_roll_type roll_type;
 
     union {
         struct {
@@ -644,6 +652,10 @@ int16_t
 fmp4_track_get_roll_distance(const fmp4_track* track);
 
 FMP4_API
+fmp4_roll_type
+fmp4_track_get_roll_type(const fmp4_track* track);
+
+FMP4_API
 fmp4_result
 fmp4_track_get_default_sample_info(const fmp4_track* track, fmp4_sample_info* info);
 
@@ -883,6 +895,10 @@ fmp4_track_set_encoder_delay(fmp4_track* track, uint32_t delay);
 FMP4_API
 void
 fmp4_track_set_roll_distance(fmp4_track* track, int16_t distance);
+
+FMP4_API
+void
+fmp4_track_set_roll_type(fmp4_track* track, fmp4_roll_type roll_type);
 
 FMP4_API
 void
@@ -1856,7 +1872,11 @@ fmp4_box_trak(fmp4_mux* mux, const fmp4_track* track, uint32_t id) {
                     if(track->roll_distance != 0) {
                         BOX_BEGIN_FULL(BOX_sgpd, 1, 0);
                         {
-                            WRITE_UINT32( BOX_ID('r','o','l','l') ); /* grouping type */
+                            if(track->roll_type == FMP4_ROLL_TYPE_ROLL) {
+                                WRITE_UINT32( BOX_ID('r','o','l','l') ); /* grouping type roll */
+                            } else {
+                                WRITE_UINT32( BOX_ID('p','r','o','l') ); /* grouping type prol */
+                            }
                             WRITE_UINT32(2); /* default length */
                             WRITE_UINT32(1); /* entry count */
                             WRITE_INT16(track->roll_distance); /* roll distance */
@@ -2122,7 +2142,11 @@ fmp4_box_traf(fmp4_mux* mux, fmp4_track* track, uint32_t id) {
         if(track->roll_distance != 0) {
             BOX_BEGIN_FULL(BOX_sbgp, 0, 0);
             {
-                WRITE_UINT32(BOX_ID('r','o','l','l')); /* grouping type */
+                if(track->roll_type == FMP4_ROLL_TYPE_ROLL) {
+                    WRITE_UINT32( BOX_ID('r','o','l','l') ); /* grouping type roll */
+                } else {
+                    WRITE_UINT32( BOX_ID('p','r','o','l') ); /* grouping type prol */
+                }
                 WRITE_UINT32(1); /* entry count */
                 WRITE_UINT32(track->sample_info.len / sizeof(fmp4_sample_info)); /* sample count */
                 WRITE_UINT32(1); /* group description index */
@@ -2672,6 +2696,12 @@ fmp4_track_get_roll_distance(const fmp4_track* track) {
 }
 
 FMP4_API
+fmp4_roll_type
+fmp4_track_get_roll_type(const fmp4_track* track) {
+    return track->roll_type;
+}
+
+FMP4_API
 fmp4_result
 fmp4_track_get_default_sample_info(const fmp4_track *track, fmp4_sample_info* info) {
     memcpy(info,&track->default_sample_info,sizeof(fmp4_sample_info));
@@ -3064,6 +3094,12 @@ FMP4_API
 void
 fmp4_track_set_roll_distance(fmp4_track* track, int16_t distance) {
     track->roll_distance = distance;
+}
+
+FMP4_API
+void
+fmp4_track_set_roll_type(fmp4_track* track, fmp4_roll_type roll_type) {
+    track->roll_type = roll_type;
 }
 
 FMP4_API
@@ -3473,6 +3509,7 @@ fmp4_track_init(fmp4_track *track, const fmp4_allocator* allocator) {
     track->time_scale = 0;
     track->encoder_delay = 0;
     track->roll_distance = 0;
+    track->roll_type = FMP4_ROLL_TYPE_ROLL;
 
     fmp4_sample_info_init(&track->default_sample_info);
 

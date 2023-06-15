@@ -184,7 +184,6 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
     AACENC_ERROR e = AACENC_OK;
     AACENC_InfoStruct info;
     packet_source me = PACKET_SOURCE_ZERO;
-    frame_source_params params = FRAME_SOURCE_PARAMS_ZERO;
     membuf dsi = MEMBUF_ZERO;
 
     if(source->channels > MAX_CHANNELS) {
@@ -330,9 +329,6 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
         return r;
     }
 
-    params.format = SAMPLEFMT_S16;
-    params.duration = userdata->frame_len;
-
     userdata->packet.sample_rate = source->sample_rate;
 
     userdata->buffer.format = SAMPLEFMT_S16;
@@ -351,7 +347,7 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
     }
 #endif
 
-    return source->set_params(source->handle, &params);
+    return 0;
 }
 
 static int plugin_encode_frame(plugin_userdata* userdata, const packet_receiver* dest) {

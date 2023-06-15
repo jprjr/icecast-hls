@@ -48,11 +48,13 @@ enum AVSampleFormat samplefmt_to_avsampleformat(samplefmt f) {
     return AV_SAMPLE_FMT_NONE;
 }
 
-int frame_to_avframe(AVFrame* out, const frame* in) {
+int frame_to_avframe(AVFrame* out, const frame* in, unsigned int duration) {
     int r;
     size_t i = 0;
     void* samples;
     char errmsg[128];
+
+    if(duration == 0) duration = in->duration;
 
     av_frame_unref(out);
 
@@ -66,7 +68,7 @@ int frame_to_avframe(AVFrame* out, const frame* in) {
 #else
     out->channel_layout = av_get_default_channel_layout(in->channels);
 #endif
-    out->nb_samples = in->duration;
+    out->nb_samples = duration;
     out->pts = in->pts;
     out->pkt_dts = in->pts;
     out->format = samplefmt_to_avsampleformat(in->format);
@@ -80,11 +82,11 @@ int frame_to_avframe(AVFrame* out, const frame* in) {
     if(samplefmt_is_planar(in->format)) {
         for(i=0;i<in->channels;i++) {
             samples = frame_get_channel_samples(in,i);
-            memcpy(out->data[i],samples,samplefmt_size(in->format) * in->duration);
+            memcpy(out->data[i],samples,samplefmt_size(in->format) * duration);
         }
     } else {
         samples = frame_get_channel_samples(in,0);
-        memcpy(out->data[0],samples,in->channels * samplefmt_size(in->format) * in->duration);
+        memcpy(out->data[0],samples,in->channels * samplefmt_size(in->format) * duration);
     }
 
     return 0;

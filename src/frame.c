@@ -323,6 +323,7 @@ int frame_trim(frame* f, unsigned int len) {
     }
 
     f->duration -= len;
+    f->pts += len;
     return 0;
 }
 
@@ -330,7 +331,6 @@ int frame_trim(frame* f, unsigned int len) {
 const frame_receiver frame_receiver_zero = FRAME_RECEIVER_ZERO;
 const frame_source frame_source_zero = FRAME_SOURCE_ZERO;
 const frame frame_zero = FRAME_ZERO;
-const frame_source_params frame_source_params_zero = FRAME_SOURCE_PARAMS_ZERO;
 
 int frame_receiver_open_null(void* handle, const frame_source* source) {
     (void)handle;
@@ -355,16 +355,3 @@ int frame_receiver_flush_null(void* handle) {
     return -1;
 }
 
-int frame_source_set_params_null(void* handle, const frame_source_params* params) {
-    (void)handle;
-    (void)params;
-    fprintf(stderr,"[app error] frame_source set_params not set\n");
-    abort();
-    return -1;
-}
-
-int frame_source_set_params_ignore(void* handle, const frame_source_params* params) {
-    (void)handle;
-    (void)params;
-    return 0;
-}

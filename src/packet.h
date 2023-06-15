@@ -51,6 +51,7 @@ struct packet_source {
     unsigned int sync_flag; /* if non-zero, all samples are sync samples */
     unsigned int padding; /* number of samples that need to be discarded */
     int roll_distance; /* number of frames that need to be discarded, -1 means 1 frame before current */
+    uint8_t roll_type; /* roll type, 0 = roll, 1 = prol */
 };
 
 typedef struct packet_source packet_source;
@@ -115,6 +116,7 @@ typedef struct packet_receiver packet_receiver;
     .sync_flag = 0, \
     .padding = 0, \
     .roll_distance = 0, \
+    .roll_type = 0, \
 }
 
 #ifdef __cplusplus
