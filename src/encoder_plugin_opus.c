@@ -355,22 +355,6 @@ static int encoder_plugin_opus_open(void *ud, const frame_source* source, const 
         return r;
     }
 
-    me.codec = CODEC_TYPE_OPUS;
-    me.name = &userdata->name;
-    me.channels = source->channels;
-    me.sample_rate = 48000;
-    me.frame_len = userdata->framelen;
-    me.padding = lookahead;
-    me.sync_flag = 1;
-    me.handle = userdata;
-    me.set_keyframes = encoder_plugin_opus_set_keyframes;
-    me.reset = encoder_plugin_opus_reset;
-
-    if( (r = dest->open(dest->handle,&me)) != 0) {
-        LOG0("error opening muxer");
-        return r;
-    }
-
     if( (r = membuf_ready(&userdata->dsi,19)) != 0) {
         LOGERRNO("error allocating dsi");
         return -1;
@@ -386,8 +370,24 @@ static int encoder_plugin_opus_open(void *ud, const frame_source* source, const 
     userdata->dsi.x[18] = 0;
     userdata->dsi.len = 19;
 
-    return dest->submit_dsi(dest->handle,&userdata->dsi);
+    me.codec = CODEC_TYPE_OPUS;
+    me.name = &userdata->name;
+    me.channels = source->channels;
+    me.sample_rate = 48000;
+    me.frame_len = userdata->framelen;
+    me.padding = lookahead;
+    me.roll_distance = -3840 / 960;
+    me.sync_flag = 1;
+    me.handle = userdata;
+    me.set_keyframes = encoder_plugin_opus_set_keyframes;
+    me.reset = encoder_plugin_opus_reset;
+    me.dsi = &userdata->dsi;
 
+    if( (r = dest->open(dest->handle,&me)) != 0) {
+        LOG0("error opening muxer");
+    }
+
+    return r;
 }
 
 
@@ -416,7 +416,7 @@ static int encoder_plugin_opus_submit_frame(void* ud, const frame* frame, const 
         LOG1("error appending frame to internal buffer: %d",r);
         return r;
     }
-    
+
     return opus_drain(userdata,dest);
 }
 

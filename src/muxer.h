@@ -37,8 +37,6 @@ int muxer_config(const muxer*, const strbuf* name, const strbuf* value);
 
 int muxer_open(muxer*, const packet_source* source);
 
-/* dsi will trigger writing an init segment, if appropriate */
-int muxer_submit_dsi(const muxer* m, const membuf* dsi);
 int muxer_submit_packet(muxer*, const packet*);
 int muxer_submit_tags(const muxer*, const taglist* tags);
 

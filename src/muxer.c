@@ -68,10 +68,6 @@ void muxer_global_deinit(void) {
     return muxer_plugin_global_deinit();
 }
 
-int muxer_submit_dsi(const muxer* m, const membuf* dsi) {
-    return m->plugin->submit_dsi(m->userdata, dsi, &m->segment_receiver);
-}
-
 int muxer_submit_packet(muxer* m, const packet* p) {
     int r = m->plugin->submit_packet(m->userdata, p, &m->segment_receiver);
     if(r == 0) {

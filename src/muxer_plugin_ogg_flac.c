@@ -29,6 +29,16 @@
 static STRBUF_CONST(mime_ogg,"application/ogg");
 static STRBUF_CONST(ext_ogg,".ogg");
 
+static const uint8_t oggflac_header[13] = {
+    0x7F,
+    'F', 'L', 'A', 'C',
+    0x01, 0x00,
+    0x00, 0x01, /* we'll always have a VORBIS_COMMENT packet */
+    'f','L','a','C'
+};
+
+
+
 struct ogg_flac_plugin {
     unsigned int padding;
     unsigned int keyframes;
@@ -179,7 +189,17 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     userdata->samples_per_segment = s_params.packets_per_segment * source->frame_len;
 
-    /* prep the tag buffer */
+    /* setup and buffer the FLAC header packet */
+    userdata->head.len = 0;
+    TRYS(membuf_append(&userdata->head,oggflac_header,13));
+    TRYS(strbuf_cat(&userdata->head,source->dsi));
+    userdata->head.x[13] &= 0x7F; /* clear the last-metadata-block flag */
+
+    TRYS(stream_add_strbuf(userdata,&userdata->head,0));
+    TRYS(stream_buffer(userdata));
+
+    /* prep the tag buffer,
+     * hold off on buffering until we get tags or a packet */
     TRYS(strbuf_ready(&userdata->tags,4));
     userdata->tags.len = 4;
 
@@ -199,12 +219,10 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     userdata->psource = *source;
 
-
     me.media_ext = &ext_ogg;
     me.media_mimetype = &mime_ogg;
     me.time_base = source->sample_rate;
     me.frame_len = source->frame_len;
-
     me.handle = userdata;
 
     TRY0(dest->open(dest->handle,&me),LOG0("error opening destination"));
@@ -212,33 +230,6 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     r = 0;
     cleanup:
     return r;
-}
-
-static const uint8_t oggflac_header[13] = {
-    0x7F,
-    'F', 'L', 'A', 'C',
-    0x01, 0x00,
-    0x00, 0x01, /* we'll always have a VORBIS_COMMENT packet */
-    'f','L','a','C'
-};
-
-static int plugin_submit_dsi(void* ud, const strbuf* data, const segment_receiver* dest) {
-    int r = -1;
-
-    ogg_flac_plugin* userdata = (ogg_flac_plugin*)ud;
-
-    userdata->head.len = 0;
-    TRYS(membuf_append(&userdata->head,oggflac_header,13));
-    TRYS(strbuf_cat(&userdata->head,data));
-    userdata->head.x[13] &= 0x7F; /* clear the last-metadata-block flag */
-
-    TRYS(stream_add_strbuf(userdata,&userdata->head,0));
-    TRYS(stream_buffer(userdata));
-
-    r = 0;
-    cleanup:
-    (void)dest;
-    return 0;
 }
 
 static int plugin_submit_packet(void* ud, const packet* p, const segment_receiver* dest) {
@@ -420,7 +411,6 @@ const muxer_plugin muxer_plugin_ogg_flac = {
     plugin_config,
     plugin_open,
     plugin_close,
-    plugin_submit_dsi,
     plugin_submit_packet,
     plugin_submit_tags,
     plugin_flush,

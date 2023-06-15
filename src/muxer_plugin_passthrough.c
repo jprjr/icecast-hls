@@ -107,13 +107,6 @@ static void muxer_plugin_passthrough_deinit(void) {
     return;
 }
 
-static int muxer_plugin_passthrough_submit_dsi(void* ud, const membuf* data,const segment_receiver* dest) {
-    (void)ud;
-    (void)data;
-    (void)dest;
-    return 0;
-}
-
 static int muxer_plugin_passthrough_config(void* ud, const strbuf* key, const strbuf* val) {
     (void)ud;
     (void)key;
@@ -149,7 +142,6 @@ const muxer_plugin muxer_plugin_passthrough = {
     muxer_plugin_passthrough_config,
     muxer_plugin_passthrough_open,
     muxer_plugin_passthrough_close,
-    muxer_plugin_passthrough_submit_dsi,
     muxer_plugin_passthrough_submit_packet,
     muxer_plugin_passthrough_submit_tags,
     muxer_plugin_passthrough_flush,

@@ -194,7 +194,16 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     userdata->samples_per_segment = s_params.packets_per_segment * source->frame_len;
 
-    /* prep the tag buffers */
+    /* copy the dsi, which will be a whole OpusHead packet */
+    for(i=0;i<2;i++) {
+        TRYS(strbuf_copy(&userdata->streams[i].head,source->dsi));
+    }
+
+    /* buffer the OpusHead to the primary stream */
+    TRYS(stream_add_strbuf(&userdata->streams[0],&userdata->streams[0].head,0));
+    TRYS(stream_buffer(&userdata->streams[0]));
+
+    /* prep the tag buffers, hold off on buffering until we get tags */
     for(i=0;i<2;i++) {
         stream = &userdata->streams[i];
         TRYS(strbuf_append_cstr(&stream->tags,"OpusTags"));
@@ -225,28 +234,6 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     r = 0;
     cleanup:
     return r;
-}
-
-static int plugin_submit_dsi(void* ud, const strbuf* data, const segment_receiver* dest) {
-    int r = -1;
-    unsigned int i = 0;
-
-    ogg_opus_plugin* userdata = (ogg_opus_plugin*)ud;
-    ogg_opus_stream* pri;
-
-    for(i=0;i<2;i++) {
-        TRYS(strbuf_copy(&userdata->streams[i].head,data));
-    }
-
-    pri = &userdata->streams[0];
-
-    TRYS(stream_add_strbuf(pri,&pri->head,0));
-    TRYS(stream_buffer(pri));
-
-    r = 0;
-    cleanup:
-    (void)dest;
-    return 0;
 }
 
 static int plugin_submit_packet(void* ud, const packet* p, const segment_receiver* dest) {
@@ -481,7 +468,6 @@ const muxer_plugin muxer_plugin_ogg_opus = {
     plugin_config,
     plugin_open,
     plugin_close,
-    plugin_submit_dsi,
     plugin_submit_packet,
     plugin_submit_tags,
     plugin_flush,

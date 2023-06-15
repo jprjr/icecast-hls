@@ -34,6 +34,7 @@ struct plugin_userdata {
     unsigned int channels;
     enum AVSampleFormat sample_fmt;
     uint32_t muxer_caps;
+    strbuf dsi;
 };
 typedef struct plugin_userdata plugin_userdata;
 
@@ -167,6 +168,7 @@ static void* plugin_create(void) {
     frame_init(&userdata->buffer);
     frame_init(&userdata->buffer);
     packet_init(&userdata->packet);
+    strbuf_init(&userdata->dsi);
     return userdata;
 }
 
@@ -185,6 +187,7 @@ static void plugin_close(void* ud) {
     if(userdata->codec_config != NULL) av_dict_free(&userdata->codec_config);
     frame_free(&userdata->buffer);
     packet_free(&userdata->packet);
+    strbuf_free(&userdata->dsi);
     free(userdata);
     return;
 }
@@ -278,7 +281,6 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     uint32_t u;
 
     packet_source me = PACKET_SOURCE_ZERO;
-    membuf dsi = STRBUF_ZERO; /* STRBUF_ZERO uses a smaller blocksize */
 
     userdata->muxer_caps = dest->get_caps(dest->handle);
 
@@ -300,7 +302,7 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
             me.profile = userdata->ctx->profile + 1;
             me.roll_distance = -1;
             TRY(userdata->ctx->extradata_size > 0, LOG0("aac missing extradata"));
-            TRY0(membuf_append(&dsi, userdata->ctx->extradata, userdata->ctx->extradata_size),
+            TRY0(membuf_append(&userdata->dsi, userdata->ctx->extradata, userdata->ctx->extradata_size),
                 LOG0("out of memory"));
             break;
         }
@@ -314,7 +316,7 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
                 LOG1("alac extradata too small: %u expected at least 13",
                   userdata->ctx->extradata_size));
 
-            TRY0(membuf_append(&dsi, &userdata->ctx->extradata[12], userdata->ctx->extradata_size - 12),
+            TRY0(membuf_append(&userdata->dsi, &userdata->ctx->extradata[12], userdata->ctx->extradata_size - 12),
                 LOG0("out of memory"));
             break;
         }
@@ -328,11 +330,11 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
                 LOG1("flac extradata size is %u, expected 34",
                   userdata->ctx->extradata_size));
 
-            TRY0(membuf_ready(&dsi,38), LOG0("out of memory"));
+            TRY0(membuf_ready(&userdata->dsi,38), LOG0("out of memory"));
 
-            pack_u32be(dsi.x,0x80000000 | 34);
-            memcpy(&dsi.x[4],userdata->ctx->extradata, 34);
-            dsi.len = 38;
+            pack_u32be(userdata->dsi.x,0x80000000 | 34);
+            memcpy(&userdata->dsi.x[4],userdata->ctx->extradata, 34);
+            userdata->dsi.len = 38;
             break;
         }
 
@@ -343,7 +345,7 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
 
         case AV_CODEC_ID_AC3: {
             me.codec = CODEC_TYPE_AC3;
-            TRY0(membuf_ready(&dsi,4), LOG0("out of memory"));
+            TRY0(membuf_ready(&userdata->dsi,4), LOG0("out of memory"));
 
             switch(source->sample_rate) {
                 case 48000: {
@@ -421,15 +423,15 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
             /* reserved */
             tmp |= 0 << (32 - 2 - 5 - 3 - 3 - 1 - 5 - 5);
 
-            pack_u32be(dsi.x,tmp);
-            dsi.len = 3;
+            pack_u32be(&userdata->dsi.x[0],tmp);
+            userdata->dsi.len = 3;
             break;
         }
 
         case AV_CODEC_ID_EAC3: {
             me.codec = CODEC_TYPE_EAC3;
 
-            TRY0(membuf_ready(&dsi,8), LOG0("out of memory"));
+            TRY0(membuf_ready(&userdata->dsi,8), LOG0("out of memory"));
 
             /* dsi is:
                data_rate, 13 bits
@@ -459,7 +461,7 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
             tmp <<= 16 - 13;
             /* num_ind_sub, hard-code to 0 */
             tmp |= 0 << (16 - 13 - 3);
-            pack_u16be(&dsi.x[0],(uint16_t)tmp);
+            pack_u16be(&userdata->dsi.x[0],(uint16_t)tmp);
 
             switch(source->sample_rate) {
                 case 48000: {
@@ -509,8 +511,8 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
             /* reserved 1 bit */
             tmp |= 0 << (32 - 2 - 5 - 1 - 1 - 3 - 3 - 1 - 3 - 4 - 1);
 
-            pack_u32be(&dsi.x[2],tmp);
-            dsi.len = 5;
+            pack_u32be(&userdata->dsi.x[2],tmp);
+            userdata->dsi.len = 5;
             break;
         }
 
@@ -520,9 +522,9 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
              * which is 3840 samples @48kHz */
             me.roll_distance = -3840 / userdata->ctx->frame_size;
 
-            TRY0(membuf_ready(&dsi,userdata->ctx->extradata_size), LOG0("out of memory"));
-            memcpy(dsi.x,&userdata->ctx->extradata[0],userdata->ctx->extradata_size);
-            dsi.len = userdata->ctx->extradata_size;
+            TRY0(membuf_ready(&userdata->dsi,userdata->ctx->extradata_size), LOG0("out of memory"));
+            memcpy(userdata->dsi.x,&userdata->ctx->extradata[0],userdata->ctx->extradata_size);
+            userdata->dsi.len = userdata->ctx->extradata_size;
             break;
         }
 
@@ -546,12 +548,9 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     me.padding = userdata->ctx->initial_padding;
     me.set_keyframes = set_keyframes;
     me.reset = reset_encoder;
+    me.dsi = &userdata->dsi;
 
     if(me.frame_len == 0) me.frame_len = 1024;
-
-    TRY0(dest->open(dest->handle, &me), LOG0("error configuring muxer"));
-
-    TRY0(dest->submit_dsi(dest->handle, &dsi), LOG0("error: unable to submit dsi to muxer"));
 
     TRY( (userdata->avframe = av_frame_alloc()) != NULL, LOG0("out of memory"));
 #if LIBAVCODEC_VERSION_MAJOR >= 57
@@ -561,8 +560,9 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     av_init_packet(userdata->avpacket);
 #endif
 
+    TRY0(dest->open(dest->handle, &me), LOG0("error configuring muxer"));
+
     cleanup:
-    membuf_free(&dsi);
     return r;
 
 }

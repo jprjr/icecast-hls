@@ -424,34 +424,8 @@ static size_t plugin_write_init_callback(const void* src, size_t len, void* user
     return dest->submit_segment(dest->handle,&s) == 0 ? len : 0;
 }
 
-static int plugin_submit_dsi(void* ud, const membuf* data,const segment_receiver* dest) {
-    plugin_userdata* userdata = (plugin_userdata*)ud;
-
-    if(data->len > 0) {
-        if(membuf_copy(&userdata->dsi,data) != 0) {
-            fprintf(stderr,"[muxer:fmp4] error copying dsi\n");
-            return -1;
-        }
-
-        if(userdata->track->codec == FMP4_CODEC_OPUS) {
-            /* the dsi we get is a whole OpusHead for Ogg, convert
-             * to mp4 */
-            membuf_trim(&userdata->dsi,8);
-            userdata->dsi.x[0] = 0x00;
-            pack_u16be(&userdata->dsi.x[2],unpack_u16le(&userdata->dsi.x[2]));
-            pack_u32be(&userdata->dsi.x[4],unpack_u32le(&userdata->dsi.x[4]));
-            pack_u16be(&userdata->dsi.x[8],unpack_u16le(&userdata->dsi.x[8]));
-        }
-        if( fmp4_track_set_dsi(userdata->track, userdata->dsi.x, userdata->dsi.len) != FMP4_OK) {
-            fprintf(stderr,"[muxer:fmp4] error setting dsi\n");
-            return -1;
-        }
-    }
-
-    return fmp4_mux_write_init(&userdata->mux, plugin_write_init_callback, (void *)dest) == FMP4_OK ? 0 : -1;
-}
-
 static int plugin_open(void* ud, const packet_source* source, const segment_receiver* dest) {
+    int r;
     fmp4_sample_info info;
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
@@ -528,7 +502,35 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     fmp4_track_set_default_sample_info(userdata->track, &info);
 
-    return dest->open(dest->handle, &me);
+    if( (r = dest->open(dest->handle, &me)) != 0) {
+        fprintf(stderr,"[muxer:fmp4] error opening output\n");
+        return r;
+    }
+
+    if(source->dsi->len > 0) {
+        if(membuf_copy(&userdata->dsi,source->dsi) != 0) {
+            fprintf(stderr,"[muxer:fmp4] error copying dsi\n");
+            return -1;
+        }
+
+        if(userdata->track->codec == FMP4_CODEC_OPUS) {
+            /* the dsi we get is a whole OpusHead for Ogg, convert
+             * to mp4 format */
+            membuf_trim(&userdata->dsi,8);
+            userdata->dsi.x[0] = 0x00;
+            pack_u16be(&userdata->dsi.x[2],unpack_u16le(&userdata->dsi.x[2]));
+            pack_u32be(&userdata->dsi.x[4],unpack_u32le(&userdata->dsi.x[4]));
+            pack_u16be(&userdata->dsi.x[8],unpack_u16le(&userdata->dsi.x[8]));
+        }
+        if( fmp4_track_set_dsi(userdata->track, userdata->dsi.x, userdata->dsi.len) != FMP4_OK) {
+            fprintf(stderr,"[muxer:fmp4] error setting dsi\n");
+            return -1;
+        }
+
+        r = fmp4_mux_write_init(&userdata->mux, plugin_write_init_callback, (void *)dest) == FMP4_OK ? 0 : -1;
+    }
+
+    return r;
 }
 
 static uint32_t plugin_get_caps(void* ud) {
@@ -646,7 +648,6 @@ const muxer_plugin muxer_plugin_fmp4 = {
     plugin_config,
     plugin_open,
     plugin_close,
-    plugin_submit_dsi,
     plugin_submit_packet,
     plugin_submit_tags,
     plugin_flush,

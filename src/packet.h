@@ -54,6 +54,7 @@ struct packet_source {
     unsigned int padding; /* number of samples that need to be discarded */
     int roll_distance; /* number of frames that need to be discarded, -1 means 1 frame before current */
     uint8_t roll_type; /* roll type, 0 = roll, 1 = prol */
+    const membuf* dsi;
 };
 
 typedef struct packet_source packet_source;
@@ -69,7 +70,6 @@ typedef struct packet_receiver_caps packet_receiver_caps;
 
 typedef int (*packet_receiver_open_cb)(void* handle, const packet_source* source);
 typedef int (*packet_receiver_submit_packet_cb)(void* handle, const packet*);
-typedef int (*packet_receiver_submit_dsi_cb)(void* handle, const membuf*);
 typedef int (*packet_receiver_flush_cb)(void* handle);
 typedef uint32_t (*packet_receiver_get_caps_cb)(void* handle);
 typedef int (*packet_receiver_get_segment_info_cb)(const void* userdata, const packet_source_info*, packet_source_params*);
@@ -78,7 +78,6 @@ struct packet_receiver {
     void* handle;
     packet_receiver_open_cb open;
     packet_receiver_submit_packet_cb submit_packet;
-    packet_receiver_submit_dsi_cb submit_dsi;
     packet_receiver_flush_cb flush;
     packet_receiver_get_caps_cb get_caps;
     packet_receiver_get_segment_info_cb get_segment_info;
@@ -104,7 +103,6 @@ typedef struct packet_receiver packet_receiver;
     .handle = NULL, \
     .open = packet_receiver_open_null, \
     .submit_packet = packet_receiver_submit_packet_null,\
-    .submit_dsi = packet_receiver_submit_dsi_null,\
     .flush = packet_receiver_flush_null, \
     .get_caps = packet_receiver_get_caps_null, \
     .get_segment_info = packet_receiver_get_segment_info_null, \
@@ -136,7 +134,6 @@ int packet_copy(packet* dest, const packet* source);
 int packet_set_data(packet*, const void* src, size_t len);
 
 int packet_receiver_open_null(void* handle, const packet_source* source);
-int packet_receiver_submit_dsi_null(void* handle, const membuf* dsi);
 int packet_receiver_submit_packet_null(void* handle, const packet* packet);
 int packet_receiver_flush_null(void* handle);
 uint32_t packet_receiver_get_caps_null(void* handle);

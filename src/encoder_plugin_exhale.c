@@ -171,6 +171,8 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     userdata->buffer.duration = 0;
     userdata->buffer.sample_rate = source->sample_rate;
 
+    userdata->packet.sample_rate = source->sample_rate;
+
     if( (r = frame_ready(&userdata->buffer)) != 0) return r;
 
     me.codec       = CODEC_TYPE_AAC;
@@ -227,15 +229,11 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     dsi.x = usac_config;
     dsi.len = usac_config_size;
     dsi.a = 0;
+    me.dsi = &dsi;
 
     if(( r = dest->open(dest->handle, &me)) != 0) {
         fprintf(stderr,"[encoder:exhale] error opening muxer\n");
-        return r;
     }
-
-    if( (r = dest->submit_dsi(dest->handle,&dsi)) != 0) return r;
-
-    userdata->packet.sample_rate = source->sample_rate;
 
     return 0;
 }

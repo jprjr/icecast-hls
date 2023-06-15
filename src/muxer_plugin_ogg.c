@@ -83,11 +83,6 @@ static int muxer_plugin_ogg_open(void* ud, const packet_source* source, const se
     return userdata->plugin->open(userdata->handle, source, dest);
 }
 
-static int muxer_plugin_ogg_submit_dsi(void* ud, const strbuf* data, const segment_receiver* dest) {
-    muxer_plugin_ogg_userdata* userdata = (muxer_plugin_ogg_userdata*)ud;
-    return userdata->plugin->submit_dsi(userdata->handle,data,dest);
-}
-
 static int muxer_plugin_ogg_submit_packet(void* ud, const packet* p, const segment_receiver* dest) {
     muxer_plugin_ogg_userdata* userdata = (muxer_plugin_ogg_userdata*)ud;
     return userdata->plugin->submit_packet(userdata->handle,p,dest);
@@ -153,7 +148,6 @@ const muxer_plugin muxer_plugin_ogg = {
     muxer_plugin_ogg_config,
     muxer_plugin_ogg_open,
     muxer_plugin_ogg_close,
-    muxer_plugin_ogg_submit_dsi,
     muxer_plugin_ogg_submit_packet,
     muxer_plugin_ogg_submit_tags,
     muxer_plugin_ogg_flush,

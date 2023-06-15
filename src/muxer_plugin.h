@@ -18,7 +18,6 @@ typedef int (*muxer_plugin_open)(void* userdata, const packet_source* source, co
 
 typedef void (*muxer_plugin_close)(void* userdata);
 
-typedef int (*muxer_plugin_submit_dsi)(void* userdata, const membuf* data, const segment_receiver* dest);
 typedef int (*muxer_plugin_submit_packet)(void* userdata, const packet* packet, const segment_receiver* dest);
 typedef int (*muxer_plugin_submit_tags)(void* userdata, const taglist* tags, const segment_receiver* dest);
 typedef int (*muxer_plugin_flush)(void* userdata, const segment_receiver* dest);
@@ -34,7 +33,6 @@ struct muxer_plugin {
     muxer_plugin_config config;
     muxer_plugin_open open;
     muxer_plugin_close close;
-    muxer_plugin_submit_dsi submit_dsi;
     muxer_plugin_submit_packet submit_packet;
     muxer_plugin_submit_tags submit_tags;
     muxer_plugin_flush flush;

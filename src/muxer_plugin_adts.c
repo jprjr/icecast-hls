@@ -155,13 +155,6 @@ static int muxer_plugin_adts_submit_packet(void* ud, const packet* packet, const
     return dest->submit_segment(dest->handle,&s);
 }
 
-static int muxer_plugin_adts_submit_dsi(void* ud, const membuf* data,const segment_receiver* dest) {
-    (void)ud;
-    (void)data;
-    (void)dest;
-    return 0;
-}
-
 static int muxer_plugin_adts_flush(void* ud, const segment_receiver* dest) {
     (void)ud;
     return dest->flush(dest->handle);
@@ -216,7 +209,6 @@ const muxer_plugin muxer_plugin_adts = {
     muxer_plugin_adts_config,
     muxer_plugin_adts_open,
     muxer_plugin_adts_close,
-    muxer_plugin_adts_submit_dsi,
     muxer_plugin_adts_submit_packet,
     muxer_plugin_adts_submit_tags,
     muxer_plugin_adts_flush,

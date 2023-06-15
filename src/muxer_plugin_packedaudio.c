@@ -329,13 +329,6 @@ static void plugin_deinit(void) {
     return;
 }
 
-static int plugin_submit_dsi(void* ud, const membuf* data,const segment_receiver* dest) {
-    (void)ud;
-    (void)data;
-    (void)dest;
-    return 0;
-}
-
 static int plugin_config(void* ud, const strbuf* key, const strbuf* val) {
     (void)ud;
     (void)key;
@@ -372,7 +365,6 @@ const muxer_plugin muxer_plugin_packed_audio = {
     plugin_config,
     plugin_open,
     plugin_close,
-    plugin_submit_dsi,
     plugin_submit_packet,
     plugin_submit_tags,
     plugin_flush,

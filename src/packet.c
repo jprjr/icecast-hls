@@ -35,14 +35,6 @@ int packet_receiver_open_null(void* handle, const packet_source* source) {
     return -1;
 }
 
-int packet_receiver_submit_dsi_null(void* handle, const membuf* dsi) {
-    (void)handle;
-    (void)dsi;
-    fprintf(stderr,"[app error] packet_receiver submit_dsi not set\n");
-    abort();
-    return -1;
-}
-
 int packet_receiver_submit_packet_null(void* handle, const packet* packet) {
     (void)handle;
     (void)packet;

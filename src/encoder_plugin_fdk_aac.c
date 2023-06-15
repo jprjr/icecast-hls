@@ -176,6 +176,13 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
     ps_info.time_base = source->sample_rate;
     ps_info.frame_len = 1024;
 
+    userdata->packet.sample_rate = source->sample_rate;
+
+    userdata->buffer.format = SAMPLEFMT_S16;
+    userdata->buffer.channels = source->channels;
+    userdata->buffer.sample_rate = source->sample_rate;
+    userdata->buffer.duration = 0;
+
     if(source->channels > MAX_CHANNELS) {
         LOG2("unsupported channel config - requested %u channels, max is %u channels",(unsigned int)source->channels, (unsigned int)MAX_CHANNELS);
         return -1;
@@ -193,6 +200,11 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
 
     if( (r = dest->get_segment_info(dest->handle, &ps_info, &ps_params)) != 0) {
         LOG0("warning: error getting segment info");
+        return r;
+    }
+
+    if( (r = frame_ready(&userdata->buffer)) != 0) {
+        LOGERRNO("error allocating buffer frame");
         return r;
     }
 
@@ -295,6 +307,7 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
         }
     }
 
+
     /* TODO: should I use info.nDelay or info.nDelayCore here ?
      *
      * info.nDelay is delay with SBR delay, info.nDelayCore
@@ -319,35 +332,14 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
     me.sync_flag = 1;
     me.handle = userdata;
 
+    dsi.x = info.confBuf;
+    dsi.len = info.confSize;
+    me.dsi = &dsi;
+
     if(( r = dest->open(dest->handle, &me)) != 0) {
         LOG0("error opening muxer");
         return r;
     }
-
-    dsi.x = info.confBuf;
-    dsi.len = info.confSize;
-
-    if(( r = dest->submit_dsi(dest->handle,&dsi)) != 0) {
-        return r;
-    }
-
-    userdata->packet.sample_rate = source->sample_rate;
-
-    userdata->buffer.format = SAMPLEFMT_S16;
-    userdata->buffer.channels = source->channels;
-    userdata->buffer.sample_rate = source->sample_rate;
-    userdata->buffer.duration = 0;
-#if 0
-    if( (r = frame_fill(&userdata->buffer,me.padding)) != 0) {
-        LOGERRNO("error allocating buffer frame");
-        return r;
-    }
-#else
-    if( (r = frame_ready(&userdata->buffer)) != 0) {
-        LOGERRNO("error allocating buffer frame");
-        return r;
-    }
-#endif
 
     return 0;
 }
