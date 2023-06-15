@@ -41,7 +41,7 @@ int segment_source_set_params_null(void* segment_producer, const segment_params*
     return -1;
 }
 
-int segment_receiver_get_segment_params_null(void* segment_receiver, const segment_source_info* info, segment_params* params) {
+int segment_receiver_get_segment_info_null(const void* segment_receiver, const segment_source_info* info, segment_params* params) {
     (void)segment_receiver;
     (void)info;
     (void)params;

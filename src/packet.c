@@ -58,14 +58,6 @@ int packet_receiver_flush_null(void* handle) {
     return -1;
 }
 
-int packet_source_set_params_null(void* handle, const packet_source_params* params) {
-    (void)handle;
-    (void)params;
-    fprintf(stderr,"[app error] packet_source set_params not set\n");
-    abort();
-    return -1;
-}
-
 int packet_source_set_keyframes_null(void* handle, unsigned int keyframes) {
     (void)handle;
     (void)keyframes;
@@ -83,10 +75,20 @@ int packet_source_reset_null(void* handle, void* dest, int (*cb)(void*, const pa
     return -1;
 }
 
-int packet_source_set_params_ignore(void* handle, const packet_source_params* params) {
+uint32_t packet_receiver_get_caps_null(void* handle) {
     (void)handle;
-    (void)params;
-    return 0;
+    fprintf(stderr,"[app error] packet_receiver get_caps not set\n");
+    abort();
+    return -1;
+}
+
+int packet_receiver_get_segment_info_null(const void* userdata, const packet_source_info* p, packet_source_params* i) {
+    (void)userdata;
+    (void)p;
+    (void)i;
+    fprintf(stderr,"[app error] packet_receiver get_segment_info not set\n");
+    abort();
+    return -1;
 }
 
 const packet packet_zero = PACKET_ZERO;

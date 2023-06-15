@@ -44,6 +44,8 @@ struct segment_source {
     const strbuf* init_mimetype;
     const strbuf* media_ext;
     const strbuf* media_mimetype;
+    unsigned int time_base;
+    unsigned int frame_len;
 };
 typedef struct segment_source segment_source;
 
@@ -52,7 +54,7 @@ typedef struct segment_source segment_source;
  * the muxer. It has an open function (mapped to output_open),
  * so the muxer can tell the output about segment info */
 
-typedef int (*segment_receiver_get_segment_params_cb)(void* handle, const segment_source_info* info, segment_params* params);
+typedef int (*segment_receiver_get_segment_info_cb)(const void* handle, const segment_source_info* info, segment_params* params);
 typedef int (*segment_receiver_open_cb)(void* handle, const segment_source* source);
 typedef int (*segment_receiver_submit_segment_cb)(void* handle, const segment* segment);
 typedef int (*segment_receiver_submit_tags_cb)(void* handle, const taglist* tags);
@@ -60,18 +62,18 @@ typedef int (*segment_receiver_flush_cb)(void* handle);
 
 struct segment_receiver {
     void* handle;
-    segment_receiver_get_segment_params_cb get_segment_params;
     segment_receiver_open_cb open;
     segment_receiver_submit_segment_cb submit_segment;
     segment_receiver_submit_tags_cb submit_tags;
     segment_receiver_flush_cb flush;
+    segment_receiver_get_segment_info_cb get_segment_info;
 };
 
 typedef struct segment_receiver segment_receiver;
 
 /* finally some defines for allocating these things on the stack */
 
-#define SEGMENT_RECEIVER_ZERO { .handle = NULL, .get_segment_params = segment_receiver_get_segment_params_null, .open = segment_receiver_open_null, .submit_segment = segment_receiver_submit_segment_null, .submit_tags = segment_receiver_submit_tags_null, .flush = segment_receiver_flush_null }
+#define SEGMENT_RECEIVER_ZERO { .handle = NULL, .get_segment_info = segment_receiver_get_segment_info_null, .open = segment_receiver_open_null, .submit_segment = segment_receiver_submit_segment_null, .submit_tags = segment_receiver_submit_tags_null, .flush = segment_receiver_flush_null }
 
 #define SEGMENT_SOURCE_ZERO { .handle = NULL, .init_ext = NULL, .init_mimetype = NULL, .media_ext = NULL, .media_mimetype = NULL }
 #define SEGMENT_SOURCE_INFO_ZERO { .time_base = 0, .frame_len = 0 }
@@ -88,7 +90,7 @@ extern const segment_receiver segment_receiver_zero;
 extern const segment_source segment_source_zero;
 extern const segment segment_zero;
 
-int segment_receiver_get_segment_params_null(void* handle, const segment_source_info* info, segment_params* params);
+int segment_receiver_get_segment_info_null(const void* handle, const segment_source_info* info, segment_params* params);
 int segment_receiver_open_null(void* handle, const segment_source*);
 int segment_receiver_submit_segment_null(void* handle, const segment*);
 int segment_receiver_submit_tags_null(void* handle, const taglist*);

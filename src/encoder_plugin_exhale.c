@@ -138,12 +138,6 @@ static void plugin_close(void* ud) {
     free(userdata);
 }
 
-static int plugin_handle_packet_source_params(void* ud, const packet_source_params* params) {
-    plugin_userdata* userdata = (plugin_userdata*)ud;
-    userdata->tune_in_period = params->packets_per_segment;
-    return 0;
-}
-
 static int plugin_open(void* ud, const frame_source* source, const packet_receiver* dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
@@ -153,12 +147,24 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     unsigned int padding = 0;
     membuf dsi = STRBUF_ZERO;
     packet_source me = PACKET_SOURCE_ZERO;
+    packet_source_info ps_info = PACKET_SOURCE_INFO_ZERO;
+    packet_source_params ps_params = PACKET_SOURCE_PARAMS_ZERO;
     memset(usac_config,0,sizeof(usac_config));
+
+    ps_info.time_base = source->sample_rate;
+    ps_info.frame_len = userdata->frame_len;
 
     if( (r = check_sample_rate(source->sample_rate)) < 0) {
         fprintf(stderr,"[encoder:exhale] unsupported sample rate %u\n",source->sample_rate);
         return r;
     }
+
+    if( (r = dest->get_segment_info(dest->handle, &ps_info, &ps_params)) != 0) {
+        fprintf(stderr,"[encoder:exhale] error getting segment info\n");
+        return r;
+    }
+
+    userdata->tune_in_period = ps_params.packets_per_segment;
 
     userdata->buffer.format = SAMPLEFMT_S32;
     userdata->buffer.channels = source->channels;
@@ -177,7 +183,6 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     me.roll_distance = userdata->frame_len == 2048 ? 2 : 1;
     me.roll_type   = 1;
     me.handle      = userdata;
-    me.set_params  = plugin_handle_packet_source_params;
 
     /* simplifying some logic from the exhale app:
      * startLength = 1600 / 3200 (regular vs sbr)
@@ -195,11 +200,6 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     padding = (userdata->frame_len == 1024 ? 448 : 1982);
 
     if( (r = frame_fill(&userdata->buffer,padding)) != 0) return r;
-
-    if(( r = dest->open(dest->handle, &me)) != 0) {
-        fprintf(stderr,"[encoder:exhale] error opening muxer\n");
-        return r;
-    }
 
     if(userdata->tune_in_period == 0) {
         /* default to a 1-second tune in period */
@@ -227,6 +227,11 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     dsi.x = usac_config;
     dsi.len = usac_config_size;
     dsi.a = 0;
+
+    if(( r = dest->open(dest->handle, &me)) != 0) {
+        fprintf(stderr,"[encoder:exhale] error opening muxer\n");
+        return r;
+    }
 
     if( (r = dest->submit_dsi(dest->handle,&dsi)) != 0) return r;
 

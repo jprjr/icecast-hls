@@ -40,14 +40,14 @@ int output_create(output* out, const strbuf* name) {
     return 0;
 }
 
-int output_get_segment_params(const output* out, const segment_source_info* info, segment_params* params) {
+int output_get_segment_info(const output* out, const segment_source_info* info, segment_params* params) {
     int r = -1;
     uint64_t t;
     if(out->plugin == NULL || out->userdata == NULL) {
         fprintf(stderr,"[output] plugin not selected\n");
         return r;
     }
-    if( (r = out->plugin->get_segment_params(out->userdata,info,params)) != 0) return r;
+    if( (r = out->plugin->get_segment_info(out->userdata,info,params)) != 0) return r;
 
     if(params->segment_length == 0) {
         /* plugin didn't set a length so we set

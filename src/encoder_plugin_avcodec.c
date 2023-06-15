@@ -544,7 +544,6 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     me.frame_len = userdata->ctx->frame_size;
     me.sync_flag = userdata->ctx->codec_descriptor->props & AV_CODEC_PROP_INTRA_ONLY;
     me.padding = userdata->ctx->initial_padding;
-    me.set_params = packet_source_set_params_ignore;
     me.set_keyframes = set_keyframes;
     me.reset = reset_encoder;
 

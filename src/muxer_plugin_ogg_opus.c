@@ -187,12 +187,10 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     segment_source me = SEGMENT_SOURCE_ZERO;
     segment_source_info info = SEGMENT_SOURCE_INFO_ZERO;
     segment_params s_params = SEGMENT_PARAMS_ZERO;
-    packet_source_params params = PACKET_SOURCE_PARAMS_ZERO;
 
     info.time_base = source->sample_rate;
     info.frame_len = source->frame_len;
-    dest->get_segment_params(dest->handle,&info,&s_params);
-    params.packets_per_segment = s_params.packets_per_segment;
+    dest->get_segment_info(dest->handle,&info,&s_params);
 
     userdata->samples_per_segment = s_params.packets_per_segment * source->frame_len;
 
@@ -217,16 +215,12 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     me.media_ext = &ext_ogg;
     me.media_mimetype = &mime_ogg;
-#if 0
     me.time_base = source->sample_rate;
     me.frame_len = source->frame_len;
-#endif
 
     me.handle = userdata;
 
     TRY0(dest->open(dest->handle,&me),LOG0("error opening destination"));
-
-    TRY0(source->set_params(source->handle,&params),LOG0("error setting source params"));
 
     r = 0;
     cleanup:
@@ -471,6 +465,14 @@ static uint32_t plugin_get_caps(void* ud) {
     return MUXER_CAP_GLOBAL_HEADERS;
 }
 
+static int plugin_get_segment_info(const void* ud, const packet_source_info* s, const segment_receiver* dest, packet_source_params* i) {
+    (void)ud;
+    (void)s;
+    (void)dest;
+    (void)i;
+    return 0;
+}
+
 const muxer_plugin muxer_plugin_ogg_opus = {
     {.a = 0, .len = 8, .x = (uint8_t*)"ogg_opus" },
     plugin_init,
@@ -484,6 +486,7 @@ const muxer_plugin muxer_plugin_ogg_opus = {
     plugin_submit_tags,
     plugin_flush,
     plugin_get_caps,
+    plugin_get_segment_info,
 };
 
 #pragma GCC diagnostic push

@@ -45,6 +45,15 @@ int muxer_submit_tags(const muxer*, const taglist* tags);
 int muxer_flush(const muxer*);
 uint32_t muxer_get_caps(const muxer*);
 
+/* accepts a sample rate + frame length and
+ * returns the length of a segment and number
+ * of packets per segment, pretty much just used
+ * by exhale to configure a good tune-in period.
+ * the muxer plugin shouldn't NOT make changes or anything,
+ * this is strictly informative and may not even be called */
+int muxer_get_segment_info(const muxer*, const packet_source_info*, packet_source_params*);
+
+
 void muxer_dump_counters(const muxer*, const strbuf*);
 
 #ifdef __cplusplus

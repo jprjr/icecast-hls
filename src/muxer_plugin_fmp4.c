@@ -452,21 +452,18 @@ static int plugin_submit_dsi(void* ud, const membuf* data,const segment_receiver
 }
 
 static int plugin_open(void* ud, const packet_source* source, const segment_receiver* dest) {
-    int r;
     fmp4_sample_info info;
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
     segment_source me = SEGMENT_SOURCE_ZERO;
     segment_source_info s_info = SEGMENT_SOURCE_INFO_ZERO;
     segment_params s_params = SEGMENT_PARAMS_ZERO;
-    packet_source_params params = PACKET_SOURCE_PARAMS_ZERO;
 
     s_info.time_base = source->sample_rate;
     s_info.frame_len = source->frame_len;
-    dest->get_segment_params(dest->handle,&s_info,&s_params);
-    params.packets_per_segment = s_params.packets_per_segment;
+    dest->get_segment_info(dest->handle,&s_info,&s_params);
 
-    userdata->samples_per_segment = params.packets_per_segment * source->frame_len;
+    userdata->samples_per_segment = s_params.packets_per_segment * source->frame_len;
 
     userdata->track->stream_type = FMP4_STREAM_TYPE_AUDIO;
 
@@ -475,6 +472,8 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     me.media_ext      = &ext_m4s;
     me.init_mimetype  = &mime_mp4;
     me.media_mimetype = &mime_m4s;
+    me.time_base      = source->sample_rate;
+    me.frame_len      = source->frame_len;
 
     switch(source->codec) {
         case CODEC_TYPE_AAC: {
@@ -513,7 +512,6 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
         }
     }
 
-    if( (r = dest->open(dest->handle, &me)) != 0) return r;
 
     fmp4_track_set_language(userdata->track,"und");
     userdata->track->time_scale = source->sample_rate;
@@ -530,13 +528,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     fmp4_track_set_default_sample_info(userdata->track, &info);
 
-#if 0
-    me.time_base      = source->sample_rate;
-    me.frame_len      = source->frame_len;
-#endif
-
-    return source->set_params(source->handle, &params);
-
+    return dest->open(dest->handle, &me);
 }
 
 static uint32_t plugin_get_caps(void* ud) {
@@ -631,6 +623,21 @@ static void plugin_deinit(void) {
     return;
 }
 
+static int plugin_get_segment_info(const void* ud, const packet_source_info* s, const segment_receiver* dest, packet_source_params* i) {
+    (void)ud;
+
+    segment_source_info s_info;
+    segment_params s_params;
+
+    s_info.time_base = s->time_base;
+    s_info.frame_len = s->frame_len;
+
+    dest->get_segment_info(dest->handle,&s_info,&s_params);
+    i->segment_length = s_params.segment_length;
+    i->packets_per_segment = s_params.packets_per_segment;
+    return 0;
+}
+
 const muxer_plugin muxer_plugin_fmp4 = {
     { .a = 0, .len = 4, .x = (uint8_t*)"fmp4" },
     plugin_init,
@@ -644,4 +651,5 @@ const muxer_plugin muxer_plugin_fmp4 = {
     plugin_submit_tags,
     plugin_flush,
     plugin_get_caps,
+    plugin_get_segment_info,
 };

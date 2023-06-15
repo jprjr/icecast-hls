@@ -48,7 +48,7 @@ static int plugin_config(void* userdata, const strbuf* key, const strbuf* value)
     return 0;
 }
 
-static int plugin_get_segment_params(void* userdata, const segment_source_info* info, segment_params* params) {
+static int plugin_get_segment_info(const void* userdata, const segment_source_info* info, segment_params* params) {
     (void)userdata;
     (void)info;
     (void)params;
@@ -117,7 +117,6 @@ const output_plugin output_plugin_stdout = {
     plugin_deinit,
     plugin_create,
     plugin_config,
-    plugin_get_segment_params,
     plugin_open,
     plugin_close,
     plugin_set_time,
@@ -125,4 +124,5 @@ const output_plugin output_plugin_stdout = {
     plugin_submit_picture,
     plugin_submit_tags,
     plugin_flush,
+    plugin_get_segment_info,
 };

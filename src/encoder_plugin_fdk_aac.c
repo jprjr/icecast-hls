@@ -162,21 +162,6 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
     return -1;
 }
 
-static int plugin_handle_packet_source_params(void* ud, const packet_source_params* params) {
-    plugin_userdata* userdata = (plugin_userdata*)ud;
-    AACENC_ERROR e = AACENC_OK;
-    if( (e = aacEncoder_SetParam(userdata->aacEncoder, AACENC_HEADER_PERIOD, params->packets_per_segment)) != AACENC_OK) {
-        LOG1("error setting AAC header period %u", e);
-    }
-
-    if( (e = aacEncEncode(userdata->aacEncoder, NULL, NULL, NULL, NULL)) != AACENC_OK) {
-        LOG1("error re-initializing AAC encoder: %u", e);
-        return -1;
-    }
-
-    return 0;
-}
-
 static int plugin_open(void *ud, const frame_source* source, const packet_receiver* dest) {
     int r = 0;
     uint32_t muxer_caps;
@@ -184,7 +169,12 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
     AACENC_ERROR e = AACENC_OK;
     AACENC_InfoStruct info;
     packet_source me = PACKET_SOURCE_ZERO;
+    packet_source_info ps_info = PACKET_SOURCE_INFO_ZERO;
+    packet_source_params ps_params = PACKET_SOURCE_PARAMS_ZERO;
     membuf dsi = MEMBUF_ZERO;
+
+    ps_info.time_base = source->sample_rate;
+    ps_info.frame_len = 1024;
 
     if(source->channels > MAX_CHANNELS) {
         LOG2("unsupported channel config - requested %u channels, max is %u channels",(unsigned int)source->channels, (unsigned int)MAX_CHANNELS);
@@ -201,11 +191,24 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
         userdata->aot = AOT_SBR;
     }
 
+    if( (r = dest->get_segment_info(dest->handle, &ps_info, &ps_params)) != 0) {
+        LOG0("warning: error getting segment info");
+        return r;
+    }
+
     muxer_caps = dest->get_caps(dest->handle);
 
     if( (e = aacEncOpen(&userdata->aacEncoder, 0, 0)) !=  AACENC_OK) {
         LOG1("error opening AAC encoder: %u", e);
         return -1;
+    }
+
+    if( (muxer_caps & MUXER_CAP_GLOBAL_HEADERS) == 0) {
+        ps_params.packets_per_segment = 0;
+    }
+
+    if( (e = aacEncoder_SetParam(userdata->aacEncoder, AACENC_HEADER_PERIOD, ps_params.packets_per_segment)) != AACENC_OK) {
+        LOG1("error setting AAC header period %u", e);
     }
 
     if( (e = aacEncoder_SetParam(userdata->aacEncoder, AACENC_AOT, userdata->aot)) != AACENC_OK) {
@@ -315,7 +318,6 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
     me.roll_distance = -1;
     me.sync_flag = 1;
     me.handle = userdata;
-    me.set_params = plugin_handle_packet_source_params;
 
     if(( r = dest->open(dest->handle, &me)) != 0) {
         LOG0("error opening muxer");

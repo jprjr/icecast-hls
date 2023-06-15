@@ -119,9 +119,9 @@ static void plugin_deinit(void) {
     return;
 }
 
-static int plugin_get_segment_params(void* ud, const segment_source_info* info, segment_params* params) {
-    plugin_userdata* userdata = (plugin_userdata*)ud;
-    return hls_get_segment_params(&userdata->hls, info, params);
+static int plugin_get_segment_info(const void* ud, const segment_source_info* info, segment_params* params) {
+    const plugin_userdata* userdata = (const plugin_userdata*)ud;
+    return hls_get_segment_info(&userdata->hls, info, params);
 }
 
 static int plugin_open(void* ud, const segment_source* source) {
@@ -280,7 +280,6 @@ const output_plugin output_plugin_folder = {
     plugin_deinit,
     plugin_create,
     plugin_config,
-    plugin_get_segment_params,
     plugin_open,
     plugin_close,
     plugin_set_time,
@@ -288,4 +287,5 @@ const output_plugin output_plugin_folder = {
     plugin_submit_picture,
     plugin_submit_tags,
     plugin_flush,
+    plugin_get_segment_info,
 };

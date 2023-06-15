@@ -127,6 +127,22 @@ static int muxer_plugin_ogg_init(void) {
 
 static void muxer_plugin_ogg_deinit(void) {
     muxer_plugin_ogg_opus.deinit();
+    muxer_plugin_ogg_flac.deinit();
+}
+
+static int muxer_plugin_ogg_get_segment_info(const void* ud, const packet_source_info* s, const segment_receiver* dest, packet_source_params* i) {
+    (void)ud;
+
+    segment_source_info s_info;
+    segment_params s_params;
+
+    s_info.time_base = s->time_base;
+    s_info.frame_len = s->frame_len;
+
+    dest->get_segment_info(dest->handle,&s_info,&s_params);
+    i->segment_length = s_params.segment_length;
+    i->packets_per_segment = s_params.packets_per_segment;
+    return 0;
 }
 
 const muxer_plugin muxer_plugin_ogg = {
@@ -142,5 +158,6 @@ const muxer_plugin muxer_plugin_ogg = {
     muxer_plugin_ogg_submit_tags,
     muxer_plugin_ogg_flush,
     muxer_plugin_ogg_get_caps,
+    muxer_plugin_ogg_get_segment_info,
 };
 

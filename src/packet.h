@@ -14,16 +14,19 @@ struct packet {
 };
 typedef struct packet packet;
 
+struct packet_source_info {
+    unsigned int time_base;
+    unsigned int frame_len;
+};
+typedef struct packet_source_info packet_source_info;
 
 /* this struct is sent by muxers (packet receivers) to
  * set params on the encoder (packet source) */
 struct packet_source_params {
+    size_t segment_length; /* given in milliseconds */
     size_t packets_per_segment;
 };
-
 typedef struct packet_source_params packet_source_params;
-
-typedef int (*packet_source_set_params_cb)(void* handle, const packet_source_params* params);
 
 /* state that the next (x) packets need to be keyframe packets,
  * used by the ogg muxer + libopus */
@@ -40,7 +43,6 @@ typedef int (*packet_source_reset_cb)(void* handle, void* dest, int (*cb)(void*,
 struct packet_source {
     void* handle;
     const strbuf* name;
-    packet_source_set_params_cb set_params;
     packet_source_set_keyframes_cb set_keyframes;
     packet_source_reset_cb reset;
     codec_type codec;
@@ -70,6 +72,7 @@ typedef int (*packet_receiver_submit_packet_cb)(void* handle, const packet*);
 typedef int (*packet_receiver_submit_dsi_cb)(void* handle, const membuf*);
 typedef int (*packet_receiver_flush_cb)(void* handle);
 typedef uint32_t (*packet_receiver_get_caps_cb)(void* handle);
+typedef int (*packet_receiver_get_segment_info_cb)(const void* userdata, const packet_source_info*, packet_source_params*);
 
 struct packet_receiver {
     void* handle;
@@ -78,6 +81,7 @@ struct packet_receiver {
     packet_receiver_submit_dsi_cb submit_dsi;
     packet_receiver_flush_cb flush;
     packet_receiver_get_caps_cb get_caps;
+    packet_receiver_get_segment_info_cb get_segment_info;
 };
 
 typedef struct packet_receiver packet_receiver;
@@ -91,7 +95,8 @@ typedef struct packet_receiver packet_receiver;
     .pts = 0 \
 }
 
-#define PACKET_SOURCE_PARAMS_ZERO { .packets_per_segment = 0 }
+#define PACKET_SOURCE_INFO_ZERO { .time_base = 0, .frame_len = 0 }
+#define PACKET_SOURCE_PARAMS_ZERO { .segment_length = 0, .packets_per_segment = 0 }
 
 #define PACKET_RECEIVER_CAPS_ZERO { .has_global_header = 0 }
 
@@ -101,12 +106,13 @@ typedef struct packet_receiver packet_receiver;
     .submit_packet = packet_receiver_submit_packet_null,\
     .submit_dsi = packet_receiver_submit_dsi_null,\
     .flush = packet_receiver_flush_null, \
+    .get_caps = packet_receiver_get_caps_null, \
+    .get_segment_info = packet_receiver_get_segment_info_null, \
 }
 
 #define PACKET_SOURCE_ZERO { \
     .handle = NULL, \
     .name = NULL, \
-    .set_params = packet_source_set_params_null, \
     .set_keyframes = packet_source_set_keyframes_null, \
     .reset = packet_source_reset_null, \
     .codec = CODEC_TYPE_UNKNOWN, \
@@ -133,10 +139,11 @@ int packet_receiver_open_null(void* handle, const packet_source* source);
 int packet_receiver_submit_dsi_null(void* handle, const membuf* dsi);
 int packet_receiver_submit_packet_null(void* handle, const packet* packet);
 int packet_receiver_flush_null(void* handle);
-int packet_source_set_params_null(void* handle, const packet_source_params* params);
+uint32_t packet_receiver_get_caps_null(void* handle);
+int packet_receiver_get_segment_info_null(const void* userdata, const packet_source_info*, packet_source_params*);
+
 int packet_source_set_keyframes_null(void* handle, unsigned int keyframes);
 int packet_source_reset_null(void* handle, void* dest, int (*cb)(void*, const packet*));
-int packet_source_set_params_ignore(void* handle, const packet_source_params* params);
 
 extern const packet packet_zero;
 extern const packet_receiver packet_receiver_zero;

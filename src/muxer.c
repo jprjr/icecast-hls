@@ -195,6 +195,10 @@ uint32_t muxer_get_caps(const muxer* m) {
     return m->plugin->get_caps(m->userdata);
 }
 
+int muxer_get_segment_info(const muxer* m, const packet_source_info* s, packet_source_params* i) {
+    return m->plugin->get_segment_info(m->userdata,s,&m->segment_receiver,i);
+}
+
 void muxer_dump_counters(const muxer* in, const strbuf* prefix) {
     ich_tm tm;
     ich_time_to_tm(&tm,&in->ts);

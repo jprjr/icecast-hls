@@ -118,7 +118,6 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     segment_source me = SEGMENT_SOURCE_ZERO;
     segment_source_info s_info = SEGMENT_SOURCE_INFO_ZERO;
     segment_params s_params = SEGMENT_PARAMS_ZERO;
-    packet_source_params params = PACKET_SOURCE_PARAMS_ZERO;
 
     unsigned int sample_rate = source->sample_rate;
     unsigned int channels = source->channels;
@@ -132,9 +131,11 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     s_info.time_base = 90000;
     s_info.frame_len = userdata->mpeg_samples_per_packet;
-    dest->get_segment_params(dest->handle,&s_info, &s_params);
-    params.packets_per_segment = s_params.packets_per_segment;
+    dest->get_segment_info(dest->handle,&s_info, &s_params);
+
     me.handle = userdata;
+    me.time_base = 90000;
+    me.frame_len = userdata->mpeg_samples_per_packet;
 
     switch(source->codec) {
         case CODEC_TYPE_AAC: {
@@ -215,7 +216,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     userdata->ts -= (uint64_t)source->padding * (uint64_t)90000 / (uint64_t)source->sample_rate;
 
-    return source->set_params(source->handle, &params);
+    return 0;
 }
 
 
@@ -312,7 +313,7 @@ static int plugin_submit_tags(void* ud, const taglist* tags, const segment_recei
     int r;
     (void)dest;
 
-    if( (r = taglist_deep_copy(&userdata->taglist,tags)) != 0) { 
+    if( (r = taglist_deep_copy(&userdata->taglist,tags)) != 0) {
         LOGERRNO("error copying tags");
         return r;
     }
@@ -347,6 +348,22 @@ static uint32_t plugin_get_caps(void* ud) {
     return 0;
 }
 
+static int plugin_get_segment_info(const void* ud, const packet_source_info* s, const segment_receiver* dest, packet_source_params* i) {
+    (void)ud;
+
+    segment_source_info s_info;
+    segment_params s_params;
+
+    s_info.time_base = 90000;
+    s_info.frame_len = s->frame_len * 90000 / s->time_base;
+
+    dest->get_segment_info(dest->handle,&s_info,&s_params);
+
+    i->segment_length = s_params.segment_length;
+    i->packets_per_segment = s_params.packets_per_segment;
+    return 0;
+}
+
 const muxer_plugin muxer_plugin_packed_audio = {
     {.a = 0, .len = 12, .x = (uint8_t*)"packed-audio" },
     plugin_init,
@@ -360,5 +377,6 @@ const muxer_plugin muxer_plugin_packed_audio = {
     plugin_submit_tags,
     plugin_flush,
     plugin_get_caps,
+    plugin_get_segment_info,
 };
 

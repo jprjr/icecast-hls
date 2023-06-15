@@ -363,7 +363,6 @@ static int encoder_plugin_opus_open(void *ud, const frame_source* source, const 
     me.padding = lookahead;
     me.sync_flag = 1;
     me.handle = userdata;
-    me.set_params = packet_source_set_params_ignore;
     me.set_keyframes = encoder_plugin_opus_set_keyframes;
     me.reset = encoder_plugin_opus_reset;
 

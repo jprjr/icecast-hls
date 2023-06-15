@@ -16,7 +16,6 @@ typedef void (*output_plugin_close)(void* userdata);
 
 typedef int (*output_plugin_config)(void* userdata, const strbuf* key, const strbuf* value);
 
-typedef int (*output_plugin_get_segment_params)(void* userdata, const segment_source_info* info, segment_params* params);
 typedef int (*output_plugin_open)(void* userdata, const segment_source* source);
 
 typedef int (*output_plugin_submit_segment)(void* userdata, const segment* segment);
@@ -25,7 +24,7 @@ typedef int (*output_plugin_submit_tags)(void* userdata, const taglist* tags);
 typedef int (*output_plugin_flush)(void* userdata);
 typedef int (*output_plugin_set_time)(void* userdata, const ich_time* now);
 
-typedef unsigned int (*output_plugin_get_segment_length)(void* userdata);
+typedef int (*output_plugin_get_segment_info)(const void* userdata, const segment_source_info* info, segment_params* params);
 
 struct output_plugin {
     const strbuf name;
@@ -33,7 +32,6 @@ struct output_plugin {
     output_plugin_deinit deinit;
     output_plugin_create create;
     output_plugin_config config;
-    output_plugin_get_segment_params get_segment_params;
     output_plugin_open open;
     output_plugin_close close;
     output_plugin_set_time set_time;
@@ -41,6 +39,7 @@ struct output_plugin {
     output_plugin_submit_picture submit_picture;
     output_plugin_submit_tags submit_tags;
     output_plugin_flush flush;
+    output_plugin_get_segment_info get_segment_info;
 };
 
 typedef struct output_plugin output_plugin;

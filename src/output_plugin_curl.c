@@ -495,9 +495,9 @@ static int output_plugin_curl_config(void* ud, const strbuf* key, const strbuf* 
     return -1;
 }
 
-static int output_plugin_curl_get_segment_params(void* ud, const segment_source_info* info, segment_params* params) {
-    output_plugin_curl_userdata* userdata = (output_plugin_curl_userdata*)ud;
-    return hls_get_segment_params(&userdata->hls, info, params);
+static int output_plugin_curl_get_segment_info(const void* ud, const segment_source_info* info, segment_params* params) {
+    const output_plugin_curl_userdata* userdata = (const output_plugin_curl_userdata*)ud;
+    return hls_get_segment_info(&userdata->hls, info, params);
 }
 
 static int output_plugin_curl_open(void* ud, const segment_source* source) {
@@ -693,7 +693,6 @@ const output_plugin output_plugin_curl = {
     output_plugin_curl_deinit,
     output_plugin_curl_create,
     output_plugin_curl_config,
-    output_plugin_curl_get_segment_params,
     output_plugin_curl_open,
     output_plugin_curl_close,
     output_plugin_curl_set_time,
@@ -701,4 +700,5 @@ const output_plugin output_plugin_curl = {
     output_plugin_curl_submit_picture,
     output_plugin_curl_submit_tags,
     output_plugin_curl_flush,
+    output_plugin_curl_get_segment_info,
 };

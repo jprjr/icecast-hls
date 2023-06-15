@@ -222,7 +222,7 @@ static int output_plugin_icecast_config(void* ud, const strbuf* key, const strbu
     return -1;
 }
 
-static int output_plugin_icecast_get_segment_params(void* ud, const segment_source_info* info, segment_params* params) {
+static int output_plugin_icecast_get_segment_info(const void* ud, const segment_source_info* info, segment_params* params) {
     (void)ud;
     (void)info;
 
@@ -548,7 +548,6 @@ const output_plugin output_plugin_icecast = {
     output_plugin_icecast_deinit,
     output_plugin_icecast_create,
     output_plugin_icecast_config,
-    output_plugin_icecast_get_segment_params,
     output_plugin_icecast_open,
     output_plugin_icecast_close,
     output_plugin_icecast_set_time,
@@ -556,4 +555,5 @@ const output_plugin output_plugin_icecast = {
     output_plugin_icecast_submit_picture,
     output_plugin_icecast_submit_tags,
     output_plugin_icecast_flush,
+    output_plugin_icecast_get_segment_info,
 };
