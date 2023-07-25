@@ -1,7 +1,7 @@
 #include "samplefmt.h"
 
 #include <string.h>
-static const char * const samplefmt_strs[13] = {
+static const char * const samplefmt_strs[] = {
     "unnkown",
     "u8",
     "u8p",
@@ -14,7 +14,8 @@ static const char * const samplefmt_strs[13] = {
     "float",
     "floatp",
     "double",
-    "doublep"
+    "doublep",
+    "binary"
 };
 
 const char* samplefmt_str(samplefmt f) {

@@ -7,10 +7,12 @@
 struct decoder {
     void* userdata;
     const decoder_plugin* plugin;
-    tag_handler tag_handler;
     frame_receiver frame_receiver;
+    frame_source frame_source;
     size_t counter;
     ich_time ts;
+    frame frame;
+    uint64_t pts;
 };
 
 typedef struct decoder decoder;
@@ -34,11 +36,15 @@ int decoder_create(decoder *dec, const strbuf* plugin_name);
 int decoder_config(const decoder* dec, const strbuf* name, const strbuf* value);
 
 /* try to open the decoder */
-int decoder_open(decoder* dec, input* in);
+int decoder_open(decoder* dec, const packet_source* src);
 
-/* runs the decoder plugin for 1 frame of audio, submitting any
- * metadata it finds as it goes, returns 1 on EOF, -1 on error */
-int decoder_run(decoder* dec);
+int decoder_submit_packet(decoder* dec, const packet* p);
+
+/* flush out any remaining frames */
+int decoder_flush(decoder* dec);
+
+/* reset the state to start decoding a new stream */
+int decoder_reset(const decoder* dec);
 
 void decoder_dump_counters(const decoder* dec, const strbuf* prefix);
 

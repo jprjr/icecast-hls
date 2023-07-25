@@ -3,6 +3,7 @@
 
 #include "strbuf.h"
 #include "input.h"
+#include "demuxer.h"
 #include "decoder.h"
 #include "filter.h"
 #include "membuf.h"
@@ -13,14 +14,13 @@
 
 struct source {
     input input;
+    demuxer demuxer;
     decoder decoder;
     filter filter;
     uint8_t configuring;
     tag_handler tag_handler;
-    frame_receiver frame_destination;
+    frame_receiver frame_receiver;
     taglist tagcache; /* to hold tags that we find during open, but before run */
-    frame_source frame_source; /* during open, the decoder/filter will "open" on a dummy
-    destination that just copies the source info, which is used during source_open_dest */
 };
 
 typedef struct source source;
@@ -40,11 +40,6 @@ void source_free(source*);
 int source_config(source* s, const strbuf* key, const strbuf* val);
 
 int source_open(source* s);
-
-/* unlike the decoders etc, during open audioconfig is *not* submitted,
- * that gets delayed until we start opening destinations, the destination will
- * call this to get the pipeline ready */
-int source_open_dest(const source* s, const frame_receiver* dest);
 
 int source_run(source* s);
 

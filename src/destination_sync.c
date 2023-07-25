@@ -24,6 +24,7 @@ void destination_sync_free(destination_sync* sync) {
 int destination_sync_run(destination_sync *sync) {
     int ret = -1;
 
+    frame_source src;
     frame f;
     taglist tags;
     taglist id3_tags;
@@ -34,6 +35,7 @@ int destination_sync_run(destination_sync *sync) {
     taglist_init(&tags);
     taglist_init(&id3_tags);
     frame_init(&f);
+    membuf_init(&src.packet_source.dsi);
 
     for(;;) {
         thread_signal_wait(&sync->ready, THREAD_SIGNAL_WAIT_INFINITE);
@@ -47,9 +49,20 @@ int destination_sync_run(destination_sync *sync) {
                 ret = -1;
                 goto cleanup;
             }
-            case DESTINATION_SYNC_EOF: {
-                ret = sync->frame_receiver.flush(sync->frame_receiver.handle);
-                goto cleanup;
+            case DESTINATION_SYNC_OPEN: {
+                if(frame_source_copy(&src,thread_atomic_ptr_load(&sync->data)) < 0) {
+                    ret = -1;
+                    goto cleanup;
+                }
+
+                thread_atomic_int_store(&sync->status,0);
+                thread_signal_raise(&sync->consumed);
+
+                if(sync->frame_receiver.open(sync->frame_receiver.handle,&src) < 0) {
+                    ret = -1;
+                    goto cleanup;
+                }
+                break;
             }
             case DESTINATION_SYNC_FRAME: {
                 /* TODO is making a deep copy needed? */
@@ -92,6 +105,36 @@ int destination_sync_run(destination_sync *sync) {
                 }
 
                 break;
+            }
+
+            case DESTINATION_SYNC_FLUSH: {
+                thread_atomic_int_store(&sync->status,0);
+                thread_signal_raise(&sync->consumed);
+
+                if(sync->frame_receiver.flush(sync->frame_receiver.handle) < 0) {
+                    ret = -1;
+                    goto cleanup;
+                }
+                break;
+            }
+
+            case DESTINATION_SYNC_RESET: {
+                thread_atomic_int_store(&sync->status,0);
+                thread_signal_raise(&sync->consumed);
+
+                if(sync->frame_receiver.reset(sync->frame_receiver.handle) < 0) {
+                    ret = -1;
+                    goto cleanup;
+                }
+                break;
+            }
+
+            case DESTINATION_SYNC_EOF: {
+                thread_atomic_int_store(&sync->status,0);
+                thread_signal_raise(&sync->consumed);
+
+                ret = sync->frame_receiver.close(sync->frame_receiver.handle);
+                goto cleanup;
             }
         }
     }

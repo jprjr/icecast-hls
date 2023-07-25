@@ -21,6 +21,8 @@
 #define LOGCURLE(s,e) LOG1(s": %s", curl_easy_strerror(e))
 #define LOGINT(s, i) LOG1(s": %d", i)
 
+static STRBUF_CONST(plugin_name,"curl");
+
 struct output_plugin_curl_userdata {
     hls hls;
     strbuf tmp;
@@ -292,9 +294,12 @@ static void output_plugin_curl_deinit(void) {
     curl_global_cleanup();
 }
 
-static void* output_plugin_curl_create(void) {
-    output_plugin_curl_userdata* userdata = (output_plugin_curl_userdata*)malloc(sizeof(output_plugin_curl_userdata));
-    if(userdata == NULL) return userdata;
+static size_t output_plugin_curl_size(void) {
+    return sizeof(output_plugin_curl_userdata);
+}
+
+static int output_plugin_curl_create(void* ud) {
+    output_plugin_curl_userdata* userdata = (output_plugin_curl_userdata*)ud;
 
     strbuf_init(&userdata->tmp);
     strbuf_init(&userdata->url);
@@ -327,7 +332,7 @@ static void* output_plugin_curl_create(void) {
     userdata->aws = 2; /* unset */
     userdata->delete = 1;
 
-    return userdata;
+    return 0;
 }
 
 static int output_plugin_curl_config(void* ud, const strbuf* key, const strbuf* value) {
@@ -651,7 +656,6 @@ static void output_plugin_curl_close(void* ud) {
         curl_slist_free_all(userdata->headers);
     }
 
-    free(userdata);
 }
 
 static int output_plugin_curl_set_time(void* ud, const ich_time* now) {
@@ -681,6 +685,11 @@ static int output_plugin_curl_flush(void* ud) {
     return hls_flush(&userdata->hls);
 }
 
+static int output_plugin_curl_reset(void* ud) {
+    output_plugin_curl_userdata* userdata = (output_plugin_curl_userdata*)ud;
+    return hls_reset(&userdata->hls);
+}
+
 static int output_plugin_curl_submit_tags(void* ud, const taglist* tags) {
     (void)ud;
     (void)tags;
@@ -688,7 +697,8 @@ static int output_plugin_curl_submit_tags(void* ud, const taglist* tags) {
 }
 
 const output_plugin output_plugin_curl = {
-    { .a = 0, .len = 6, .x = (uint8_t*)"curl" },
+    plugin_name,
+    output_plugin_curl_size,
     output_plugin_curl_init,
     output_plugin_curl_deinit,
     output_plugin_curl_create,
@@ -700,5 +710,6 @@ const output_plugin output_plugin_curl = {
     output_plugin_curl_submit_picture,
     output_plugin_curl_submit_tags,
     output_plugin_curl_flush,
+    output_plugin_curl_reset,
     output_plugin_curl_get_segment_info,
 };

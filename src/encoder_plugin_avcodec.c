@@ -9,9 +9,6 @@
 #include <libavutil/channel_layout.h>
 #include <libavutil/dict.h>
 
-#include "pack_u32be.h"
-#include "pack_u16be.h"
-
 #include <stdlib.h>
 
 #define LOG0(fmt) fprintf(stderr, "[encoder:avcodec] " fmt "\n")
@@ -20,6 +17,8 @@
 
 #define TRY0(exp, act) if( (r = (exp)) != 0 ) { act; goto cleanup; }
 #define TRY(exp, act) if(!(exp)) { act; r = -1; goto cleanup; }
+
+static STRBUF_CONST(plugin_name,"avcodec");
 
 struct plugin_userdata {
     const AVCodec* codec;
@@ -31,10 +30,10 @@ struct plugin_userdata {
     frame buffer;
 
     unsigned int sample_rate;
-    unsigned int channels;
+    uint64_t channel_layout;
     enum AVSampleFormat sample_fmt;
     uint32_t muxer_caps;
-    strbuf dsi;
+    packet_source me;
 };
 typedef struct plugin_userdata plugin_userdata;
 
@@ -79,19 +78,24 @@ static int drain_packets(plugin_userdata* userdata, const packet_receiver* dest,
         if(userdata->avpacket->duration == 0) {
             if(!flushing) {
                 LOG0("error, received a packet with zero duration");
-                return AVERROR_EXTERNAL;
+                av = AVERROR_EXTERNAL;
+                goto complete;
             }
-            return AVERROR_EOF;
+            av = AVERROR_EOF;
+            goto complete;
         }
 
         if(avpacket_to_packet(&userdata->packet,userdata->avpacket) != 0) {
           LOG0("unable to convert packet");
-          return AVERROR_EXTERNAL;
+          av = AVERROR_EXTERNAL;
+          goto complete;
         }
+        userdata->packet.sample_rate = userdata->sample_rate;
 
         if(dest->submit_packet(dest->handle, &userdata->packet) != 0) {
           LOG0("unable to send packet");
-          return AVERROR_EXTERNAL;
+          av = AVERROR_EXTERNAL;
+          goto complete;
         }
     }
 
@@ -99,6 +103,7 @@ static int drain_packets(plugin_userdata* userdata, const packet_receiver* dest,
     if(av == 0) av = AVERROR_EOF;
 #endif
 
+    complete:
     return av;
 }
 
@@ -114,10 +119,11 @@ static int open_encoder(plugin_userdata* userdata) {
     userdata->ctx->time_base.den = userdata->sample_rate;
     userdata->ctx->sample_rate   = userdata->sample_rate;
     userdata->ctx->sample_fmt    = userdata->sample_fmt;
+
 #if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
-    av_channel_layout_default(&userdata->ctx->ch_layout,userdata->channels);
+    av_channel_layout_from_mask(&userdata->ctx->ch_layout,userdata->channel_layout);
 #else
-    userdata->ctx->channel_layout = av_get_default_channel_layout(userdata->channels);
+    userdata->ctx->channel_layout = userdata->channel_layout;
 #endif
 
     if(userdata->codec_config != NULL) {
@@ -157,9 +163,13 @@ static void plugin_deinit(void) {
     return;
 }
 
-static void* plugin_create(void) {
-    plugin_userdata* userdata = (plugin_userdata*)malloc(sizeof(plugin_userdata));
-    if(userdata == NULL) return NULL;
+static size_t plugin_size(void) {
+    return sizeof(plugin_userdata);
+}
+
+static int plugin_create(void* ud) {
+    plugin_userdata* userdata = (plugin_userdata*)ud;
+
     userdata->codec = NULL;
     userdata->ctx = NULL;
     userdata->avframe = NULL;
@@ -168,8 +178,9 @@ static void* plugin_create(void) {
     frame_init(&userdata->buffer);
     frame_init(&userdata->buffer);
     packet_init(&userdata->packet);
-    strbuf_init(&userdata->dsi);
-    return userdata;
+    userdata->me = packet_source_zero;
+
+    return 0;
 }
 
 static void plugin_close(void* ud) {
@@ -187,8 +198,8 @@ static void plugin_close(void* ud) {
     if(userdata->codec_config != NULL) av_dict_free(&userdata->codec_config);
     frame_free(&userdata->buffer);
     packet_free(&userdata->packet);
-    strbuf_free(&userdata->dsi);
-    free(userdata);
+    strbuf_free(&userdata->me.dsi);
+
     return;
 }
 
@@ -223,64 +234,18 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
     return r;
 }
 
-static int set_keyframes(void* ud, unsigned int keyframes) {
-    (void)ud;
-    (void)keyframes;
-    return -1;
-}
-
-struct reset_wrapper {
-    void* dest;
-    int (*cb)(void*, const packet*);
-};
-
-typedef struct reset_wrapper reset_wrapper;
-
-static int reset_wrapper_cb(void* handle, const packet* p) {
-    reset_wrapper* wrap = (reset_wrapper*) handle;
-    return wrap->cb(wrap->dest,p);
-}
-
-static int reset_encoder(void* ud, void* dest, int (*cb)(void*, const packet*)) {
+static int plugin_reset(void* ud) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
-    int r;
-    int av;
-    char averrbuf[128];
+    if(userdata->ctx != NULL) avcodec_free_context(&userdata->ctx);
+    strbuf_reset(&userdata->me.dsi);
 
-    reset_wrapper wrap;
-    wrap.dest = dest;
-    wrap.cb = cb;
-
-    packet_receiver recv;
-    recv.handle = &wrap;
-    recv.submit_packet = reset_wrapper_cb;
-
-    if(userdata->ctx != NULL) {
-
-#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(57,64,0) /* ffmpeg-3.2 */
-        TRY( (av = avcodec_send_frame(userdata->ctx,NULL)) >= 0,
-          av_strerror(av, averrbuf, sizeof(averrbuf));
-          LOG1("unable to flush encoder: %s",averrbuf));
-#endif
-        TRY( (av = drain_packets(userdata,&recv,1)) == AVERROR_EOF,
-          av_strerror(av, averrbuf, sizeof(averrbuf));
-          LOG1("flush: error receiving packet: %s",averrbuf));
-        avcodec_free_context(&userdata->ctx);
-    }
-
-    r = open_encoder(userdata);
-    cleanup:
-    return r;
+    return 0;
 }
 
 static int plugin_open(void* ud, const frame_source* source, const packet_receiver *dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
-    uint32_t tmp;
-    uint32_t u;
-
-    packet_source me = PACKET_SOURCE_ZERO;
 
     userdata->muxer_caps = dest->get_caps(dest->handle);
 
@@ -289,242 +254,56 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
             LOG0("no encoder specified and unable to find a default"));
     }
 
-    userdata->sample_rate = source->sample_rate;
-    userdata->channels = source->channels;
+    userdata->sample_rate    = source->sample_rate;
+    userdata->channel_layout = source->channel_layout;
     TRY( (userdata->sample_fmt = find_best_format(userdata->codec,samplefmt_to_avsampleformat(source->format))) != AV_SAMPLE_FMT_NONE,
         LOG0("unable to find a suitable sample format"));
 
     TRY(open_encoder(userdata) == 0, LOG0("error opening encoder"));
 
+    if(userdata->ctx->extradata_size > 0) {
+        TRY0(membuf_append(&userdata->me.dsi, userdata->ctx->extradata, userdata->ctx->extradata_size),
+        LOG0("out of memory"));
+    }
+
     switch(userdata->codec->id) {
         case AV_CODEC_ID_AAC: {
-            me.codec = CODEC_TYPE_AAC;
-            me.profile = userdata->ctx->profile + 1;
-            me.roll_distance = -1;
-            TRY(userdata->ctx->extradata_size > 0, LOG0("aac missing extradata"));
-            TRY0(membuf_append(&userdata->dsi, userdata->ctx->extradata, userdata->ctx->extradata_size),
-                LOG0("out of memory"));
+            userdata->me.codec = CODEC_TYPE_AAC;
+            userdata->me.profile = userdata->ctx->profile + 1;
+            userdata->me.roll_distance = -1;
             break;
         }
 
         case AV_CODEC_ID_ALAC: {
-            me.codec = CODEC_TYPE_ALAC;
-            TRY(userdata->ctx->extradata_size > 0, LOG0("alac missing extradata"));
-
-            /* ffmpeg's alac encoder includes the mp4 box headers (size, 'alac', flags) */
-            TRY(userdata->ctx->extradata_size > 12,
-                LOG1("alac extradata too small: %u expected at least 13",
-                  userdata->ctx->extradata_size));
-
-            TRY0(membuf_append(&userdata->dsi, &userdata->ctx->extradata[12], userdata->ctx->extradata_size - 12),
-                LOG0("out of memory"));
+            userdata->me.codec = CODEC_TYPE_ALAC;
             break;
         }
 
         case AV_CODEC_ID_FLAC: {
-            me.codec = CODEC_TYPE_FLAC;
-            TRY(userdata->ctx->extradata_size > 0, LOG0("flac missing extradata"));
-
-            /* ffmpeg's flac encoder does not include streaminfo's header block */
-            TRY(userdata->ctx->extradata_size == 34,
-                LOG1("flac extradata size is %u, expected 34",
-                  userdata->ctx->extradata_size));
-
-            TRY0(membuf_ready(&userdata->dsi,38), LOG0("out of memory"));
-
-            pack_u32be(userdata->dsi.x,0x80000000 | 34);
-            memcpy(&userdata->dsi.x[4],userdata->ctx->extradata, 34);
-            userdata->dsi.len = 38;
+            userdata->me.codec = CODEC_TYPE_FLAC;
             break;
         }
 
         case AV_CODEC_ID_MP3: {
-            me.codec = CODEC_TYPE_MP3;
+            userdata->me.codec = CODEC_TYPE_MP3;
             break;
         }
 
         case AV_CODEC_ID_AC3: {
-            me.codec = CODEC_TYPE_AC3;
-            TRY0(membuf_ready(&userdata->dsi,4), LOG0("out of memory"));
-
-            switch(source->sample_rate) {
-                case 48000: {
-                    tmp = 0; break;
-                }
-                case 44100: {
-                    tmp = 1; break;
-                }
-                case 32000: {
-                    tmp = 2; break;
-                }
-                default: {
-                    LOG1("ac3: unsupported sample rate %u",
-                      source->sample_rate);
-                    return -1;
-                }
-            }
-
-            /* dsi is:
-               fscod, 2 bits
-               bsid, 5 bits
-               bsmod, 3 bits
-               acmod, 3 bits
-               lfeon, 1 bit
-               bit_rate_code, 5 bits
-               reserved, 5 bits */
-
-            tmp <<= (32 - 2);
-
-            /* bsid 8 = current AC3 standard */
-            tmp |= 8 << (32 - 2 - 5);
-
-            /* bsmod, 3 bits */
-            tmp |= 0 << (32 - 2 - 5 - 3);
-
-            /* acmod, 3 bits */
-            /* 001 = mono
-             * 002 = stereo */
-            tmp |= source->channels << (32 - 2 - 5 - 3 - 3);
-
-            /* lfeon, 1 bit, always false */
-            tmp |= 0 << (32 - 2 - 5 - 3 - 3 - 1);
-
-            /* bit_rate_code TODO */
-            u = 0;
-            switch(userdata->ctx->bit_rate) {
-                case 640000: u++; /* fall-through */
-                case 576000: u++; /* fall-through */
-                case 512000: u++; /* fall-through */
-                case 448000: u++; /* fall-through */
-                case 384000: u++; /* fall-through */
-                case 320000: u++; /* fall-through */
-                case 256000: u++; /* fall-through */
-                case 224000: u++; /* fall-through */
-                case 192000: u++; /* fall-through */
-                case 160000: u++; /* fall-through */
-                case 128000: u++; /* fall-through */
-                case 112000: u++; /* fall-through */
-                case 96000:  u++; /* fall-through */
-                case 80000:  u++; /* fall-through */
-                case 64000:  u++; /* fall-through */
-                case 56000:  u++; /* fall-through */
-                case 48000:  u++; /* fall-through */
-                case 40000:  u++; /* fall-through */
-                case 32000:  break;
-                default: {
-                    /* hard-code to 192 */
-                    u = 0x0a;
-                    break;
-                }
-            }
-
-            tmp |= u << (32 - 2 - 5 - 3 - 3 - 1 - 5);
-
-            /* reserved */
-            tmp |= 0 << (32 - 2 - 5 - 3 - 3 - 1 - 5 - 5);
-
-            pack_u32be(&userdata->dsi.x[0],tmp);
-            userdata->dsi.len = 3;
+            userdata->me.codec = CODEC_TYPE_AC3;
             break;
         }
 
         case AV_CODEC_ID_EAC3: {
-            me.codec = CODEC_TYPE_EAC3;
-
-            TRY0(membuf_ready(&userdata->dsi,8), LOG0("out of memory"));
-
-            /* dsi is:
-               data_rate, 13 bits
-               num_ind_sub, 3 bits
-               for each independent substream (only 1 for this app):
-                 fscod, 2 bits
-                 bsid, 5 bits
-                 reserved, 1 bit
-                 asvc, 1 bit
-                 bsmod, 3 bits
-                 acmod, 3 bits
-                 lfeon, 1 bit
-                 reserved, 3 bits
-                 num_dep_sub, 4 bits
-                 if num_dep_sub > 0:
-                      chan_loc, 9 bits
-                 else:
-                     reserved, 1 bit
-               */
-
-            if(userdata->ctx->bit_rate > 0) {
-                tmp = userdata->ctx->bit_rate / 1000;
-            } else {
-                tmp = 192; /* just hard-code as 192kbps */
-            }
-
-            tmp <<= 16 - 13;
-            /* num_ind_sub, hard-code to 0 */
-            tmp |= 0 << (16 - 13 - 3);
-            pack_u16be(&userdata->dsi.x[0],(uint16_t)tmp);
-
-            switch(source->sample_rate) {
-                case 48000: {
-                    tmp = 0; break;
-                }
-                case 44100: {
-                    tmp = 1; break;
-                }
-                case 32000: {
-                    tmp = 2; break;
-                }
-                default: {
-                    LOG1("eac3: unsupported sample rate %u",
-                      source->sample_rate);
-                    return -1;
-                }
-            }
-
-            tmp <<= (32 - 2);
-
-            /* bsid 16 = current EAC3 standard */
-            tmp |= 8 << (32 - 2 - 5);
-
-            /* reserved 1 bit */
-            tmp |= 0 << (32 - 2 - 5 - 1);
-
-            /* asvc 1 bit */
-            tmp |= 0 << (32 - 2 - 5 - 1 - 1);
-
-            /* bsmod, 3 bits */
-            tmp |= 0 << (32 - 2 - 5 - 1 - 1 - 3);
-
-            /* acmod, 3 bits */
-            /* 001 = mono
-             * 002 = stereo */
-            tmp |= source->channels << (32 - 2 - 5 - 1 - 1 - 3 - 3);
-
-            /* lfeon, 1 bit, always false */
-            tmp |= 0 << (32 - 2 - 5 - 1 - 1 - 3 - 3 - 1);
-
-            /* 3 reserved bits */
-            tmp |= 0 << (32 - 2 - 5 - 1 - 1 - 3 - 3 - 1 - 3);
-
-            /* num_dep_sub 4 bits */
-            tmp |= 0 << (32 - 2 - 5 - 1 - 1 - 3 - 3 - 1 - 3 - 4);
-
-            /* reserved 1 bit */
-            tmp |= 0 << (32 - 2 - 5 - 1 - 1 - 3 - 3 - 1 - 3 - 4 - 1);
-
-            pack_u32be(&userdata->dsi.x[2],tmp);
-            userdata->dsi.len = 5;
+            userdata->me.codec = CODEC_TYPE_EAC3;
             break;
         }
 
         case AV_CODEC_ID_OPUS: {
-            me.codec = CODEC_TYPE_OPUS;
+            userdata->me.codec = CODEC_TYPE_OPUS;
             /* opus specs states you need (at least) 80ms of preroll,
              * which is 3840 samples @48kHz */
-            me.roll_distance = -3840 / userdata->ctx->frame_size;
-
-            TRY0(membuf_ready(&userdata->dsi,userdata->ctx->extradata_size), LOG0("out of memory"));
-            memcpy(userdata->dsi.x,&userdata->ctx->extradata[0],userdata->ctx->extradata_size);
-            userdata->dsi.len = userdata->ctx->extradata_size;
+            userdata->me.roll_distance = -3840 / userdata->ctx->frame_size;
             break;
         }
 
@@ -534,23 +313,20 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     }
 
     userdata->buffer.format = avsampleformat_to_samplefmt(find_best_format(userdata->codec,samplefmt_to_avsampleformat(source->format)));
-    userdata->buffer.channels = source->channels;
+    userdata->buffer.channels = channel_count(source->channel_layout);
     userdata->buffer.duration = 0;
     userdata->buffer.sample_rate = source->sample_rate;
 
     if( (r = frame_ready(&userdata->buffer)) != 0) return r;
 
-    me.handle = userdata;
-    me.channels = source->channels;
-    me.sample_rate = source->sample_rate;
-    me.frame_len = userdata->ctx->frame_size;
-    me.sync_flag = userdata->ctx->codec_descriptor->props & AV_CODEC_PROP_INTRA_ONLY;
-    me.padding = userdata->ctx->initial_padding;
-    me.set_keyframes = set_keyframes;
-    me.reset = reset_encoder;
-    me.dsi = &userdata->dsi;
+    userdata->me.handle = userdata;
+    userdata->me.channel_layout = source->channel_layout;
+    userdata->me.sample_rate = source->sample_rate;
+    userdata->me.frame_len = userdata->ctx->frame_size;
+    userdata->me.sync_flag = userdata->ctx->codec_descriptor->props & AV_CODEC_PROP_INTRA_ONLY;
+    userdata->me.padding = userdata->ctx->initial_padding;
 
-    if(me.frame_len == 0) me.frame_len = 1024;
+    if(userdata->me.frame_len == 0) userdata->me.frame_len = 1024;
 
     TRY( (userdata->avframe = av_frame_alloc()) != NULL, LOG0("out of memory"));
 #if LIBAVCODEC_VERSION_MAJOR >= 57
@@ -560,7 +336,7 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     av_init_packet(userdata->avpacket);
 #endif
 
-    TRY0(dest->open(dest->handle, &me), LOG0("error configuring muxer"));
+    TRY0(dest->open(dest->handle, &userdata->me), LOG0("error configuring muxer"));
 
     cleanup:
     return r;
@@ -575,6 +351,7 @@ static int plugin_drain(plugin_userdata* userdata, const packet_receiver* dest, 
     int got;
 #endif
 
+    r = 0;
     while(userdata->buffer.duration >= (unsigned int)duration) {
         TRY0(frame_to_avframe(userdata->avframe,&userdata->buffer,duration),
           LOG0("unable to convert frame"));
@@ -588,6 +365,7 @@ static int plugin_drain(plugin_userdata* userdata, const packet_receiver* dest, 
         TRY( (av = drain_packets(userdata,dest, 0)) == AVERROR(EAGAIN),
           av_strerror(av, averrbuf, sizeof(averrbuf));
           LOG1("frame: error receiving packet: %s",averrbuf));
+        r = 0;
 #else
         TRY( (av = avcodec_encode_audio2(userdata->ctx, userdata->avpacket, userdata->avframe, &got)) >= 0,
           av_strerror(av, averrbuf, sizeof(averrbuf));
@@ -601,12 +379,15 @@ static int plugin_drain(plugin_userdata* userdata, const packet_receiver* dest, 
               LOG0("unable to convert packet");
               return AVERROR_EXTERNAL;
             }
+            userdata->packet.sample_rate = userdata->sample_rate;
+            userdata->packet.sample_group = 1;
 
             if(dest->submit_packet(dest->handle, &userdata->packet) != 0) {
               LOG0("unable to send packet");
               return AVERROR_EXTERNAL;
             }
         }
+        r = 0;
 #endif
     }
 
@@ -634,6 +415,8 @@ static int plugin_flush(void* ud, const packet_receiver* dest) {
     char averrbuf[128];
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
+    if(userdata->ctx == NULL) return 0;
+
     if( (r = plugin_drain(userdata, dest, (unsigned int)userdata->ctx->frame_size)) != 0) {
         return r;
     }
@@ -656,11 +439,12 @@ static int plugin_flush(void* ud, const packet_receiver* dest) {
 
     cleanup:
 
-    return r == 0 ? dest->flush(dest->handle) : r;
+    return r;
 }
 
 const encoder_plugin encoder_plugin_avcodec = {
-    { .a = 0, .len = 7, .x = (uint8_t*)"avcodec" },
+    plugin_name,
+    plugin_size,
     plugin_init,
     plugin_deinit,
     plugin_create,
@@ -669,5 +453,6 @@ const encoder_plugin encoder_plugin_avcodec = {
     plugin_close,
     plugin_submit_frame,
     plugin_flush,
+    plugin_reset,
 };
 

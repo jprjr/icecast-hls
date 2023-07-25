@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 static int muxer_default_picture_handler(void* userdata, const picture* src, picture* out) {
     (void)userdata;
@@ -20,11 +21,13 @@ void muxer_init(muxer* m) {
     m->picture_handler.cb = muxer_default_picture_handler;
     m->picture_handler.userdata = NULL;
     m->image_mode = 0;
+    m->output_opened = 1;
 }
 
 void muxer_free(muxer* m) {
     if(m->userdata != NULL) {
         m->plugin->close(m->userdata);
+        free(m->userdata);
     }
     m->userdata = NULL;
     m->plugin = NULL;
@@ -37,23 +40,73 @@ int muxer_create(muxer* m, const strbuf* name) {
     plug = muxer_plugin_get(name);
     if(plug == NULL) return -1;
 
-    userdata = plug->create();
+    userdata = malloc(plug->size());
     if(userdata == NULL) return -1;
 
     m->userdata = userdata;
     m->plugin = plug;
 
-    return 0;
+    return m->plugin->create(m->userdata);
+}
+
+int muxer_reset(const muxer* m) {
+    return m->plugin->reset(m->userdata);
+}
+
+/* most other things _open method (filter_open, encoder_open, etc) call
+ * flush + reset on a re-open. But muxers do NOT flush + reset the output,
+ * the only that that should call flush on an output is the destination
+ * object, since flushing an output triggers end-of-stream type behavior
+ * (close out the playlist, etc). Instead the muxer just sends a new
+ * initialization segment. */
+
+static int muxer_open_wrapper(void* ud, const segment_source* source) {
+    muxer* m = (muxer *)ud;
+
+    if(m->output_opened == 0) return m->segment_receiver.reset(m->segment_receiver.handle); /* output already opened, no need to re-open */
+
+    m->output_opened = m->segment_receiver.open(m->segment_receiver.handle, source);
+    return m->output_opened;
+}
+
+static int muxer_get_segment_info_wrapper(const void* ud, const segment_source_info* i, segment_params* p) {
+    const muxer* m = (muxer *)ud;
+    return m->segment_receiver.get_segment_info(m->segment_receiver.handle,i,p);
+}
+
+static int muxer_submit_segment_wrapper(void* ud, const segment* s) {
+    const muxer* m = (muxer *)ud;
+    return m->segment_receiver.submit_segment(m->segment_receiver.handle,s);
+}
+
+static int muxer_submit_tags_wrapper(void* ud, const taglist* s) {
+    const muxer* m = (muxer *)ud;
+    return m->segment_receiver.submit_tags(m->segment_receiver.handle,s);
+}
+
+static int muxer_flush_wrapper(void* ud) {
+    const muxer* m = (muxer *)ud;
+    return m->segment_receiver.flush(m->segment_receiver.handle);
 }
 
 int muxer_open(muxer* m, const packet_source* source) {
+    segment_receiver receiver = SEGMENT_RECEIVER_ZERO;
+
     if(m->plugin == NULL || m->userdata == NULL) {
         fprintf(stderr,"[muxer] unable to open: plugin not selected\n");
         return -1;
     }
     ich_time_now(&m->ts);
     m->counter = 0;
-    return m->plugin->open(m->userdata, source, &m->segment_receiver);
+
+    receiver.handle = m;
+    receiver.open = muxer_open_wrapper;
+    receiver.get_segment_info = muxer_get_segment_info_wrapper;
+    receiver.submit_segment = muxer_submit_segment_wrapper;
+    receiver.submit_tags = muxer_submit_tags_wrapper;
+    receiver.flush = muxer_flush_wrapper;
+
+    return m->plugin->open(m->userdata, source, &receiver);
 }
 
 int muxer_config(const muxer* m, const strbuf* name, const strbuf* value) {

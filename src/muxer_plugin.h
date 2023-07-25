@@ -9,8 +9,9 @@
 
 typedef int (*muxer_plugin_init)(void);
 typedef void (*muxer_plugin_deinit)(void);
+typedef size_t (*muxer_plugin_size)(void);
 
-typedef void* (*muxer_plugin_create)(void);
+typedef int (*muxer_plugin_create)(void* ud);
 
 typedef int (*muxer_plugin_config)(void* userdata, const strbuf* key, const strbuf* value);
 
@@ -21,12 +22,14 @@ typedef void (*muxer_plugin_close)(void* userdata);
 typedef int (*muxer_plugin_submit_packet)(void* userdata, const packet* packet, const segment_receiver* dest);
 typedef int (*muxer_plugin_submit_tags)(void* userdata, const taglist* tags, const segment_receiver* dest);
 typedef int (*muxer_plugin_flush)(void* userdata, const segment_receiver* dest);
+typedef int (*muxer_plugin_reset)(void* userdata);
 typedef uint32_t (*muxer_plugin_get_caps)(void* userdata);
 
 typedef int (*muxer_plugin_get_segment_info)(const void* userdata, const packet_source_info*, const segment_receiver*, packet_source_params*);
 
 struct muxer_plugin {
     const strbuf name;
+    muxer_plugin_size size;
     muxer_plugin_init init;
     muxer_plugin_deinit deinit;
     muxer_plugin_create create;
@@ -36,6 +39,7 @@ struct muxer_plugin {
     muxer_plugin_submit_packet submit_packet;
     muxer_plugin_submit_tags submit_tags;
     muxer_plugin_flush flush;
+    muxer_plugin_reset reset;
     muxer_plugin_get_caps get_caps;
     muxer_plugin_get_segment_info get_segment_info;
 };

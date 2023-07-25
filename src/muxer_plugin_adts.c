@@ -12,8 +12,8 @@
 #define TRY(exp, act) if(!(exp)) { act; }
 #define TRYNULL(exp, act) if((exp) == NULL) { act; }
 
+static STRBUF_CONST(plugin_name,"adts");
 static STRBUF_CONST(mime_aac,"audio/aac");
-
 static STRBUF_CONST(ext_aac,".aac");
 
 struct muxer_plugin_adts_userdata {
@@ -24,23 +24,35 @@ struct muxer_plugin_adts_userdata {
 };
 typedef struct muxer_plugin_adts_userdata muxer_plugin_adts_userdata;
 
-static void* muxer_plugin_adts_create(void) {
-    muxer_plugin_adts_userdata* userdata = NULL;
-    TRYNULL(userdata = (muxer_plugin_adts_userdata*)malloc(sizeof(muxer_plugin_adts_userdata)),
-      LOGERRNO("error allocating plugin"); abort());
+static size_t muxer_plugin_adts_size(void) {
+    return sizeof(muxer_plugin_adts_userdata);
+}
+
+static int muxer_plugin_adts_reset(void* ud) {
+    muxer_plugin_adts_userdata* userdata = (muxer_plugin_adts_userdata*)ud;
+
     userdata->profile = 0;
     userdata->freq = 0;
     userdata->ch_index = 0;
+    userdata->packet.len = 0;
+
+    return 0;
+}
+
+static int muxer_plugin_adts_create(void* ud) {
+    muxer_plugin_adts_userdata* userdata = (muxer_plugin_adts_userdata*)ud;
+
     membuf_init(&userdata->packet);
 
-    return userdata;
+    muxer_plugin_adts_reset(userdata);
+
+    return 0;
 }
 
 static void muxer_plugin_adts_close(void* ud) {
     muxer_plugin_adts_userdata* userdata = (muxer_plugin_adts_userdata*)ud;
 
     membuf_free(&userdata->packet);
-    free(userdata);
 }
 
 static int muxer_plugin_adts_open(void* ud, const packet_source* source, const segment_receiver* dest) {
@@ -49,14 +61,22 @@ static int muxer_plugin_adts_open(void* ud, const packet_source* source, const s
     segment_source me = SEGMENT_SOURCE_ZERO;
 
     unsigned int sample_rate = source->sample_rate;
-    unsigned int channels = source->channels;
     unsigned int profile = source->profile;
+    uint64_t channel_layout = source->channel_layout;
 
     switch(source->codec) {
         case CODEC_TYPE_AAC: {
             switch(profile) {
                 case CODEC_PROFILE_AAC_LC: break;
-                case CODEC_PROFILE_AAC_HE2: channels = 1; /* fall-through */
+                case CODEC_PROFILE_AAC_HE2: {
+                    if(source->channel_layout != LAYOUT_STEREO) {
+                        LOG1("unsupported channels for HE2: requires stereo, total channels=%u",
+                          (unsigned int)channel_count(source->channel_layout));
+                        return -1;
+                    }
+                    channel_layout = LAYOUT_MONO;
+                }
+                /* fall-through */
                 case CODEC_PROFILE_AAC_HE: sample_rate /= 2; profile = CODEC_PROFILE_AAC_LC; break;
                 case CODEC_PROFILE_AAC_USAC: /* fall-through */
                 default: {
@@ -85,11 +105,16 @@ static int muxer_plugin_adts_open(void* ud, const packet_source* source, const s
                 }
             }
 
-            switch(channels) {
-                case 1: /* fall-through */
-                case 2: userdata->ch_index = channels; break;
+            switch(channel_layout) {
+                case LAYOUT_MONO: userdata->ch_index = 1; break;
+                case LAYOUT_STEREO: userdata->ch_index = 2; break;
+                case LAYOUT_3_0: userdata->ch_index = 3; break;
+                case LAYOUT_4_0: userdata->ch_index = 4; break;
+                case LAYOUT_5_0: userdata->ch_index = 5; break;
+                case LAYOUT_5_1: userdata->ch_index = 6; break;
+                case LAYOUT_7_1: userdata->ch_index = 7; break;
                 default: {
-                    LOG1("unsupported channel count %u", channels);
+                    LOG1("unsupported channel layout 0x%lx", channel_layout);
                     return -1;
                 }
             }
@@ -157,7 +182,8 @@ static int muxer_plugin_adts_submit_packet(void* ud, const packet* packet, const
 
 static int muxer_plugin_adts_flush(void* ud, const segment_receiver* dest) {
     (void)ud;
-    return dest->flush(dest->handle);
+    (void)dest;
+    return 0;
 }
 
 static int muxer_plugin_adts_submit_tags(void* ud, const taglist* tags, const segment_receiver* dest) {
@@ -189,20 +215,23 @@ static uint32_t muxer_plugin_adts_get_caps(void* ud) {
 static int muxer_plugin_adts_get_segment_info(const void* ud, const packet_source_info* s, const segment_receiver* dest, packet_source_params* i) {
     (void)ud;
 
-    segment_source_info s_info;
-    segment_params s_params;
+    segment_source_info s_info = SEGMENT_SOURCE_INFO_ZERO;
+    segment_params s_params = SEGMENT_PARAMS_ZERO;
 
     s_info.time_base = s->time_base;
     s_info.frame_len = s->frame_len;
 
     dest->get_segment_info(dest->handle,&s_info,&s_params);
+
     i->segment_length = s_params.segment_length;
     i->packets_per_segment = s_params.packets_per_segment;
+
     return 0;
 }
 
 const muxer_plugin muxer_plugin_adts = {
-    {.a = 0, .len = 4, .x = (uint8_t*)"adts" },
+    plugin_name,
+    muxer_plugin_adts_size,
     muxer_plugin_adts_init,
     muxer_plugin_adts_deinit,
     muxer_plugin_adts_create,
@@ -212,6 +241,7 @@ const muxer_plugin muxer_plugin_adts = {
     muxer_plugin_adts_submit_packet,
     muxer_plugin_adts_submit_tags,
     muxer_plugin_adts_flush,
+    muxer_plugin_adts_reset,
     muxer_plugin_adts_get_caps,
     muxer_plugin_adts_get_segment_info,
 };

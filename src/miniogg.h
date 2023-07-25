@@ -42,12 +42,34 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 
+enum MINIOGG_DEMUX_STATE {
+    MINIOGG_DEMUX_HEADER_FIXED,
+    MINIOGG_DEMUX_SEGMENT_TABLE,
+    MINIOGG_DEMUX_BODY,
+};
+
+typedef enum MINIOGG_DEMUX_STATE MINIOGG_DEMUX_STATE;
+
 struct miniogg {
-    /* these are intended to be read-only fields */
+    /* when demuxing:
+     *   all fields are automatically set and only
+     *   valid after a call to miniogg_add_page()
+     *   returns 0.
+     *
+     * when muxing:
+     *   all fields are automatically managed by
+     *   default and intended to be informative.
+     *   If needed, you can set the following
+     *   fields:
+     *     * serialno
+     *     * bos
+     *     * eos
+     *     * continuation
+     */
 
     /* header and body data along with lengths,
      * it's only valid to read these after calling
-     * miniogg_finish_page() */
+     * miniogg_finish_page() / miniogg_add_page() */
     uint8_t header[MINIOGG_MAX_HEADER];
     uint8_t body[MINIOGG_MAX_BODY];
     uint32_t header_len;
@@ -56,31 +78,43 @@ struct miniogg {
     /* the granulepos, segment, and pageno are all managed
      * automatically */
     uint64_t granulepos;
-    uint32_t segment;
+    uint32_t segments;
     uint32_t pageno;
-    uint32_t packets;
 
-    /* these fields can be set by the user */
+    /* the number of packets that finish on this page */
+    uint32_t packets;
 
     /* every ogg bitstream should have a unique serialno */
     uint32_t serialno;
 
-    /* these fields are automatically cleared
-     * after calling miniogg_finish_page(). Also,
+    /* these fields are automatically cleared/updated
+     * after calling miniogg_finish_page()/miniogg_add_page(). Also,
      * bos is set to 1 during init */
     uint8_t bos;
     uint8_t eos;
 
-    /* the continuation flag is autoset to 1 if miniogg_finish_page()
+    /* the continuation flag is autoset to 1 if miniogg_finish_page()/miniogg_add_page()
      * detects that the packet spans multiple pages */
     uint8_t continuation;
+
+    /* used to track demuxing state */
+    MINIOGG_DEMUX_STATE demux_state;
+    uint32_t header_pos;
+    uint32_t body_pos;
+
+    /* used to iterate packets */
+    uint32_t segment;
+    uint32_t packet;
 };
 
 typedef struct miniogg miniogg;
 
-/* resets all fields to default values and sets a serial number */
+/* resets all fields to default values and sets a serial number.
+ * serialno is ignored if you're decoding */
 MINIOGG_API
 void miniogg_init(miniogg* p, uint32_t serialno);
+
+/* ### MUXING API ### */
 
 /* returns 0 if packet was added fully, 1 if continuation is needed,
  * the number of bytes read is returned in used */
@@ -106,6 +140,25 @@ uint32_t miniogg_used_space(const miniogg* p);
  * without having to continue into another page. */
 MINIOGG_API
 uint32_t miniogg_available_space(const miniogg* p);
+
+/* ### DEMUXING API ### */
+
+/* returns 0 if the page was added fully, 1 if more bytes are needed,
+ * the number of bytes read is returned in used */
+MINIOGG_API
+int miniogg_add_page(miniogg* p, const void* data, size_t len, size_t *used);
+
+/* returns a pointer to the start of packet data, the length of the packet is stored
+ * in len. uses an internal counter to track packet. If the packet is
+ * continued on another page, sets cont to 1, 0 otherwise */
+MINIOGG_API
+const void* miniogg_iter_packet(miniogg* p, size_t *len, uint64_t *granulepos, uint8_t *cont);
+
+/* returns a pointer to the start of packet data, the length of the packet is stored
+ * in len. returns NULL if the packetno is too high. If the packet is
+ * continued on another page, sets cont to 1, 0 otherwise */
+MINIOGG_API
+const void* miniogg_get_packet(const miniogg* p, uint32_t packetno, size_t *len, uint64_t *granulepos, uint8_t *cont);
 
 
 #ifdef __cplusplus
@@ -213,12 +266,42 @@ static inline void miniogg_pack_u64le(uint8_t* d, uint64_t n) {
     d[7] = (uint8_t)(( n >> 56 ) & 0xFF);
 }
 
+static inline uint32_t miniogg_unpack_u32le(uint8_t* d) {
+    uint32_t r = 0;
+
+    r = (  ((uint32_t)d[0] ) << 0  ) |
+        (  ((uint32_t)d[1] ) << 8  ) |
+        (  ((uint32_t)d[2] ) << 16 ) |
+        (  ((uint32_t)d[3] ) << 24 );
+
+    return r;
+}
+
+static inline uint64_t miniogg_unpack_u64le(uint8_t* d) {
+    uint64_t r = 0;
+
+    r = (  ((uint64_t)d[0] ) << 0  ) |
+        (  ((uint64_t)d[1] ) << 8  ) |
+        (  ((uint64_t)d[2] ) << 16 ) |
+        (  ((uint64_t)d[3] ) << 24 ) |
+        (  ((uint64_t)d[4] ) << 32 ) |
+        (  ((uint64_t)d[5] ) << 40 ) |
+        (  ((uint64_t)d[6] ) << 48 ) |
+        (  ((uint64_t)d[7] ) << 56 );
+
+    return r;
+}
+
 static inline void miniogg_set_granulepos(miniogg* p, uint64_t granulepos) {
     miniogg_pack_u64le(&p->header[6],granulepos);
 }
 
 static inline void miniogg_set_pageno(miniogg* p, uint32_t pageno) {
     miniogg_pack_u32le(&p->header[18],pageno);
+}
+
+static inline uint32_t miniogg_get_crc(miniogg* p) {
+    return miniogg_unpack_u32le(&p->header[22]);
 }
 
 static inline void miniogg_set_crc(miniogg* p, uint32_t crc) {
@@ -232,7 +315,7 @@ static inline void miniogg_set_serialno(miniogg* p, uint32_t serialno) {
 static inline uint32_t miniogg_used_space__inline(const miniogg* p) {
     uint32_t len = 0;
     uint32_t i = 0;
-    uint32_t segments = p->segment;
+    uint32_t segments = p->segments;
     for(i=0;i<segments;i++) {
         len += (uint32_t)p->header[MINIOGG_HEADER_SIZE+i];
     }
@@ -252,24 +335,28 @@ void miniogg_init(miniogg* p, uint32_t serialno) {
     p->pageno = 0;
     p->serialno = serialno;
 
-    p->segment = 0;
+    p->segments = 0;
     p->packets = 0;
 
     p->header[0] = 'O';
     p->header[1] = 'g';
     p->header[2] = 'g';
     p->header[3] = 'S';
+
+    p->demux_state = MINIOGG_DEMUX_HEADER_FIXED;
+    p->header_pos = 0;
+    p->body_pos = 0;
 }
 
 MINIOGG_API
 uint32_t miniogg_used_space(const miniogg* p) {
-    return miniogg_used_space__inline(p) + p->segment + MINIOGG_HEADER_SIZE;
+    return miniogg_used_space__inline(p) + p->segments + MINIOGG_HEADER_SIZE;
 }
 
 MINIOGG_API
 uint32_t miniogg_available_space(const miniogg* p) {
-    if(p->segment >= MINIOGG_MAX_SEGMENTS) return 0;
-    return MINIOGG_MAX_BODY - ( ((uint32_t)p->segment) * MINIOGG_SEGMENT_SIZE) - 1;
+    if(p->segments >= MINIOGG_MAX_SEGMENTS) return 0;
+    return MINIOGG_MAX_BODY - ( ((uint32_t)p->segments) * MINIOGG_SEGMENT_SIZE) - 1;
 }
 
 MINIOGG_API
@@ -277,7 +364,7 @@ int miniogg_add_packet(miniogg* p, const void* data, size_t len, uint64_t granul
     int full;
     size_t l = 0;
     size_t u = 0;
-    uint32_t slot = p->segment;
+    uint32_t slot = p->segments;
     uint32_t slots = (uint32_t)( (len / MINIOGG_MAX_SEGMENTS) + 1);
 
     if( (full = (slot == MINIOGG_MAX_SEGMENTS))) {
@@ -305,11 +392,11 @@ int miniogg_add_packet(miniogg* p, const void* data, size_t len, uint64_t granul
     if(slots == 0) { /* we finished writing this packet, record the granule position */
         p->granulepos = granulepos;
         p->packets++;
-    } else if(full && p->segment == 0) {/* we spanned the whole page */
+    } else if(full && p->segments == 0) {/* we spanned the whole page */
         p->granulepos = ~0ULL;
     }
 
-    p->segment = slot;
+    p->segments = slot;
     *used = u;
     return slots != 0;
 }
@@ -325,23 +412,23 @@ void miniogg_finish_page(miniogg* p) {
     miniogg_set_serialno(p,p->serialno);
     miniogg_set_pageno(p,p->pageno++);
     miniogg_set_crc(p,0);
-    p->header[26] = (uint8_t)p->segment;
+    p->header[26] = (uint8_t)p->segments;
 
-    p->header_len = (size_t)p->segment + MINIOGG_HEADER_SIZE;
+    p->header_len = (size_t)p->segments + MINIOGG_HEADER_SIZE;
     p->body_len = miniogg_used_space__inline(p);
 
     crc = crc32(crc,p->header,p->header_len);
     crc = crc32(crc,p->body,p->body_len);
     miniogg_set_crc(p,crc);
 
-    if(p->segment == MINIOGG_MAX_SEGMENTS &&
+    if(p->segments == MINIOGG_MAX_SEGMENTS &&
        p->header[MINIOGG_HEADER_SIZE + 254] == MINIOGG_SEGMENT_SIZE) {
         p->continuation = 1;
     } else {
         p->continuation = 0;
     }
 
-    p->segment = 0;
+    p->segments = 0;
     p->bos = 0;
     p->eos = 0;
     p->packets = 0;
@@ -351,6 +438,166 @@ MINIOGG_API
 void miniogg_eos(miniogg* p) {
     p->eos = 1;
     miniogg_finish_page(p);
+}
+
+MINIOGG_API
+int miniogg_add_page(miniogg* p, const void* data, size_t len, size_t *used) {
+    const uint8_t* d = (const uint8_t *)data;
+    const size_t l = len;
+    int r = 1;
+    uint32_t crc;
+    uint32_t crc_tmp;
+
+    switch(p->demux_state) {
+        case MINIOGG_DEMUX_HEADER_FIXED: {
+            while(p->header_pos < MINIOGG_HEADER_SIZE) {
+                if(len == 0) goto finish;
+
+                p->header[p->header_pos++] = *d++;
+                len--;
+            }
+            if(p->header[0] != 'O' ||
+               p->header[1] != 'g' ||
+               p->header[2] != 'g' ||
+               p->header[3] != 'S') {
+                r = -1;
+                goto finish;
+            }
+            p->packets = 0;
+            p->segments = (uint32_t)p->header[26];
+
+            p->granulepos = miniogg_unpack_u64le(&p->header[6]);
+            p->serialno   = miniogg_unpack_u32le(&p->header[14]);
+            p->pageno     = miniogg_unpack_u32le(&p->header[18]);
+
+            p->continuation = !!(p->header[5] & 0x01);
+            p->bos          = !!(p->header[5] & 0x02);
+            p->eos          = !!(p->header[5] & 0x04);
+
+            p->header_len = p->segments + MINIOGG_HEADER_SIZE;
+            p->demux_state = MINIOGG_DEMUX_SEGMENT_TABLE;
+        }
+        /* fall-through */
+        case MINIOGG_DEMUX_SEGMENT_TABLE: {
+            while(p->header_pos < p->header_len) {
+                if(len == 0) goto finish;
+
+                p->header[p->header_pos] = *d++;
+                if(p->header[p->header_pos++] < MINIOGG_SEGMENT_SIZE) {
+                    p->packets++;
+                }
+                len--;
+            }
+            p->body_pos = 0;
+            p->body_len = miniogg_used_space__inline(p);
+            p->demux_state = MINIOGG_DEMUX_BODY;
+        }
+        /* fall-through */
+        case MINIOGG_DEMUX_BODY: {
+            while(p->body_pos < p->body_len) {
+                if(len == 0) goto finish;
+
+                p->body[p->body_pos++] = *d++;
+                len--;
+            }
+
+            /* check the crc */
+            crc_tmp = miniogg_get_crc(p);
+            miniogg_set_crc(p,0);
+            crc = 0;
+            crc = crc32(crc,p->header,p->header_len);
+            crc = crc32(crc,p->body,p->body_len);
+            miniogg_set_crc(p,crc_tmp);
+
+            if(crc != crc_tmp) return -2;
+
+            r = 0;
+            p->header_pos = 0;
+            p->packet = 0;
+            p->segment = 0;
+            p->body_pos = 0;
+            p->demux_state = MINIOGG_DEMUX_HEADER_FIXED;
+            break;
+        }
+    }
+
+    finish:
+    *used = l - len;
+    return r;
+}
+
+MINIOGG_API
+const void* miniogg_get_packet(const miniogg* p, uint32_t packetno, size_t *len, uint64_t *granulepos, uint8_t *cont) {
+    uint32_t i = 0;
+    uint32_t packet = 0;
+    size_t pos = 0;
+    size_t l = 0;
+
+    if(packetno > p->packets) {
+        return NULL;
+    }
+
+    *cont = 1;
+    *granulepos = ~0ULL;
+
+    for(i = 0; i < p->segments; i++) {
+        l += p->header[MINIOGG_HEADER_SIZE + i];
+        if(p->header[MINIOGG_HEADER_SIZE + i] < 255) { /* end of a packet */
+            if(packet == packetno) {
+                *cont = 0;
+                break;
+            }
+            pos = l;
+            l = 0;
+            packet++;
+        }
+    }
+
+    if(packet == p->packets) {
+        if(! (p->segments == MINIOGG_MAX_SEGMENTS &&
+              i == p->segments &&
+              p->header[MINIOGG_HEADER_SIZE + 254] == MINIOGG_SEGMENT_SIZE)) {
+            return NULL;
+        }
+    }
+
+    if(p->packets > 0 &&
+       packetno == p->packets - 1) {
+        *granulepos = p->granulepos;
+    }
+
+    *len = l;
+    return &p->body[pos];
+}
+
+MINIOGG_API
+const void* miniogg_iter_packet(miniogg* p, size_t *len, uint64_t *granulepos, uint8_t *cont) {
+    uint32_t l = 0;
+    const uint8_t* r = NULL;
+
+    *cont = 1;
+    *granulepos = ~0ULL;
+
+    if(p->segment == p->segments) return NULL;
+
+    while(p->segment < p->segments) {
+        l += p->header[MINIOGG_HEADER_SIZE + p->segment];
+        if(p->header[MINIOGG_HEADER_SIZE + p->segment++] < 255) { /* end of a packet */
+            p->packet++;
+            *cont = 0;
+            break;
+        }
+    }
+
+    if(p->packets > 0 &&
+       p->packet == p->packets) {
+        *granulepos = p->granulepos;
+    }
+
+    *len = l;
+    r = &p->body[p->body_pos];
+    p->body_pos += l;
+    return r;
 }
 
 

@@ -1,9 +1,10 @@
 .PHONY: all clean
 
-CFLAGS = -Wall -Wextra -g -O3 -fPIC
+CFLAGS = -Wall -Wextra -g -O0 -fPIC
 LDFLAGS =
 
 SOURCES = \
+	src/avcodec_utils.c \
 	src/avframe_utils.c \
 	src/avpacket_utils.c \
 	src/ini.c \
@@ -15,8 +16,16 @@ SOURCES = \
 	src/codecs.c \
 	src/decoder.c \
 	src/decoder_plugin.c \
+	src/decoder_plugin_auto.c \
 	src/decoder_plugin_avcodec.c \
 	src/decoder_plugin_miniflac.c \
+	src/decoder_plugin_passthrough.c \
+	src/demuxer.c \
+	src/demuxer_plugin.c \
+	src/demuxer_plugin_auto.c \
+	src/demuxer_plugin_avformat.c \
+	src/demuxer_plugin_flac.c \
+	src/demuxer_plugin_ogg.c \
 	src/destination.c \
 	src/destinationlist.c \
 	src/destination_sync.c \
@@ -26,6 +35,7 @@ SOURCES = \
 	src/encoder_plugin_exhale.c \
 	src/encoder_plugin_fdk_aac.c \
 	src/encoder_plugin_opus.c \
+	src/encoder_plugin_passthrough.c \
 	src/filter.c \
 	src/filter_plugin.c \
 	src/filter_plugin_avfilter.c \
@@ -82,12 +92,20 @@ REQUIRED_OBJS = \
 	src/codecs.c \
 	src/decoder.o \
 	src/decoder_plugin.o \
+	src/decoder_plugin_auto.o \
 	src/decoder_plugin_miniflac.o \
+	src/decoder_plugin_passthrough.o \
+	src/demuxer.o \
+	src/demuxer_plugin.o \
+	src/demuxer_plugin_auto.o \
+	src/demuxer_plugin_flac.o \
+	src/demuxer_plugin_ogg.o \
 	src/destination.o \
 	src/destinationlist.o \
 	src/destination_sync.o \
 	src/encoder.o \
 	src/encoder_plugin.o \
+	src/encoder_plugin_passthrough.o \
 	src/filter.o \
 	src/filter_plugin.o \
 	src/filter_plugin_passthrough.o \
@@ -163,6 +181,7 @@ ENABLE_FDK_AAC=1
 ENABLE_EXHALE=1
 ENABLE_OPUS=1
 ENABLE_AVFILTER=1
+ENABLE_AVFORMAT=1
 ENABLE_AVCODEC=1
 ENABLE_CURL=1
 
@@ -172,6 +191,15 @@ REQUIRED_OBJS += src/filter_plugin_avfilter.o
 AVFRAME_REQUIRED=1
 AVUTIL_REQUIRED=1
 AVFILTER_REQUIRED=1
+endif
+
+ifeq ($(ENABLE_AVFORMAT),1)
+DEMUXER_PLUGIN_CFLAGS += -DDEMUXER_PLUGIN_AVFORMAT=1
+REQUIRED_OBJS += src/demuxer_plugin_avformat.o
+AVPACKET_REQUIRED=1
+AVCODEC_REQUIRED=1
+AVUTIL_REQUIRED=1
+AVFORMAT_REQUIRED=1
 endif
 
 ifeq ($(ENABLE_AVCODEC),1)
@@ -233,6 +261,7 @@ LDFLAGS += $(LDFLAGS_AVFILTER)
 endif
 
 ifeq ($(AVCODEC_REQUIRED),1)
+REQUIRED_OBJS += src/avcodec_utils.o
 LDFLAGS += $(LDFLAGS_AVCODEC)
 endif
 
@@ -262,6 +291,9 @@ icecast-hls: $(REQUIRED_OBJS)
 
 src/decoder_plugin.o: src/decoder_plugin.c
 	$(CC) $(CFLAGS) $(DECODER_PLUGIN_CFLAGS) -c -o $@ $<
+
+src/demuxer_plugin.o: src/demuxer_plugin.c
+	$(CC) $(CFLAGS) $(DEMUXER_PLUGIN_CFLAGS) -c -o $@ $<
 
 src/encoder_plugin.o: src/encoder_plugin.c
 	$(CC) $(CFLAGS) $(ENCODER_PLUGIN_CFLAGS) -c -o $@ $<
@@ -308,6 +340,9 @@ src/output_plugin_curl.o: src/output_plugin_curl.c
 src/decoder_plugin_miniflac.o: src/decoder_plugin_miniflac.c src/miniflac.h src/base64decode.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+src/demuxer_plugin_avformat.o: src/demuxer_plugin_avformat.c
+	$(CC) $(CFLAGS) $(CFLAGS_AVFORMAT) $(CFLAGS_AVCODEC) $(CFLAGS_AVUTIL) -c -o $@ $<
+
 src/minifmp4.o: src/minifmp4.c src/minifmp4.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
@@ -319,3 +354,18 @@ src/miniflac.o: src/miniflac.c src/miniflac.h
 
 dump:
 	echo $(OBJS)
+
+test-demuxer-plugin: test-demuxer-plugin.o src/demuxer_plugin.o src/demuxer_plugin_auto.o src/demuxer_plugin_avformat.o src/demuxer_plugin_ogg.o src/demuxer_plugin_flac.o src/avpacket_utils.o src/packet.o src/input.o src/input_plugin.o src/input_plugin_file.o src/input_plugin_stdin.o src/input_plugin_curl.o src/tag.o src/strbuf.o src/membuf.o src/ich_time.o src/codecs.o
+	$(CC) -o $@ $^ $(LDFLAGS_CURL) $(LDFLAGS_AVFORMAT) $(LDFLAGS_AVCODEC) $(LDFLAGS_AVUTIL)
+
+test-demuxer-plugin.o: test-demuxer-plugin.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+test-decoder-plugin: test-decoder-plugin.o src/decoder_plugin.o src/decoder_plugin_auto.o src/decoder_plugin_miniflac.o src/decoder_plugin_passthrough.o src/decoder_plugin_avcodec.o src/demuxer.o src/demuxer_plugin.o src/demuxer_plugin_auto.o src/demuxer_plugin_avformat.o src/demuxer_plugin_ogg.o src/demuxer_plugin_flac.o src/avframe_utils.o src/avpacket_utils.o src/avcodec_utils.o src/avpacket_utils.o src/packet.o src/input.o src/input_plugin.o src/input_plugin_file.o src/input_plugin_stdin.o src/input_plugin_curl.o src/frame.o src/tag.o src/strbuf.o src/membuf.o src/ich_time.o src/codecs.o src/samplefmt.o src/miniflac.o
+	$(CC) -o $@ $^ $(LDFLAGS_CURL) $(LDFLAGS_AVFORMAT) $(LDFLAGS_AVCODEC) $(LDFLAGS_AVUTIL)
+
+test-filter-plugin: test-filter-plugin.o src/filter_plugin.o src/filter_plugin_passthrough.o src/filter_plugin_avfilter.o src/decoder.o src/decoder_plugin.o src/decoder_plugin_auto.o src/decoder_plugin_miniflac.o src/decoder_plugin_passthrough.o src/decoder_plugin_avcodec.o src/demuxer.o src/demuxer_plugin.o src/demuxer_plugin_auto.o src/demuxer_plugin_avformat.o src/demuxer_plugin_ogg.o src/demuxer_plugin_flac.o src/avframe_utils.o src/avpacket_utils.o src/avcodec_utils.o src/avpacket_utils.o src/packet.o src/input.o src/input_plugin.o src/input_plugin_file.o src/input_plugin_stdin.o src/input_plugin_curl.o src/frame.o src/tag.o src/strbuf.o src/membuf.o src/ich_time.o src/codecs.o src/samplefmt.o src/miniflac.o
+	$(CC) -o $@ $^ $(LDFLAGS_CURL) $(LDFLAGS_AVFORMAT) $(LDFLAGS_AVFILTER) $(LDFLAGS_AVCODEC) $(LDFLAGS_AVUTIL)
+
+test-decoder-plugin.o: test-decoder-plugin.c
+	$(CC) $(CFLAGS) -c -o $@ $<

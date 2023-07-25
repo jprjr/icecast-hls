@@ -10,8 +10,9 @@
 /* perform global-init/deinit type stuff on a plugin */
 typedef int (*output_plugin_init)(void);
 typedef void (*output_plugin_deinit)(void);
+typedef size_t (*output_plugin_size)(void);
 
-typedef void* (*output_plugin_create)(void);
+typedef int (*output_plugin_create)(void* userdata);
 typedef void (*output_plugin_close)(void* userdata);
 
 typedef int (*output_plugin_config)(void* userdata, const strbuf* key, const strbuf* value);
@@ -22,12 +23,14 @@ typedef int (*output_plugin_submit_segment)(void* userdata, const segment* segme
 typedef int (*output_plugin_submit_picture)(void* userdata, const picture* src, picture* out);
 typedef int (*output_plugin_submit_tags)(void* userdata, const taglist* tags);
 typedef int (*output_plugin_flush)(void* userdata);
+typedef int (*output_plugin_reset)(void* userdata);
 typedef int (*output_plugin_set_time)(void* userdata, const ich_time* now);
 
 typedef int (*output_plugin_get_segment_info)(const void* userdata, const segment_source_info* info, segment_params* params);
 
 struct output_plugin {
     const strbuf name;
+    output_plugin_size size;
     output_plugin_init init;
     output_plugin_deinit deinit;
     output_plugin_create create;
@@ -39,6 +42,7 @@ struct output_plugin {
     output_plugin_submit_picture submit_picture;
     output_plugin_submit_tags submit_tags;
     output_plugin_flush flush;
+    output_plugin_reset reset;
     output_plugin_get_segment_info get_segment_info;
 };
 

@@ -7,7 +7,6 @@
 #include <string.h>
 
 #include "pack_u32le.h"
-#include "pack_u16le.h"
 
 #define MINIOGG_API static
 #include "miniogg.h"
@@ -30,8 +29,14 @@
 
 static STRBUF_CONST(mime_ogg,"application/ogg");
 static STRBUF_CONST(ext_ogg,".ogg");
+static STRBUF_CONST(plugin_name,"ogg:opus");
 
-struct ogg_opus_stream {
+struct ogg_opus_plugin {
+    unsigned int padding;
+    uint64_t samples_per_segment;
+    strbuf scratch;
+    uint8_t chaining;
+
     strbuf head;
     strbuf tags;
     uint32_t tagpos;
@@ -40,19 +45,8 @@ struct ogg_opus_stream {
     uint64_t pts;
     uint64_t granulepos;
     uint64_t samples;
-};
 
-typedef struct ogg_opus_stream ogg_opus_stream;
-
-struct ogg_opus_plugin {
-    unsigned int padding;
-    unsigned int keyframes;
-    packet_source psource;
-    ogg_opus_stream streams[2];
-    uint8_t cur_stream;
-    uint64_t samples_per_segment;
-    strbuf scratch;
-    uint8_t chaining;
+    uint8_t flag;
 };
 
 typedef struct ogg_opus_plugin ogg_opus_plugin;
@@ -75,52 +69,52 @@ static int ogg_pack_cstr(strbuf* dest, const char* str) {
     return ogg_pack_str(dest,str,strlen(str));
 }
 
-static int stream_send(ogg_opus_stream* stream, const segment_receiver* dest) {
+static int stream_send(ogg_opus_plugin* userdata, const segment_receiver* dest) {
     segment s;
     int r = -1;
 
     s.type    = SEGMENT_TYPE_MEDIA;
-    s.data    = stream->segment.x;
-    s.len     = stream->segment.len;
-    s.samples = stream->samples;
-    s.pts     = stream->pts;
+    s.data    = userdata->segment.x;
+    s.len     = userdata->segment.len;
+    s.samples = userdata->samples;
+    s.pts     = userdata->pts;
 
     TRY0(dest->submit_segment(dest->handle,&s),LOG0("error submitting segment"));
 
-    stream->pts += stream->samples;
-    stream->samples = 0;
-    stream->segment.len = 0;
+    userdata->pts += userdata->samples;
+    userdata->samples = 0;
+    userdata->segment.len = 0;
 
     r = 0;
     cleanup:
     return r;
 }
 
-static int stream_end(ogg_opus_stream* stream) {
+static int stream_end(ogg_opus_plugin* userdata) {
     int r = -1;
 
-    miniogg_eos(&stream->ogg);
-    TRYS(membuf_append(&stream->segment,stream->ogg.header,stream->ogg.header_len));
-    TRYS(membuf_append(&stream->segment,stream->ogg.body,stream->ogg.body_len));
+    miniogg_eos(&userdata->ogg);
+    TRYS(membuf_append(&userdata->segment,userdata->ogg.header,userdata->ogg.header_len));
+    TRYS(membuf_append(&userdata->segment,userdata->ogg.body,userdata->ogg.body_len));
 
     r = 0;
     cleanup:
     return r;
 }
 
-static int stream_buffer(ogg_opus_stream* stream) {
+static int stream_buffer(ogg_opus_plugin* userdata) {
     int r = -1;
 
-    miniogg_finish_page(&stream->ogg);
-    TRYS(membuf_append(&stream->segment,stream->ogg.header,stream->ogg.header_len));
-    TRYS(membuf_append(&stream->segment,stream->ogg.body,stream->ogg.body_len));
+    miniogg_finish_page(&userdata->ogg);
+    TRYS(membuf_append(&userdata->segment,userdata->ogg.header,userdata->ogg.header_len));
+    TRYS(membuf_append(&userdata->segment,userdata->ogg.body,userdata->ogg.body_len));
 
     r = 0;
     cleanup:
     return r;
 }
 
-static int stream_add_strbuf(ogg_opus_stream* stream, const strbuf* data,uint64_t granulepos) {
+static int stream_add_strbuf(ogg_opus_plugin* userdata, const strbuf* data,uint64_t granulepos) {
     int r = -1;
     size_t pos; size_t used; size_t len;
 
@@ -128,8 +122,8 @@ static int stream_add_strbuf(ogg_opus_stream* stream, const strbuf* data,uint64_
     used = 0;
     pos = 0;
 
-    while(miniogg_add_packet(&stream->ogg,&data->x[pos],len,granulepos,&used)) {
-        TRYS(stream_buffer(stream));
+    while(miniogg_add_packet(&userdata->ogg,&data->x[pos],len,granulepos,&used)) {
+        TRYS(stream_buffer(userdata));
 
         pos += used;
         len -= used;
@@ -140,49 +134,65 @@ static int stream_add_strbuf(ogg_opus_stream* stream, const strbuf* data,uint64_
     return r;
 }
 
-static void* plugin_create(void) {
-    ogg_opus_plugin *userdata = (ogg_opus_plugin*)malloc(sizeof(ogg_opus_plugin));
-    if(userdata == NULL) return NULL;
-    unsigned int i;
+static size_t plugin_size(void) {
+    return sizeof(ogg_opus_plugin);
+}
 
-    userdata->keyframes = 0;
-    userdata->psource = packet_source_zero;
-    userdata->cur_stream = 2;
-    userdata->samples_per_segment = 0;
+static int plugin_create(void* ud) {
+    ogg_opus_plugin *userdata = (ogg_opus_plugin*)ud;
+
     userdata->chaining = 1;
-    strbuf_init(&userdata->scratch);
 
-    for(i=0;i<2;i++) {
-        strbuf_init(&userdata->streams[i].head);
-        strbuf_init(&userdata->streams[i].tags);
-        strbuf_init(&userdata->streams[i].segment);
-        userdata->streams[i].tagpos = 0;
-        userdata->streams[i].granulepos = 0;
-        userdata->streams[i].samples = 0;
-        userdata->streams[i].pts = 0;
-    }
-    miniogg_init(&userdata->streams[0].ogg,(uint32_t)rand());
-    return userdata;
+
+    strbuf_init(&userdata->scratch);
+    strbuf_init(&userdata->head);
+    strbuf_init(&userdata->tags);
+    strbuf_init(&userdata->segment);
+
+    userdata->samples_per_segment = 0;
+    userdata->tagpos = 0;
+    userdata->granulepos = 0;
+    userdata->samples = 0;
+    userdata->pts = 0;
+    userdata->flag = 0;
+
+    miniogg_init(&userdata->ogg,(uint32_t)rand());
+
+    return 0;
+}
+
+static int plugin_reset(void* ud) {
+    ogg_opus_plugin* userdata = (ogg_opus_plugin*)ud;
+
+    strbuf_reset(&userdata->head);
+    strbuf_reset(&userdata->tags);
+    strbuf_reset(&userdata->segment);
+    strbuf_reset(&userdata->scratch);
+
+    userdata->samples_per_segment = 0;
+    userdata->tagpos = 0;
+    userdata->granulepos = 0;
+    userdata->samples = 0;
+    userdata->pts = 0;
+    userdata->flag = 0;
+
+    miniogg_init(&userdata->ogg,userdata->ogg.serialno + 1);
+
+    return 0;
 }
 
 static void plugin_close(void* ud) {
     ogg_opus_plugin* userdata = (ogg_opus_plugin*)ud;
-    unsigned int i;
 
-    for(i=0;i<2;i++) {
-        strbuf_free(&userdata->streams[i].head);
-        strbuf_free(&userdata->streams[i].tags);
-        strbuf_free(&userdata->streams[i].segment);
-    }
+    strbuf_free(&userdata->head);
+    strbuf_free(&userdata->tags);
+    strbuf_free(&userdata->segment);
     strbuf_free(&userdata->scratch);
-    free(userdata);
 }
 
 static int plugin_open(void* ud, const packet_source* source, const segment_receiver* dest) {
     int r = -1;
-    unsigned int i = 0;
     ogg_opus_plugin* userdata = (ogg_opus_plugin*)ud;
-    ogg_opus_stream* stream = NULL;
 
     segment_source me = SEGMENT_SOURCE_ZERO;
     segment_source_info info = SEGMENT_SOURCE_INFO_ZERO;
@@ -192,35 +202,29 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     info.frame_len = source->frame_len;
     dest->get_segment_info(dest->handle,&info,&s_params);
 
-    userdata->samples_per_segment = s_params.packets_per_segment * source->frame_len;
+    userdata->samples_per_segment = s_params.segment_length * source->sample_rate / 1000;
 
     /* copy the dsi, which will be a whole OpusHead packet */
-    for(i=0;i<2;i++) {
-        TRYS(strbuf_copy(&userdata->streams[i].head,source->dsi));
-    }
+    TRYS(strbuf_copy(&userdata->head,&source->dsi));
 
     /* buffer the OpusHead to the primary stream */
-    TRYS(stream_add_strbuf(&userdata->streams[0],&userdata->streams[0].head,0));
-    TRYS(stream_buffer(&userdata->streams[0]));
+    TRYS(stream_add_strbuf(userdata,&userdata->head,0));
+    TRYS(stream_buffer(userdata));
 
     /* prep the tag buffers, hold off on buffering until we get tags */
-    for(i=0;i<2;i++) {
-        stream = &userdata->streams[i];
-        TRYS(strbuf_append_cstr(&stream->tags,"OpusTags"));
-        if(source->name == NULL) {
-            TRYS(ogg_pack_cstr(&stream->tags,"icecast-hls"));
-        } else {
-            TRYS(ogg_pack_str(&stream->tags,(const char *)source->name->x,source->name->len));
-        }
-        TRYS(strbuf_readyplus(&stream->tags,4));
-        stream->tagpos = stream->tags.len;
-        stream->tags.len += 4;
-        pack_u32le(&stream->tags.x[stream->tagpos],0);
+    TRYS(strbuf_append_cstr(&userdata->tags,"OpusTags"));
+    if(source->name == NULL) {
+        TRYS(ogg_pack_cstr(&userdata->tags,"icecast-hls"));
+    } else {
+        TRYS(ogg_pack_str(&userdata->tags,(const char *)source->name->x,source->name->len));
     }
-    userdata->padding = source->padding;
-    userdata->streams[0].pts = 0 - source->padding;
+    TRYS(strbuf_readyplus(&userdata->tags,4));
+    userdata->tagpos = userdata->tags.len;
+    userdata->tags.len += 4;
+    pack_u32le(&userdata->tags.x[userdata->tagpos],0);
 
-    userdata->psource = *source;
+    userdata->padding = source->padding;
+    userdata->pts     = 0 - source->padding;
 
     me.media_ext = &ext_ogg;
     me.media_mimetype = &mime_ogg;
@@ -229,6 +233,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     me.handle = userdata;
 
+
     TRY0(dest->open(dest->handle,&me),LOG0("error opening destination"));
 
     r = 0;
@@ -236,92 +241,10 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     return r;
 }
 
-static int plugin_submit_packet(void* ud, const packet* p, const segment_receiver* dest) {
-    int r = -1;
-
-    ogg_opus_plugin* userdata = (ogg_opus_plugin*)ud;
-
-    ogg_opus_stream* pri;
-    ogg_opus_stream* alt;
-
-    if(userdata->cur_stream == 2) {
-        /* getting a packet before tags, add our blank opustags block */
-        pri = &userdata->streams[0];
-        TRYS(stream_add_strbuf(pri,&pri->tags,0));
-        TRYS(stream_buffer(pri));
-        userdata->cur_stream = 0;
-    }
-
-    pri = &userdata->streams[userdata->cur_stream];
-    alt = &userdata->streams[!userdata->cur_stream];
-
-    pri->granulepos += p->duration;
-    TRYS(stream_add_strbuf(pri,&p->data,pri->granulepos));
-    pri->samples += p->duration;
-
-    if(pri->samples >= userdata->samples_per_segment) {
-        TRYS(stream_buffer(pri));
-        TRYS(stream_send(pri,dest));
-    }
-
-    if(userdata->keyframes) {
-        alt->granulepos += p->duration;
-        TRYS(stream_add_strbuf(alt,&p->data,alt->granulepos));
-        alt->samples += p->duration;
-        userdata->keyframes--;
-        if(userdata->keyframes == 0) {
-            TRYS(stream_end(pri));
-            TRYS(stream_send(pri,dest));
-
-            userdata->cur_stream = !userdata->cur_stream;
-        }
-    }
-
-    r = 0;
-    cleanup:
-    return r;
-}
-
-static int plugin_flush(void* ud, const segment_receiver* dest) {
-    int r = -1;
-
-    ogg_opus_plugin* userdata = (ogg_opus_plugin*)ud;
-
-    ogg_opus_stream* pri;
-
-    if(userdata->cur_stream == 2) {
-        /* getting a flush before we ever got tags / sent anything, just close */
-        return dest->flush(dest->handle);
-    }
-
-    pri = &userdata->streams[userdata->cur_stream];
-
-    TRYS(stream_end(pri));
-    TRYS(stream_send(pri,dest));
-
-    r = dest->flush(dest->handle);
-    cleanup:
-    return r;
-}
-
-typedef struct reset_wrapper {
-    ogg_opus_plugin* userdata;
-    const segment_receiver* dest;
-} reset_wrapper;
-
-static int reset_cb(void* ud, const packet* p) {
-    reset_wrapper* wrap = (reset_wrapper*)ud;
-    return plugin_submit_packet(wrap->userdata, p, wrap->dest);
-}
-
 static int plugin_submit_tags(void* ud, const taglist* tags, const segment_receiver* dest) {
     int r = -1;
-    uint8_t next;
     ogg_opus_plugin* userdata = (ogg_opus_plugin*)ud;
-    ogg_opus_stream* stream;
-    ogg_opus_stream* prev;
     strbuf* tagdata;
-    reset_wrapper wrap;
 
     const tag* t;
     size_t i = 0;
@@ -329,64 +252,14 @@ static int plugin_submit_tags(void* ud, const taglist* tags, const segment_recei
     size_t total = 0;
     size_t len = 0;
 
+    tagdata = &userdata->tags;
+    tagdata->len = userdata->tagpos + 4;
+
     if(!userdata->chaining) {
-        return dest->submit_tags(dest->handle,tags);
+        return dest->submit_tags(dest->handle, tags);
     }
 
-    if(userdata->cur_stream == 2) {/* seeing tags before we've gotten any packets */
-        next = 0;
-        userdata->cur_stream = 0;
-    } else {
-        /* we're seeing tags sometime after sending actual data, time to perform
-         * the stream switch */
-#if USE_KEYFRAMES
-        r = userdata->psource.set_keyframes(userdata->psource.handle,4);
-        if(r != 0) {
-#endif
-            /* packet source does not support setting keyframes, we'll reset the encoder */
-            wrap.userdata = userdata;
-            wrap.dest = dest;
-            r = userdata->psource.reset(userdata->psource.handle,&wrap,reset_cb);
-            if(r != 0) return r;
-
-            stream = &userdata->streams[userdata->cur_stream];
-
-            TRYS(stream_end(stream));
-            TRYS(stream_send(stream,dest));
-
-            miniogg_init(&stream->ogg,stream->ogg.serialno + 1);
-            stream->granulepos = 0;
-            stream->pts = 0 - userdata->padding;
-
-            TRYS(stream_add_strbuf(stream,&stream->head,0));
-            TRYS(stream_buffer(stream));
-            next = userdata->cur_stream;
-            goto add_tags;
-#if USE_KEYFRAMES
-        }
-#endif
-        next = !userdata->cur_stream;
-        userdata->keyframes = 4;
-        stream = &userdata->streams[next];
-        prev = &userdata->streams[!next];
-
-        miniogg_init(&stream->ogg,prev->ogg.serialno + 1);
-
-        /* set the next stream's pre-skip to our number of keyframes */
-        pack_u16le(&stream->head.x[10], userdata->psource.frame_len * userdata->keyframes);
-        stream->pts = 0 - (userdata->psource.frame_len * userdata->keyframes);
-        stream->granulepos = 0;
-        TRYS(stream_add_strbuf(stream,&stream->head,0));
-        TRYS(stream_buffer(stream));
-    }
-
-    add_tags:
-    stream = &userdata->streams[next];
-    tagdata = &stream->tags;
-
-    tagdata->len = stream->tagpos + 4;
-
-    m = taglist_len(tags);
+    if(tags != NULL) m = taglist_len(tags);
     for(i=0;i<m;i++) {
         t = taglist_get_tag(tags,i);
 
@@ -405,17 +278,60 @@ static int plugin_submit_tags(void* ud, const taglist* tags, const segment_recei
 
         total++;
     }
-    pack_u32le(&tagdata->x[stream->tagpos],total);
+    pack_u32le(&tagdata->x[userdata->tagpos],total);
 
-    TRYS(stream_add_strbuf(stream,&stream->tags,0));
-    TRYS(stream_buffer(stream));
+    TRYS(stream_add_strbuf(userdata,&userdata->tags,0));
+    TRYS(stream_buffer(userdata));
 
-    (void)dest;
+    userdata->flag = 1;
 
     r = 0;
     cleanup:
     return r;
 }
+
+static int plugin_submit_packet(void* ud, const packet* p, const segment_receiver* dest) {
+    int r = -1;
+
+    ogg_opus_plugin* userdata = (ogg_opus_plugin*)ud;
+
+    if(userdata->flag == 0 && userdata->chaining) {
+        /* getting a packet before tags, add our blank opustags block */
+        if( (r = plugin_submit_tags(userdata, NULL, dest)) != 0) return r;
+    }
+
+    userdata->granulepos += p->duration;
+    TRYS(stream_add_strbuf(userdata,&p->data,userdata->granulepos));
+    userdata->samples += p->duration;
+
+    if(userdata->samples >= userdata->samples_per_segment) {
+        TRYS(stream_buffer(userdata));
+        TRYS(stream_send(userdata,dest));
+    }
+
+    r = 0;
+    cleanup:
+    return r;
+}
+
+static int plugin_flush(void* ud, const segment_receiver* dest) {
+    int r = -1;
+
+    ogg_opus_plugin* userdata = (ogg_opus_plugin*)ud;
+
+    if(userdata->flag == 0) {
+        /* getting a flush before we ever got tags / sent anything, just close */
+        return 0;
+    }
+
+    TRYS(stream_end(userdata));
+    TRYS(stream_send(userdata,dest));
+
+    r = 0;
+    cleanup:
+    return r;
+}
+
 
 
 static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
@@ -448,8 +364,10 @@ static void plugin_deinit(void) {
 }
 
 static uint32_t plugin_get_caps(void* ud) {
-    (void)ud;
-    return MUXER_CAP_GLOBAL_HEADERS;
+    ogg_opus_plugin* userdata = (ogg_opus_plugin*)ud;
+    uint32_t caps = MUXER_CAP_GLOBAL_HEADERS;
+    if(userdata->samples > 0) caps |= MUXER_CAP_TAGS_RESET;
+    return caps;
 }
 
 static int plugin_get_segment_info(const void* ud, const packet_source_info* s, const segment_receiver* dest, packet_source_params* i) {
@@ -461,7 +379,8 @@ static int plugin_get_segment_info(const void* ud, const packet_source_info* s, 
 }
 
 const muxer_plugin muxer_plugin_ogg_opus = {
-    {.a = 0, .len = 8, .x = (uint8_t*)"ogg_opus" },
+    plugin_name,
+    plugin_size,
     plugin_init,
     plugin_deinit,
     plugin_create,
@@ -471,6 +390,7 @@ const muxer_plugin muxer_plugin_ogg_opus = {
     plugin_submit_packet,
     plugin_submit_tags,
     plugin_flush,
+    plugin_reset,
     plugin_get_caps,
     plugin_get_segment_info,
 };

@@ -46,6 +46,10 @@ struct input_plugin_curl_userdata {
 
 typedef struct input_plugin_curl_userdata input_plugin_curl_userdata;
 
+static size_t input_plugin_curl_size(void) {
+    return sizeof(input_plugin_curl_userdata);
+}
+
 static inline void trim(strbuf* s) {
     while(s->len > 0 && isspace(s->x[0])) {
         s->x++;
@@ -275,12 +279,8 @@ static void input_plugin_curl_deinit(void) {
     curl_global_cleanup();
 }
 
-static void* input_plugin_curl_create(void) {
-    input_plugin_curl_userdata* userdata = (input_plugin_curl_userdata*)malloc(sizeof(input_plugin_curl_userdata));
-    if(userdata == NULL) {
-        LOGERRNO("unable to allocate plugin userdata");
-        return userdata;
-    }
+static int input_plugin_curl_create(void* ud) {
+    input_plugin_curl_userdata* userdata = (input_plugin_curl_userdata*)ud;
 
     strbuf_init(&userdata->url);
     strbuf_init(&userdata->buffer);
@@ -300,7 +300,7 @@ static void* input_plugin_curl_create(void) {
     userdata->in_headers = 1;
     userdata->read = input_plugin_curl_read_dummy;
 
-    return userdata;
+    return 0;
 }
 
 static void input_plugin_curl_close(void* ud) {
@@ -318,11 +318,15 @@ static void input_plugin_curl_close(void* ud) {
     if(userdata->headers != NULL) {
         curl_slist_free_all(userdata->headers);
     }
+
     strbuf_free(&userdata->url);
     strbuf_free(&userdata->buffer);
     strbuf_free(&userdata->tmp);
     taglist_free(&userdata->tags);
-    free(userdata);
+
+    userdata->mhandle = NULL;
+    userdata->handle = NULL;
+    userdata->headers = NULL;
 }
 
 static int input_plugin_curl_config(void* ud, const strbuf* key, const strbuf* val) {
@@ -628,6 +632,7 @@ static size_t input_plugin_curl_read(void* ud, void* dest, size_t len, const tag
 
 const input_plugin input_plugin_curl = {
     { .a = 0, .len = 4, .x = (uint8_t*)"curl" },
+    input_plugin_curl_size,
     input_plugin_curl_init,
     input_plugin_curl_deinit,
     input_plugin_curl_create,

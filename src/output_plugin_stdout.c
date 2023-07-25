@@ -23,6 +23,8 @@
 
 static uint8_t opened;
 
+static STRBUF_CONST(plugin_name,"stdout");
+
 static int plugin_init(void) {
     opened = 0;
     return 0;
@@ -32,13 +34,18 @@ static void plugin_deinit(void) {
     return;
 }
 
-static void* plugin_create(void) {
+static size_t plugin_size(void) {
+    return sizeof(opened);
+}
+
+static int plugin_create(void* ud) {
+    (void)ud;
     if(opened) {
         LOG0("only one instance of this plugin can be active at a time");
-        return NULL;
+        return -1;
     }
     opened = 1;
-    return &opened;
+    return 0;
 }
 
 static int plugin_config(void* userdata, const strbuf* key, const strbuf* value) {
@@ -111,8 +118,14 @@ static int plugin_flush(void* userdata) {
     return 0;
 }
 
+static int plugin_reset(void* userdata) {
+    (void)userdata;
+    return 0;
+}
+
 const output_plugin output_plugin_stdout = {
-    { .a = 0, .len = 6, .x = (uint8_t*)"stdout" },
+    plugin_name,
+    plugin_size,
     plugin_init,
     plugin_deinit,
     plugin_create,
@@ -124,5 +137,6 @@ const output_plugin output_plugin_stdout = {
     plugin_submit_picture,
     plugin_submit_tags,
     plugin_flush,
+    plugin_reset,
     plugin_get_segment_info,
 };

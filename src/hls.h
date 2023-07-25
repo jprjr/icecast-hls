@@ -30,6 +30,7 @@ typedef int(*hls_delete_callback)(void* userdata, const strbuf* filename);
 
 /* the metadata that gets stored per full file segment */
 struct hls_segment_meta {
+    size_t init_id; /* which initialization segment this requires */
     strbuf filename;
     strbuf tags; /* stores everything like #EXTINF, #PROGRAMDATETIME and
                  the actual filename portion, which may be prefixed
@@ -47,6 +48,8 @@ struct hls_segment {
     unsigned int samples;
     uint64_t pts;
     strbuf expired_files;
+    size_t init_id;
+    uint8_t disc; /* a flag that, if sets, means this segment is discontinuous */
 };
 
 typedef struct hls_segment hls_segment;
@@ -74,7 +77,8 @@ struct hls {
     strbuf header; /* stores the header-type info */
     strbuf playlist_filename;
     strbuf playlist_mimetype;
-    strbuf init_filename;
+    strbuf init_format; /* snprintf-style format string for init segments */
+    strbuf init_filename; /* scratch space to store the generated init filename */
     strbuf init_mimetype;  /* the mimetype to use on init segments */
     strbuf segment_format; /* generated snprintf-style format string for media segments */
     strbuf segment_mimetype;  /* the mimetype to use on media segments */
@@ -89,12 +93,10 @@ struct hls {
     unsigned int target_samples; /* target duration in samples */
     size_t media_sequence;        /* current media sequence number */
     size_t disc_sequence; /* current discontinuity sequence number */
+    size_t init_counter;
     size_t counter;
     unsigned int version;         /* reported HLS playlist version */
     ich_time now;
-    uint8_t has_init;
-    uint64_t last_pts;
-    uint64_t next_pts;
 };
 
 typedef struct hls hls;
@@ -146,11 +148,11 @@ int hls_add_segment(hls*, const segment* seg);
  * to issue a delete callback */
 int hls_expire_file(hls*, const strbuf* filename);
 
-/* writes out a partial segment if it exists */
+/* writes out a partial segment if it exists and writes #EXT-X-ENDLIST */
 int hls_flush(hls*);
 
-/* flushes the last segment, adds #EXT-X-ENDLIST to the playlist, writes it */
-int hls_close(hls*);
+/* flushes out a partial segment and marks the next as discontinuous */
+int hls_reset(hls*);
 
 /* used by the outputs when we're trying to move a picture out-of-band,
  * write the picture out via callback, return picture URL in out */

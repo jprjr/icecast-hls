@@ -2,15 +2,18 @@
 #include "output_plugin.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
 void output_init(output* out) {
     out->userdata = NULL;
     out->plugin = NULL;
+    out->opened = 0;
 }
 
 void output_free(output* out) {
     if(out->userdata != NULL) {
         out->plugin->close(out->userdata);
+        free(out->userdata);
     }
     out->userdata = NULL;
     out->plugin = NULL;
@@ -27,7 +30,7 @@ int output_create(output* out, const strbuf* name) {
         return -1;
     }
 
-    userdata = plug->create();
+    userdata = malloc(plug->size());
     if(userdata == NULL) {
         fprintf(stderr,"[output] error creating instance of \"%.*s\"\n",
           (int)name->len,(char *)name->x);
@@ -37,7 +40,7 @@ int output_create(output* out, const strbuf* name) {
     out->userdata = userdata;
     out->plugin = plug;
 
-    return 0;
+    return out->plugin->create(out->userdata);
 }
 
 int output_get_segment_info(const output* out, const segment_source_info* info, segment_params* params) {
@@ -55,7 +58,7 @@ int output_get_segment_info(const output* out, const segment_source_info* info, 
         params->segment_length = 1000;
     }
 
-    if(params->packets_per_segment == 0) {
+    if(params->packets_per_segment == 0 && info->frame_len != 0) {
         /* plugin didn't request a number of
          * packets per segment so we'll calculate
          * it here */
@@ -66,9 +69,6 @@ int output_get_segment_info(const output* out, const segment_source_info* info, 
         params->packets_per_segment = t;
     }
 
-    /* just in case we had some very small value for segment length */
-    if(params->packets_per_segment == 0) params->packets_per_segment = 1;
-
     return 0;
 }
 
@@ -77,8 +77,13 @@ int output_open(output* out, const segment_source* source) {
         fprintf(stderr,"[output] plugin not selected\n");
         return -1;
     }
+    if(out->opened != 0) {
+        fprintf(stderr,"[output] tried to re-open\n");
+        return -1;
+    }
     ich_time_now(&out->ts);
     out->counter = 0;
+    out->opened = 1;
     return out->plugin->open(out->userdata, source);
 }
 
@@ -109,6 +114,10 @@ int output_submit_picture(const output* out, const picture* seg, picture* p) {
 
 int output_flush(const output* out) {
     return out->plugin->flush(out->userdata);
+}
+
+int output_reset(const output* out) {
+    return out->plugin->reset(out->userdata);
 }
 
 int output_global_init(void) {

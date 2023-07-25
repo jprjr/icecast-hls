@@ -34,7 +34,7 @@ void sourcelist_init(sourcelist* slist) {
 
 void sourcelist_entry_init(sourcelist_entry* entry) {
     strbuf_init(&entry->id);
-    /* source_init(&entry->source); this gets done after appending the entry */
+    /* source_init(&entry->source); */
     membuf_init(&entry->destination_syncs);
     thread_atomic_int_store(&entry->status, 0);
     entry->quit = NULL;
@@ -133,6 +133,7 @@ int sourcelist_open(const sourcelist* list, uint8_t shortflag) {
             entry[i].quit_userdata = (void *)&entry[i];
         }
     }
+
     return 0;
 }
 
@@ -162,6 +163,31 @@ static int sourcelist_entry_tag_handler(void* userdata, const taglist* tags) {
         }
     }
     return 0;
+}
+
+static int sourcelist_entry_open_handler(void* userdata, const frame_source* source) {
+    int r;
+    size_t i;
+    size_t len;
+    source_sync sync;
+
+    sourcelist_entry* entry = (sourcelist_entry *)userdata;
+    destination_sync** dest_sync;
+
+    len = entry->destination_syncs.len / sizeof(destination_sync*);
+    dest_sync = (destination_sync**)entry->destination_syncs.x;
+
+    if( (r = thread_atomic_int_load(&entry->status)) != 0) {
+        sourcelist_entry_quit(entry,r);
+        return r;
+    }
+
+    for(i=0;i<len;i++) {
+        sync.dest = dest_sync[i];
+        if( (r = source_sync_open(&sync,source)) != 0) break;
+    }
+
+    return r;
 }
 
 static int sourcelist_entry_frame_handler(void* userdata, const frame* frame) {
@@ -236,30 +262,84 @@ static int sourcelist_entry_flush_handler(void* userdata) {
 
     for(i=0;i<len;i++) {
         sync.dest = dest_sync[i];
+        if( (r = source_sync_flush(&sync)) != 0) break;
+    }
+
+    return r;
+}
+
+static int sourcelist_entry_reset_handler(void* userdata) {
+    int r;
+    size_t i;
+    size_t len;
+    source_sync sync;
+
+    sourcelist_entry* entry = (sourcelist_entry *)userdata;
+    destination_sync** dest_sync;
+
+    len = entry->destination_syncs.len / sizeof(destination_sync*);
+    dest_sync = (destination_sync**)entry->destination_syncs.x;
+
+    if( (r = thread_atomic_int_load(&entry->status)) != 0) {
+        sourcelist_entry_quit(entry,r);
+        return r;
+    }
+
+    for(i=0;i<len;i++) {
+        sync.dest = dest_sync[i];
+        if( (r = source_sync_reset(&sync)) != 0) break;
+    }
+
+    return r;
+}
+
+static int sourcelist_entry_eof_handler(void* userdata) {
+    int r;
+    size_t i;
+    size_t len;
+    source_sync sync;
+
+    sourcelist_entry* entry = (sourcelist_entry *)userdata;
+    destination_sync** dest_sync;
+
+    len = entry->destination_syncs.len / sizeof(destination_sync*);
+    dest_sync = (destination_sync**)entry->destination_syncs.x;
+
+    if( (r = thread_atomic_int_load(&entry->status)) != 0) {
+        sourcelist_entry_quit(entry,r);
+        return r;
+    }
+
+    for(i=0;i<len;i++) {
+        sync.dest = dest_sync[i];
         if( (r = source_sync_eof(&sync)) != 0) break;
     }
 
     return r;
 }
 
+/* at this point everything has been opened */
 static int sourcelist_entry_run(void *userdata) {
     int r = 0;
     sourcelist_entry* entry = (sourcelist_entry *)userdata;
 
+    /* this is where/how we forward tags, previously the source just cached them */
     tag_handler thdlr;
-    frame_receiver receiver = FRAME_RECEIVER_ZERO;
 
     thdlr.cb = sourcelist_entry_tag_handler;
     thdlr.userdata = entry;
 
-    receiver.submit_frame = sourcelist_entry_frame_handler;
-    receiver.flush        = sourcelist_entry_flush_handler;
-    receiver.handle       = entry;
-
     entry->source.tag_handler = thdlr;
-    entry->source.frame_destination = receiver;
+
+    entry->source.frame_receiver.handle = entry;
+    entry->source.frame_receiver.open = sourcelist_entry_open_handler;
+    entry->source.frame_receiver.submit_frame = sourcelist_entry_frame_handler;
+    entry->source.frame_receiver.flush = sourcelist_entry_flush_handler;
+    entry->source.frame_receiver.reset = sourcelist_entry_reset_handler;
 
     r = source_run(&entry->source);
+
+    sourcelist_entry_eof_handler(entry);
     /* (maybe) make all other threads quit */
     entry->quit(entry->quit_userdata,r == 0 ? 1 : -1);
 

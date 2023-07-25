@@ -41,6 +41,7 @@ void destination_init(destination* dest) {
     dest->map_flags.unknownmode = TAGMAP_UNKNOWN_IGNORE;
     dest->map_flags.passthrough = 0;
     dest->image_mode = 0;
+    dest->samplefmt = SAMPLEFMT_UNKNOWN;
 }
 
 void destination_free(destination* dest) {
@@ -52,6 +53,15 @@ void destination_free(destination* dest) {
     return;
 }
 
+int destination_open(destination* dest, const frame_source *source) {
+    int r;
+
+    if( (r = filter_open(&dest->filter, source)) != 0) return r;
+    dest->samplefmt = source->format;
+    return 0;
+
+}
+
 int destination_submit_frame(destination* dest, const frame* frame) {
     return filter_submit_frame(&dest->filter, frame);
 }
@@ -60,14 +70,25 @@ int destination_flush(const destination* dest) {
     return filter_flush(&dest->filter);
 }
 
-int destination_submit_tags(const destination* dest, const taglist* tags) {
-    return muxer_submit_tags(&dest->muxer, tags);
+int destination_reset(const destination* dest) {
+    return filter_reset(&dest->filter);
 }
 
-int destination_open(destination* dest, const ich_time* now) {
+int destination_close(const destination* dest) {
     int r;
 
-    frame_receiver source_receiver = FRAME_RECEIVER_ZERO;
+    if( (r = filter_flush(&dest->filter)) != 0) return r;
+    if( (r = encoder_flush(&dest->encoder)) != 0) return r;
+    if( (r = muxer_flush(&dest->muxer)) != 0) return r;
+    return output_flush(&dest->output);
+}
+
+int destination_submit_tags(destination* dest, const taglist* tags) {
+    return encoder_submit_tags(&dest->encoder, tags);
+}
+
+int destination_create(destination* dest, const ich_time* now) {
+    int r;
 
     /* ensure we have an output plugin selected, there's no default for that */
     if(dest->output.plugin == NULL) {
@@ -106,11 +127,14 @@ int destination_open(destination* dest, const ich_time* now) {
     dest->filter.frame_receiver.open          = (frame_receiver_open_cb)encoder_open;
     dest->filter.frame_receiver.submit_frame  = (frame_receiver_submit_frame_cb)encoder_submit_frame;
     dest->filter.frame_receiver.flush         = (frame_receiver_flush_cb)encoder_flush;
+    dest->filter.frame_receiver.reset         = (frame_receiver_reset_cb)encoder_reset;
     dest->filter.frame_receiver.handle        = &dest->encoder;
 
     dest->encoder.packet_receiver.open          = (packet_receiver_open_cb)muxer_open;
     dest->encoder.packet_receiver.submit_packet = (packet_receiver_submit_packet_cb)muxer_submit_packet;
+    dest->encoder.packet_receiver.submit_tags   = (packet_receiver_submit_tags_cb)muxer_submit_tags;
     dest->encoder.packet_receiver.flush         = (packet_receiver_flush_cb)muxer_flush;
+    dest->encoder.packet_receiver.reset         = (packet_receiver_reset_cb)muxer_reset;
     dest->encoder.packet_receiver.get_caps      = (packet_receiver_get_caps_cb)muxer_get_caps;
     dest->encoder.packet_receiver.get_segment_info      = (packet_receiver_get_segment_info_cb)muxer_get_segment_info;
     dest->encoder.packet_receiver.handle        = &dest->muxer;
@@ -119,6 +143,7 @@ int destination_open(destination* dest, const ich_time* now) {
     dest->muxer.segment_receiver.submit_segment      = (segment_receiver_submit_segment_cb)output_submit_segment;
     dest->muxer.segment_receiver.submit_tags      = (segment_receiver_submit_tags_cb)output_submit_tags;
     dest->muxer.segment_receiver.flush            = (segment_receiver_flush_cb)output_flush;
+    dest->muxer.segment_receiver.reset            = (segment_receiver_reset_cb)output_reset;
     dest->muxer.segment_receiver.get_segment_info  = (segment_receiver_get_segment_info_cb)output_get_segment_info;
     dest->muxer.segment_receiver.handle           = &dest->output;
 
@@ -127,14 +152,7 @@ int destination_open(destination* dest, const ich_time* now) {
     dest->muxer.picture_handler.cb       = (picture_handler_callback)output_submit_picture;
     dest->muxer.picture_handler.userdata = &dest->output;
 
-    /* finally our dummy receiver for the source */
-    source_receiver.open         = (frame_receiver_open_cb)filter_open;
-    source_receiver.submit_frame = (frame_receiver_submit_frame_cb)filter_submit_frame;
-    source_receiver.flush        = (frame_receiver_flush_cb)filter_flush;
-    source_receiver.handle       = &dest->filter;
-
-    /* let's gooooo */
-    return source_open_dest(dest->source, &source_receiver);
+    return 0;
 }
 
 int destination_config(destination* dest, const strbuf* key, const strbuf* val) {

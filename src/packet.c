@@ -2,16 +2,45 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void packet_init(packet* p) {
-    membuf_init(&p->data);
+void packet_reset(packet* p) {
     p->duration = 0;
     p->sync = 0;
     p->sample_rate = 0;
-    p->pts = 0;
+    p->sync = 0;
+    membuf_reset(&p->data);
+}
+
+void packet_init(packet* p) {
+    membuf_init(&p->data);
+    packet_reset(p);
 }
 
 void packet_free(packet* p) {
     membuf_free(&p->data);
+}
+
+void packet_source_reset(packet_source* s) {
+    membuf_reset(&s->dsi);
+    s->handle = NULL;
+    s->name = NULL;
+    s->codec = CODEC_TYPE_UNKNOWN;
+    s->channel_layout = 0;
+    s->sample_rate = 0;
+    s->frame_len = 0;
+    s->sync_flag = 0;
+    s->padding = 0;
+    s->roll_distance = 0;
+    s->roll_type = 0;
+
+    s->codec_tag = 0;
+    s->block_align = 0;
+    s->format = 0;
+    s->bit_rate = 0;
+    s->bits_per_coded_sample = 0;
+    s->bits_per_raw_sample = 0;
+    s->avprofile = 0;
+    s->avlevel = 0;
+    s->trailing_padding = 0;
 }
 
 int packet_set_data(packet* p, const void* src, size_t len) {
@@ -25,6 +54,32 @@ int packet_copy(packet* dest, const packet* source) {
     dest->pts = source->pts;
     dest->sync = source->sync;
     return membuf_copy(&dest->data,&source->data);
+}
+
+int packet_source_copy(packet_source* dest, const packet_source* source) {
+    dest->handle = source->handle;
+    dest->name = source->name;
+    dest->codec = source->codec;
+    dest->profile = source->profile;
+    dest->channel_layout = source->channel_layout;
+    dest->sample_rate = source->sample_rate;
+    dest->frame_len = source->frame_len;
+    dest->sync_flag = source->sync_flag;
+    dest->padding = source->padding;
+    dest->roll_distance = source->roll_distance;
+    dest->roll_type = source->roll_type;
+    dest->codec_tag = source->codec_tag;
+    dest->block_align = source->block_align;
+    dest->format = source->format;
+    dest->bit_rate = source->bit_rate;
+    dest->bits_per_coded_sample = source->bits_per_coded_sample;
+    dest->bits_per_raw_sample = source->bits_per_raw_sample;
+    dest->avprofile = source->avprofile;
+    dest->avlevel = source->avlevel;
+    dest->trailing_padding = source->trailing_padding;
+
+    membuf_reset(&dest->dsi);
+    return membuf_copy(&dest->dsi, &source->dsi);
 }
 
 int packet_receiver_open_null(void* handle, const packet_source* source) {
@@ -43,6 +98,14 @@ int packet_receiver_submit_packet_null(void* handle, const packet* packet) {
     return -1;
 }
 
+int packet_receiver_submit_tags_null(void* handle, const taglist* tags) {
+    (void)handle;
+    (void)tags;
+    fprintf(stderr,"[app error] tags_receiver submit_tags not set\n");
+    abort();
+    return -1;
+}
+
 int packet_receiver_flush_null(void* handle) {
     (void)handle;
     fprintf(stderr,"[app error] packet_receiver flush not set\n");
@@ -50,19 +113,16 @@ int packet_receiver_flush_null(void* handle) {
     return -1;
 }
 
-int packet_source_set_keyframes_null(void* handle, unsigned int keyframes) {
+int packet_receiver_reset_null(void* handle) {
     (void)handle;
-    (void)keyframes;
-    fprintf(stderr,"[app error] packet_source set_keyframes not set\n");
+    fprintf(stderr,"[app error] packet_receiver reset not set\n");
     abort();
     return -1;
 }
 
-int packet_source_reset_null(void* handle, void* dest, int (*cb)(void*, const packet*)) {
+int packet_receiver_close_null(void* handle) {
     (void)handle;
-    (void)dest;
-    (void)cb;
-    fprintf(stderr,"[app error] packet_source reset not set\n");
+    fprintf(stderr,"[app error] packet_receiver close not set\n");
     abort();
     return -1;
 }

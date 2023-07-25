@@ -24,6 +24,7 @@ void demuxer_init(demuxer* dem) {
 void demuxer_free(demuxer* dem) {
     if(dem->userdata != NULL) {
         dem->plugin->close(dem->userdata);
+        free(dem->userdata);
     }
     dem->userdata = NULL;
     dem->plugin = NULL;
@@ -36,13 +37,13 @@ int demuxer_create(demuxer* dem, const strbuf* name) {
     plug = demuxer_plugin_get(name);
     if(plug == NULL) return -1;
 
-    userdata = plug->create();
+    userdata = malloc(plug->size());
     if(userdata == NULL) return -1;
 
     dem->userdata = userdata;
     dem->plugin = plug;
 
-    return 0;
+    return dem->plugin->create(dem->userdata);
 }
 
 
@@ -53,7 +54,7 @@ int demuxer_open(demuxer* dem, input* in) {
     }
     ich_time_now(&dem->ts);
     dem->counter = 0;
-    return dem->plugin->open(dem->userdata, in, &dem->packet_receiver);
+    return dem->plugin->open(dem->userdata, in);
 }
 
 int demuxer_config(const demuxer* dem, const strbuf* name, const strbuf* value) {
@@ -69,7 +70,7 @@ void demuxer_global_deinit(void) {
 }
 
 int demuxer_run(demuxer* dem) {
-    int r = dem->plugin->demux(dem->userdata, &dem->tag_handler, &dem->packet_receiver);
+    int r = dem->plugin->run(dem->userdata, &dem->tag_handler, &dem->packet_receiver);
     if(r == 0) {
         ich_time_now(&dem->ts);
         dem->counter++;

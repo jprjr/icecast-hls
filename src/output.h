@@ -9,6 +9,7 @@ struct output {
     const output_plugin* plugin; /* plugin currently in use */
     size_t counter;
     ich_time ts;
+    int opened;
 };
 
 typedef struct output output;
@@ -36,6 +37,9 @@ int output_submit_segment(output*, const segment*);
 int output_submit_tags(const output*, const taglist*);
 int output_submit_picture(const output*, const picture*, picture*);
 int output_flush(const output*);
+
+/* doesn't really reset state, instead it signals a discontinuity */
+int output_reset(const output*);
 
 int output_get_segment_info(const output*, const segment_source_info* info, segment_params* params);
 

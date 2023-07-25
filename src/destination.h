@@ -41,12 +41,11 @@ struct destination {
     encoder encoder;
     muxer muxer;
     output output;
-    /* if a user doesn't specify a filter, we're still going to have
-     * one no matter what, so - we'll let the destination itself store
-     * the sample rate and channels */
     uint8_t configuring;
     taglist_map_flags map_flags;
     image_mode image_mode;
+    samplefmt samplefmt; /* cached samplefmt, used to drive how we handle
+                  open and flush calls */
 };
 
 typedef struct destination destination;
@@ -65,11 +64,15 @@ void destination_free(destination*);
 
 int destination_config(destination*, const strbuf* key, const strbuf* val);
 
-int destination_open(destination*, const ich_time* now);
+int destination_create(destination*, const ich_time* now);
+
+int destination_open(destination*, const frame_source* source);
 
 int destination_submit_frame(destination*, const frame* frame);
 int destination_flush(const destination*);
-int destination_submit_tags(const destination*, const taglist* tags);
+int destination_reset(const destination*);
+int destination_close(const destination*);
+int destination_submit_tags(destination*, const taglist* tags);
 
 void destination_run(void*);
 

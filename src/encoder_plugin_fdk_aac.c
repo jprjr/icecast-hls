@@ -9,8 +9,6 @@
 #include <string.h>
 #include <errno.h>
 
-#define MAX_CHANNELS 2
-
 #define LOG0(s) fprintf(stderr,"[encoder:fdk-aac] "s"\n")
 #define LOG1(s,a) fprintf(stderr,"[encoder:fdk-aac] "s"\n",(a))
 #define LOG2(s,a,b) fprintf(stderr,"[encoder:fdk-aac] "s"\n",(a),(b))
@@ -19,6 +17,10 @@
 
 #define LOGERRNO(s) LOG1(s": %s", strerror(errno))
 #define LOGSERRNO(s,a) LOG3(s": %s", (int)a.len, (char *)(a).x, strerror(errno))
+
+#define MAX_CHANNELS 8
+
+static STRBUF_CONST(plugin_name,"fdk-aac");
 
 static int check_sample_rate(unsigned int sample_rate) {
     switch(sample_rate) {
@@ -51,16 +53,17 @@ struct plugin_userdata {
     unsigned int bitrate;
     unsigned int afterburner;
     size_t frame_len;
+    packet_source me;
 };
 
 typedef struct plugin_userdata plugin_userdata;
 
-static void* plugin_create(void) {
-    plugin_userdata* userdata = (plugin_userdata*)malloc(sizeof(plugin_userdata));
-    if(userdata == NULL) {
-        LOGERRNO("unable to allocate plugin userdata");
-        return userdata;
-    }
+static size_t plugin_size(void) {
+    return sizeof(plugin_userdata);
+}
+
+static int plugin_create(void* ud) {
+    plugin_userdata* userdata = (plugin_userdata*)ud;
 
     userdata->aacEncoder = NULL;
     userdata->aot = AOT_AAC_LC;
@@ -70,7 +73,9 @@ static void* plugin_create(void) {
     packet_init(&userdata->packet);
     packet_init(&userdata->packet2);
     frame_init(&userdata->buffer);
-    return userdata;
+    userdata->me = packet_source_zero;
+
+    return 0;
 }
 
 static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
@@ -168,24 +173,36 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
     plugin_userdata* userdata = (plugin_userdata*)ud;
     AACENC_ERROR e = AACENC_OK;
     AACENC_InfoStruct info;
-    packet_source me = PACKET_SOURCE_ZERO;
+    int channel_mode = 0;
+
     packet_source_info ps_info = PACKET_SOURCE_INFO_ZERO;
     packet_source_params ps_params = PACKET_SOURCE_PARAMS_ZERO;
-    membuf dsi = MEMBUF_ZERO;
 
     ps_info.time_base = source->sample_rate;
     ps_info.frame_len = 1024;
 
     userdata->packet.sample_rate = source->sample_rate;
+    userdata->packet2.sample_rate = source->sample_rate;
+    userdata->packet.sample_group = 1;
+    userdata->packet2.sample_group = 1;
 
     userdata->buffer.format = SAMPLEFMT_S16;
-    userdata->buffer.channels = source->channels;
+    userdata->buffer.channels = channel_count(source->channel_layout);
     userdata->buffer.sample_rate = source->sample_rate;
     userdata->buffer.duration = 0;
 
-    if(source->channels > MAX_CHANNELS) {
-        LOG2("unsupported channel config - requested %u channels, max is %u channels",(unsigned int)source->channels, (unsigned int)MAX_CHANNELS);
-        return -1;
+    switch(source->channel_layout) {
+        case LAYOUT_MONO: channel_mode = 1; break;
+        case LAYOUT_STEREO: channel_mode = 2; break;
+        case LAYOUT_3_0: channel_mode = 3; break;
+        case LAYOUT_4_0: channel_mode = 4; break;
+        case LAYOUT_5_0: channel_mode = 5; break;
+        case LAYOUT_5_1: channel_mode = 6; break;
+        case LAYOUT_7_1: channel_mode = 7; break;
+        default: {
+            LOG2("unsupported channel layout 0x%lx (%u channels)", source->channel_layout,(unsigned int)channel_count(source->channel_layout));
+            return -1;
+        }
     }
 
     if( (r = check_sample_rate(source->sample_rate)) != 0) {
@@ -193,8 +210,8 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
         return r;
     }
 
-    if(userdata->aot == AOT_PS && source->channels != 2) {
-        LOG0("warning: HE-AACv2 specified but source is mono, downgrading to HE-AACv1");
+    if(userdata->aot == AOT_PS && source->channel_layout != LAYOUT_STEREO) {
+        LOG0("warning: HE-AACv2 specified but source is not stereo, downgrading to HE-AACv1");
         userdata->aot = AOT_SBR;
     }
 
@@ -233,7 +250,12 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
         return -1;
     }
 
-    if( (e = aacEncoder_SetParam(userdata->aacEncoder, AACENC_CHANNELMODE, source->channels)) != AACENC_OK) {
+    if( (e = aacEncoder_SetParam(userdata->aacEncoder, AACENC_CHANNELORDER, 1)) != AACENC_OK) {
+        LOG1("error setting AAC channel mode: %u", e);
+        return -1;
+    }
+
+    if( (e = aacEncoder_SetParam(userdata->aacEncoder, AACENC_CHANNELMODE, channel_mode)) != AACENC_OK) {
         LOG1("error setting AAC channel mode: %u", e);
         return -1;
     }
@@ -279,26 +301,26 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
         LOGERRNO("error allocating packet buffer");
         return r;
     }
-    memset(userdata->packet.data.x,0,sizeof(uint8_t) * (6144/8) * source->channels);
+    memset(userdata->packet.data.x,0,sizeof(uint8_t) * (6144/8) * MAX_CHANNELS);
 
     if( (r = membuf_ready(&userdata->packet2.data,sizeof(uint8_t) * (6144/8) * MAX_CHANNELS)) != 0) {
         LOGERRNO("error allocating packet2 buffer");
         return r;
     }
-    memset(userdata->packet2.data.x,0,sizeof(uint8_t) * (6144/8) * source->channels);
+    memset(userdata->packet2.data.x,0,sizeof(uint8_t) * (6144/8) * MAX_CHANNELS);
 
-    me.codec   = CODEC_TYPE_AAC;
+    userdata->me.codec   = CODEC_TYPE_AAC;
     switch(userdata->aot) {
         case AOT_AAC_LC: {
-            me.profile = CODEC_PROFILE_AAC_LC;
+            userdata->me.profile = CODEC_PROFILE_AAC_LC;
             break;
         }
         case AOT_SBR: {
-            me.profile = CODEC_PROFILE_AAC_HE;
+            userdata->me.profile = CODEC_PROFILE_AAC_HE;
             break;
         }
         case AOT_PS: {
-            me.profile = CODEC_PROFILE_AAC_HE2;
+            userdata->me.profile = CODEC_PROFILE_AAC_HE2;
             break;
         }
         default: {
@@ -324,24 +346,20 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
      * list box.
      */
 
-    me.channels = source->channels;
-    me.sample_rate = source->sample_rate;
-    me.frame_len = userdata->frame_len;
-    me.padding = info.nDelay;
-    me.roll_distance = -1;
-    me.sync_flag = 1;
-    me.handle = userdata;
+    userdata->me.channel_layout = source->channel_layout;
+    userdata->me.sample_rate = source->sample_rate;
+    userdata->me.frame_len = userdata->frame_len;
+    userdata->me.padding = info.nDelay;
+    userdata->me.roll_distance = -1;
+    userdata->me.sync_flag = 1;
+    userdata->me.handle = userdata;
 
-    dsi.x = info.confBuf;
-    dsi.len = info.confSize;
-    me.dsi = &dsi;
+    userdata->me.dsi.x = info.confBuf;
+    userdata->me.dsi.len = info.confSize;
 
-    if(( r = dest->open(dest->handle, &me)) != 0) {
-        LOG0("error opening muxer");
-        return r;
-    }
+    userdata->packet.pts -= (uint64_t) info.nDelay;
 
-    return 0;
+    return dest->open(dest->handle, &userdata->me);
 }
 
 static int plugin_encode_frame(plugin_userdata* userdata, const packet_receiver* dest) {
@@ -484,7 +502,7 @@ static int plugin_flush(void* ud, const packet_receiver* dest) {
         return -1;
     }
 
-    return dest->flush(dest->handle);
+    return 0;
 }
 
 static int plugin_submit_frame(void* ud, const frame* frame, const packet_receiver* dest) {
@@ -499,12 +517,24 @@ static int plugin_submit_frame(void* ud, const frame* frame, const packet_receiv
     return plugin_drain(userdata,dest);
 }
 
-static void plugin_close(void *ud) {
+static int plugin_reset(void* ud) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
+
     if(userdata->aacEncoder != NULL) aacEncClose(&userdata->aacEncoder);
+    userdata->aacEncoder = NULL;
     packet_free(&userdata->packet);
     packet_free(&userdata->packet2);
     frame_free(&userdata->buffer);
+    membuf_free(&userdata->me.dsi);
+    userdata->me = packet_source_zero;
+
+    return 0;
+}
+
+static void plugin_close(void *ud) {
+    plugin_userdata* userdata = (plugin_userdata*)ud;
+
+    plugin_reset(userdata);
 }
 
 static int plugin_init(void) {
@@ -516,7 +546,8 @@ static void plugin_deinit(void) {
 }
 
 const encoder_plugin encoder_plugin_fdk_aac = {
-    { .a = 0, .len = 7, .x = (uint8_t*)"fdk-aac" },
+    plugin_name,
+    plugin_size,
     plugin_init,
     plugin_deinit,
     plugin_create,
@@ -525,4 +556,5 @@ const encoder_plugin encoder_plugin_fdk_aac = {
     plugin_close,
     plugin_submit_frame,
     plugin_flush,
+    plugin_reset,
 };

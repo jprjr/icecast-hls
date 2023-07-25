@@ -23,6 +23,7 @@ void input_init(input* in) {
 void input_free(input* in) {
     if(in->userdata != NULL) {
         in->plugin->close(in->userdata);
+        free(in->userdata);
     }
     in->userdata = NULL;
     in->plugin = NULL;
@@ -39,13 +40,13 @@ int input_create(input* in, const strbuf* name) {
         return -1;
     }
 
-    userdata = plug->create();
+    userdata = malloc(plug->size());
     if(userdata == NULL) return -1;
 
     in->userdata = userdata;
     in->plugin = plug;
 
-    return 0;
+    return in->plugin->create(in->userdata);
 }
 
 int input_open(input* in) {

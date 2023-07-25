@@ -17,8 +17,11 @@ void source_sync_init(source_sync*);
 void source_sync_free(source_sync*);
 
 /* all these void*s are cast into source_sync */
-int source_sync_frame(source_sync*, const frame* frame);
+int source_sync_open(source_sync*, const frame_source* source);
 int source_sync_tags(source_sync*, const taglist* tags);
+int source_sync_frame(source_sync*, const frame* frame);
+int source_sync_flush(source_sync*);
+int source_sync_reset(source_sync*);
 int source_sync_eof(source_sync*);
 
 void source_sync_quit(source_sync*);

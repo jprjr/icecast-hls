@@ -96,8 +96,8 @@ int destinationlist_open(const destinationlist* list, const ich_time* now) {
     len = list->len / sizeof(destinationlist_entry);
 
     for(i=0;i<len;i++) {
-        if( (r = destination_open(&entry[i].destination,now)) != 0) {
-            fprintf(stderr,"[destinationlist] error opening destination %.*s\n",
+        if( (r = destination_create(&entry[i].destination,now)) != 0) {
+            fprintf(stderr,"[destinationlist] error prepping destination %.*s\n",
               (int)entry[i].id.len, (char *)entry[i].id.x);
             return r;
         }
@@ -110,8 +110,11 @@ static int destinationlist_entry_run(void *userdata) {
     int r;
     destinationlist_entry* entry = (destinationlist_entry*)userdata;
 
+    entry->sync.frame_receiver.open         = (frame_receiver_open_cb)destination_open;
     entry->sync.frame_receiver.submit_frame = (frame_receiver_submit_frame_cb)destination_submit_frame;
     entry->sync.frame_receiver.flush        = (frame_receiver_flush_cb)destination_flush;
+    entry->sync.frame_receiver.reset        = (frame_receiver_reset_cb)destination_reset;
+    entry->sync.frame_receiver.close        = (frame_receiver_close_cb)destination_close;
     entry->sync.frame_receiver.handle       = &entry->destination;
     entry->sync.on_tags.cb        = (tag_handler_callback)destination_submit_tags;
     entry->sync.on_tags.userdata  = &entry->destination;

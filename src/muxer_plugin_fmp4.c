@@ -2,10 +2,12 @@
 #include "muxer_caps.h"
 
 #include "minifmp4.h"
+#include "bitwriter.h"
 
 #include <stdlib.h>
 #include <errno.h>
 #include <stdio.h>
+#include <string.h>
 #include "map.h"
 #include "id3.h"
 
@@ -13,6 +15,8 @@
 #include "pack_u16be.h"
 #include "unpack_u32le.h"
 #include "unpack_u16le.h"
+
+static STRBUF_CONST(plugin_name,"fmp4");
 
 static const char* AOID3_SCHEME_ID_URI = "https://aomedia.org/emsg/ID3";
 static const char* AOID3_VALUE = "0";
@@ -48,9 +52,9 @@ struct plugin_userdata {
     fmp4_loudness* loudness;
     fmp4_measurement* measurement;
     fmp4_emsg* emsg;
+    fmp4_sample_info default_info;
     membuf dsi;
     membuf expired_emsgs;
-    unsigned int packets_per_segment;
     unsigned int samples_per_segment;
     unsigned int segment_length;
     uint8_t configuring;
@@ -59,25 +63,26 @@ struct plugin_userdata {
 
 typedef struct plugin_userdata plugin_userdata;
 
-static void* plugin_create(void) {
-    plugin_userdata* userdata = (plugin_userdata*)malloc(sizeof(plugin_userdata));
-    if(userdata == NULL) return NULL;
+static size_t plugin_size(void) {
+    return sizeof(plugin_userdata);
+}
+
+static int plugin_create(void* ud) {
+    plugin_userdata* userdata = (plugin_userdata*) ud;
+
     fmp4_mux_init(&userdata->mux, NULL);
 
     id3_init(&userdata->id3);
     if(id3_ready(&userdata->id3) != 0) {
-        free(userdata); return NULL;
+        return -1;
     }
 
     if( (userdata->track = fmp4_mux_new_track(&userdata->mux)) == NULL) {
-        id3_free(&userdata->id3);
-        free(userdata); return NULL;
+        return -1;
     }
 
     if(fmp4_mux_add_brand(&userdata->mux,"aid3") != FMP4_OK) {
-        fmp4_mux_close(&userdata->mux);
-        id3_free(&userdata->id3);
-        free(userdata); return NULL;
+        return -1;
     }
 
     userdata->segment_length = 0;
@@ -88,7 +93,25 @@ static void* plugin_create(void) {
 
     membuf_init(&userdata->expired_emsgs);
     membuf_init(&userdata->dsi);
-    return userdata;
+
+    return 0;
+}
+
+static int plugin_reset(void* ud) {
+    plugin_userdata* userdata = (plugin_userdata*) ud;
+
+    if(userdata->emsg != NULL) {
+        fmp4_emsg_free(userdata->emsg);
+        userdata->emsg = NULL;
+    }
+    id3_reset(&userdata->id3);
+    membuf_reset(&userdata->dsi);
+    fmp4_track_set_base_media_decode_time(userdata->track, 0);
+    userdata->track->dsi.len = 0;
+
+    if(id3_ready(&userdata->id3) != 0) return -1;
+
+    return 0;
 }
 
 static void expire_emsgs(plugin_userdata* userdata) {
@@ -103,13 +126,13 @@ static void expire_emsgs(plugin_userdata* userdata) {
 
 static void plugin_close(void* ud) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
+
     if(userdata->emsg != NULL) fmp4_emsg_free(userdata->emsg);
     fmp4_mux_close(&userdata->mux);
     expire_emsgs(userdata);
     membuf_free(&userdata->expired_emsgs);
     membuf_free(&userdata->dsi);
     id3_free(&userdata->id3);
-    free(userdata);
 }
 
 static int plugin_config_measurement(plugin_userdata* userdata, const strbuf* key, const strbuf* value) {
@@ -388,7 +411,7 @@ static int plugin_flush(void* ud, const segment_receiver* dest) {
     if(userdata->track->trun_sample_count > 0) {
         if( (r = plugin_muxer_flush(userdata,dest)) != 0) return r;
     }
-    return dest->flush(dest->handle);
+    return 0;
 }
 
 static int plugin_submit_packet(void* ud, const packet* packet, const segment_receiver* dest) {
@@ -399,15 +422,27 @@ static int plugin_submit_packet(void* ud, const packet* packet, const segment_re
     fmp4_sample_info_init(&info);
     info.duration = packet->duration;
     info.size = packet->data.len;
+    info.sample_group = packet->sample_group;
     info.flags.is_non_sync = !packet->sync;
-    info.flags.depends_on = packet->sync ? 2 : 1;
+    info.flags.depends_on = packet->sync ? 2 : 0;
 
-    if(fmp4_track_add_sample(userdata->track, packet->data.x, &info) != FMP4_OK) return -1;
+    /* if our source has non-sync samples we should only flush when we get a sync packet */
+    if(userdata->default_info.flags.is_non_sync) {
+        if(packet->sync && userdata->track->trun_sample_count > 0) {
+            if( (r = plugin_muxer_flush(userdata,dest)) != 0) return r;
+        }
+        if(fmp4_track_add_sample(userdata->track, packet->data.x, &info) != FMP4_OK) return -1;
+        return 0;
+    }
 
+    /* default path where all samples are sync samples */
+    /* if adding this sample would go over the total per segment, flush */
     /* see if we need to flush the current segment */
-    if(userdata->track->trun_sample_count >= userdata->samples_per_segment) {
+    if(userdata->track->trun_sample_count + packet->duration > userdata->samples_per_segment) {
         if( (r = plugin_muxer_flush(userdata,dest)) != 0) return r;
     }
+
+    if(fmp4_track_add_sample(userdata->track, packet->data.x, &info) != FMP4_OK) return -1;
 
     return 0;
 }
@@ -426,7 +461,11 @@ static size_t plugin_write_init_callback(const void* src, size_t len, void* user
 
 static int plugin_open(void* ud, const packet_source* source, const segment_receiver* dest) {
     int r;
-    fmp4_sample_info info;
+    uint8_t buf[64];
+    uint64_t tmp;
+    size_t pos;
+    size_t pos2;
+    bitwriter bw;
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
     segment_source me = SEGMENT_SOURCE_ZERO;
@@ -437,7 +476,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     s_info.frame_len = source->frame_len;
     dest->get_segment_info(dest->handle,&s_info,&s_params);
 
-    userdata->samples_per_segment = s_params.packets_per_segment * source->frame_len;
+    userdata->samples_per_segment = s_params.segment_length * s_info.time_base / 1000;
 
     userdata->track->stream_type = FMP4_STREAM_TYPE_AUDIO;
 
@@ -489,48 +528,303 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     fmp4_track_set_language(userdata->track,"und");
     userdata->track->time_scale = source->sample_rate;
-    userdata->track->info.audio.channels = source->channels;
+    userdata->track->info.audio.channels = channel_count(source->channel_layout);
     fmp4_track_set_roll_distance(userdata->track,source->roll_distance);
     fmp4_track_set_encoder_delay(userdata->track,source->padding);
     if(source->roll_type == 1) {
         fmp4_track_set_roll_type(userdata->track, FMP4_ROLL_TYPE_PROL);
     }
 
-    fmp4_sample_info_init(&info);
-    info.duration = source->frame_len;
-    info.flags.is_non_sync = source->sync_flag == 0;
+    fmp4_sample_info_init(&userdata->default_info);
+    userdata->default_info.duration = source->frame_len;
+    userdata->default_info.flags.is_non_sync = source->sync_flag == 0;
 
-    fmp4_track_set_default_sample_info(userdata->track, &info);
+    fmp4_track_set_default_sample_info(userdata->track, &userdata->default_info);
 
     if( (r = dest->open(dest->handle, &me)) != 0) {
         fprintf(stderr,"[muxer:fmp4] error opening output\n");
         return r;
     }
 
-    if(source->dsi->len > 0) {
-        if(membuf_copy(&userdata->dsi,source->dsi) != 0) {
+    bitwriter_init(&bw);
+    bw.buffer = buf;
+    bw.len    = sizeof(buf);
+
+    if(source->dsi.len > 0) {
+        if(membuf_copy(&userdata->dsi,&source->dsi) != 0) {
             fprintf(stderr,"[muxer:fmp4] error copying dsi\n");
             return -1;
         }
+    }
 
-        if(userdata->track->codec == FMP4_CODEC_OPUS) {
+    switch(userdata->track->codec) {
+        case FMP4_CODEC_MP4A: {
+            switch(userdata->track->object_type) {
+                case FMP4_OBJECT_TYPE_AAC: {
+                    if(userdata->dsi.len == 0) {
+                        fprintf(stderr,"[muxer:fmp4] expected dsi for AAC\n");
+                        return -1;
+                    }
+                    break;
+                }
+                default: break;
+            }
+            break;
+        }
+
+        case FMP4_CODEC_OPUS: {
             /* the dsi we get is a whole OpusHead for Ogg, convert
              * to mp4 format */
+            if(userdata->dsi.len <= 8 || memcmp(&userdata->dsi.x[0],"OpusHead",8) != 0) {
+                fprintf(stderr,"[muxer:fmp4] expected an OpusHead packet for dsi\n");
+                return -1;
+            }
             membuf_trim(&userdata->dsi,8);
+
+            /* need to convert to mp4 format */
+
+            /* change version from 1 to 0 */
             userdata->dsi.x[0] = 0x00;
+
+            /* convert pre-skip, samplerate, and gain from little endian to big endian */
             pack_u16be(&userdata->dsi.x[2],unpack_u16le(&userdata->dsi.x[2]));
             pack_u32be(&userdata->dsi.x[4],unpack_u32le(&userdata->dsi.x[4]));
             pack_u16be(&userdata->dsi.x[8],unpack_u16le(&userdata->dsi.x[8]));
+            break;
         }
+
+        case FMP4_CODEC_ALAC: {
+            /* the dsi we get has mp4box headers (4 bytes of size, 'alac', 4 bytes of flagss)
+             * so we need to trim those */
+            if(userdata->dsi.len <= 12) {
+                fprintf(stderr,"[muxer:fmp4] expected ALAC mp4box for dsi\n");
+                return -1;
+            }
+            membuf_trim(&userdata->dsi,12);
+            break;
+        }
+
+        case FMP4_CODEC_FLAC: {
+            if(userdata->dsi.len != 34) {
+                fprintf(stderr,"[muxer:fmp4] expected FLAC STREAMINFO block for dsi\n");
+                return -1;
+            }
+            pack_u32be(buf,0x80000000 | 34);
+            if(membuf_insert(&userdata->dsi,buf,4,0) != 0) {
+                return -1;
+            }
+            /* TODO check the channel layout and add a VORBISCOMMENT block if needed */
+            switch(source->channel_layout) {
+                case LAYOUT_MONO: /* fall-through */
+                case LAYOUT_STEREO: /* fall-through */
+                case LAYOUT_3_0: /* fall-through */
+                case LAYOUT_QUAD: /* fall-through */
+                case LAYOUT_5_0: /* fall-through */
+                case LAYOUT_5_1: /* fall-through */
+                case LAYOUT_6_1: /* fall-through */
+                case LAYOUT_7_1: break;
+                default: {
+                    /* we need to add a metadata block to the dsi */
+                    /* unset the last-metdata-block bit in current dsi */
+                    userdata->dsi.x[0] &= 0x7F;
+
+                    if(membuf_readyplus(&userdata->dsi,8) != 0) {
+                        return -1;
+                    }
+
+                    /* save current position for writing header info */
+                    pos = userdata->dsi.len;
+                    userdata->dsi.len += 4;
+
+                    /* save position for writing tag length */
+                    pos2 = userdata->dsi.len;
+                    userdata->dsi.len += 4;
+
+                    if(source->name == NULL) {
+                        strbuf_append_cstr(&userdata->dsi,"icecast-hls");
+                    } else {
+                        strbuf_cat(&userdata->dsi,source->name);
+                    }
+                    pack_u32be(buf,userdata->dsi.len - pos2 - 4);
+                    memcpy(&userdata->dsi.x[pos2],buf,4);
+
+                    pack_u32be(buf,1); /* only 1 tag */
+                    if(membuf_append(&userdata->dsi,buf,4) != 0) return -1;
+
+                    if(membuf_readyplus(&userdata->dsi,4) != 0) return -1;
+                    pos2 = userdata->dsi.len;
+                    userdata->dsi.len += 4;
+
+                    if(strbuf_sprintf(&userdata->dsi,"WAVEFORMATEXTENSIBLE_CHANNEL_MASK=0x%llx",
+                        source->channel_layout) != 0) return -1;
+                    pack_u32be(buf,userdata->dsi.len - pos2 - 4);
+                    memcpy(&userdata->dsi.x[pos2],buf,4);
+
+                    /* finally write the header */
+                    pack_u32be(buf, 0x84000000 | (userdata->dsi.len - pos - 4));
+                    memcpy(&userdata->dsi.x[pos],buf,4);
+                    break;
+                }
+            }
+            break;
+        }
+
+        case FMP4_CODEC_AC3: {
+            if(userdata->dsi.len == 0) {
+                /* dsi is:
+                   fscod, 2 bits
+                   bsid, 5 bits
+                   bsmod, 3 bits
+                   acmod, 3 bits
+                   lfeon, 1 bit
+                   bit_rate_code, 5 bits
+                   reserved, 5 bits */
+                switch(source->sample_rate) {
+                    case 48000: tmp = 0x00; break;
+                    case 44100: tmp = 0x01; break;
+                    case 32000: tmp = 0x02; break;
+                    default: {
+                        fprintf(stderr,"[muxer:fmp4] unsupported sample rate for AC3\n");
+                        return -1;
+                    }
+                }
+                bitwriter_add(&bw, 2, tmp); /* fscod */
+                bitwriter_add(&bw, 5, 8); /* bsid, hard-coded to 8 */
+                bitwriter_add(&bw, 3, 0); /* bsmod, 0 = main service */
+                switch(source->channel_layout & ~CHANNEL_LOW_FREQUENCY) {
+                    case LAYOUT_MONO: tmp = 0x01; break;
+                    case LAYOUT_STEREO: tmp = 0x02; break;
+                    case LAYOUT_3_0: tmp = 0x03; break;
+                    case LAYOUT_STEREO | CHANNEL_BACK_CENTER: tmp = 0x04; break;
+                    case LAYOUT_4_0: tmp = 0x05; break;
+                    case LAYOUT_QUAD: tmp = 0x06; break;
+                    case LAYOUT_5_0: tmp = 0x07; break;
+                    default: {
+                        fprintf(stderr,"[muxer:fmp4] unsupported channel layout\n");
+                        return -1;
+                    }
+                }
+                bitwriter_add(&bw, 3, tmp); /* acmod */
+                bitwriter_add(&bw,1,!!(source->channel_layout & CHANNEL_LOW_FREQUENCY)); /* lfeon */
+                tmp = 0;
+                switch(source->bit_rate) {
+                    case 640000: tmp++; /* fall-through */
+                    case 576000: tmp++; /* fall-through */
+                    case 512000: tmp++; /* fall-through */
+                    case 448000: tmp++; /* fall-through */
+                    case 384000: tmp++; /* fall-through */
+                    case 320000: tmp++; /* fall-through */
+                    case 256000: tmp++; /* fall-through */
+                    case 224000: tmp++; /* fall-through */
+                    case 192000: tmp++; /* fall-through */
+                    case 160000: tmp++; /* fall-through */
+                    case 128000: tmp++; /* fall-through */
+                    case 112000: tmp++; /* fall-through */
+                    case 96000:  tmp++; /* fall-through */
+                    case 80000:  tmp++; /* fall-through */
+                    case 64000:  tmp++; /* fall-through */
+                    case 56000:  tmp++; /* fall-through */
+                    case 48000:  tmp++; /* fall-through */
+                    case 40000:  tmp++; /* fall-through */
+                    case 32000:  break;
+                    default: {
+                        /* hard-code to 192 */
+                        tmp = 0x0a;
+                        break;
+                    }
+                }
+                bitwriter_add(&bw,5,tmp); /* bit_rate_code */
+                bitwriter_add(&bw,5,0x00); /* reserved, 5 bits */
+                bitwriter_align(&bw);
+
+                if(membuf_append(&userdata->dsi,buf,bw.len) != 0) {
+                    fprintf(stderr,"[muxer:fmp4] error copying dsi\n");
+                    return -1;
+                }
+            }
+            break;
+        }
+
+        case FMP4_CODEC_EAC3: {
+            if(userdata->dsi.len == 0) {
+                /* dsi is:
+                   data_rate, 13 bits
+                   num_ind_sub - 1, 3 bits
+                   for each independent substream (only 1 for this app):
+                       fscod, 2 bits
+                       bsid, 5 bits
+                       reserved, 1 bit
+                       asvc, 1 bit
+                       bsmod, 3 bits
+                       acmod, 3 bits
+                       lfeon, 1 bit
+                       reserved, 3 bits
+                       num_dep_Sub, 4 bits
+                       if num_dep_sub > 0:
+                           chan_loc, 9 bits
+                       else:
+                           reserved, 1 bit
+                */
+                if(source->bit_rate > 0) {
+                    bitwriter_add(&bw, 13, source->bit_rate / 1000);
+                } else {
+                    bitwriter_add(&bw, 13, 192);
+                }/* data_rate */
+
+                bitwriter_add(&bw,  3,   0); /* num_ind_sub: TODO this is hard-coded to 0 */
+                switch(source->sample_rate) {
+                    case 48000: tmp = 0x00; break;
+                    case 44100: tmp = 0x01; break;
+                    case 32000: tmp = 0x02; break;
+                    default: {
+                        fprintf(stderr,"[muxer:fmp4] unsupported sample rate for EAC3\n");
+                        return -1;
+                    }
+                }
+                bitwriter_add(&bw, 2, tmp); /* fscod */
+                bitwriter_add(&bw, 5, 16); /* bsid, hard-coded to 16 */
+                bitwriter_add(&bw, 1, 0); /* reserved 1 bit */
+                bitwriter_add(&bw, 1, 0); /* asvc 1 bit, 0 = main service */
+                bitwriter_add(&bw, 3, 0); /* bsmod, 0 = main service */
+                switch(source->channel_layout & ~CHANNEL_LOW_FREQUENCY) {
+                    case LAYOUT_MONO: tmp = 0x01; break;
+                    case LAYOUT_STEREO: tmp = 0x02; break;
+                    case LAYOUT_3_0: tmp = 0x03; break;
+                    case LAYOUT_STEREO | CHANNEL_BACK_CENTER: tmp = 0x04; break;
+                    case LAYOUT_4_0: tmp = 0x05; break;
+                    case LAYOUT_QUAD: tmp = 0x06; break;
+                    case LAYOUT_5_0: tmp = 0x07; break;
+                    default: {
+                        fprintf(stderr,"[muxer:fmp4] unsupported channel layout\n");
+                        return -1;
+                    }
+                }
+                bitwriter_add(&bw, 3, tmp); /* acmod */
+                bitwriter_add(&bw,1,!!(source->channel_layout & CHANNEL_LOW_FREQUENCY)); /* lfeon */
+                bitwriter_add(&bw,3,0); /* 3 reserved bits */
+                bitwriter_add(&bw,4,0); /* num_dep_sub: TODO This is hard-coded to 0 */
+                bitwriter_add(&bw,1,0); /* reserved 1 bit */
+                bitwriter_align(&bw);
+
+                if(membuf_append(&userdata->dsi,buf,bw.len) != 0) {
+                    fprintf(stderr,"[muxer:fmp4] error copying dsi\n");
+                    return -1;
+                }
+            }
+            break;
+        }
+
+        default: break;
+    }
+
+    if(userdata->dsi.len > 0) {
         if( fmp4_track_set_dsi(userdata->track, userdata->dsi.x, userdata->dsi.len) != FMP4_OK) {
             fprintf(stderr,"[muxer:fmp4] error setting dsi\n");
             return -1;
         }
-
-        r = fmp4_mux_write_init(&userdata->mux, plugin_write_init_callback, (void *)dest) == FMP4_OK ? 0 : -1;
     }
 
-    return r;
+    return fmp4_mux_write_init(&userdata->mux, plugin_write_init_callback, (void *)dest) == FMP4_OK ? 0 : -1;
 }
 
 static uint32_t plugin_get_caps(void* ud) {
@@ -628,20 +922,23 @@ static void plugin_deinit(void) {
 static int plugin_get_segment_info(const void* ud, const packet_source_info* s, const segment_receiver* dest, packet_source_params* i) {
     (void)ud;
 
-    segment_source_info s_info;
-    segment_params s_params;
+    segment_source_info s_info = SEGMENT_SOURCE_INFO_ZERO;
+    segment_params s_params = SEGMENT_PARAMS_ZERO;
 
     s_info.time_base = s->time_base;
     s_info.frame_len = s->frame_len;
 
     dest->get_segment_info(dest->handle,&s_info,&s_params);
+
     i->segment_length = s_params.segment_length;
     i->packets_per_segment = s_params.packets_per_segment;
+
     return 0;
 }
 
 const muxer_plugin muxer_plugin_fmp4 = {
-    { .a = 0, .len = 4, .x = (uint8_t*)"fmp4" },
+    plugin_name,
+    plugin_size,
     plugin_init,
     plugin_deinit,
     plugin_create,
@@ -651,6 +948,7 @@ const muxer_plugin muxer_plugin_fmp4 = {
     plugin_submit_packet,
     plugin_submit_tags,
     plugin_flush,
+    plugin_reset,
     plugin_get_caps,
     plugin_get_segment_info,
 };

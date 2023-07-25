@@ -7,11 +7,15 @@
 #include <errno.h>
 #include <string.h>
 
+#include "mpeg_mappings.h"
+
 #define KEY(v,t) static STRBUF_CONST(KEY_##v,#t)
 
 KEY(vbr,vbr);
 KEY(sbr,sbr);
 KEY(use_noise_filling,use-noise-filling);
+
+static STRBUF_CONST(plugin_name,"exhale");
 
 static int check_sample_rate(unsigned int sample_rate) {
     switch(sample_rate) {
@@ -39,10 +43,9 @@ struct plugin_userdata {
     ExhaleEncAPI *exhale;
     packet packet;
 
-    int32_t* samples;
     frame buffer;
+    frame samples;
 
-    unsigned int packetno;
     unsigned int frame_len;
     unsigned int tune_in_period;
 
@@ -55,6 +58,7 @@ struct plugin_userdata {
      * 0s and discard the first two packets. The first
      * packet needs to be encoded with exhaleEncodeLookahead(). */
     unsigned int discard_packets;
+    packet_source me;
 };
 
 typedef struct plugin_userdata plugin_userdata;
@@ -65,6 +69,10 @@ static int plugin_init(void) {
 
 static void plugin_deinit(void) {
     return;
+}
+
+static size_t plugin_size(void) {
+    return sizeof(plugin_userdata);
 }
 
 static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
@@ -112,30 +120,31 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
 }
 
 
-static void* plugin_create(void) {
-    plugin_userdata* userdata = (plugin_userdata*)malloc(sizeof(plugin_userdata));
-    if(userdata == NULL) return NULL;
+static int plugin_create(void* ud) {
+    plugin_userdata* userdata = (plugin_userdata*)ud;
 
     userdata->exhale = NULL;
     packet_init(&userdata->packet);
     frame_init(&userdata->buffer);
-    userdata->samples = NULL;
-    userdata->packetno = 0;
+    frame_init(&userdata->samples);
     userdata->vbr = 3;
     userdata->frame_len = 1024;
     userdata->noise_filling = 1;
     userdata->tune_in_period = 0;
     userdata->discard_packets = 2;
-    return userdata;
+    userdata->me = packet_source_zero;
+
+    return 0;
 }
 
 static void plugin_close(void* ud) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
-    if(userdata->samples != NULL) free(userdata->samples);
+
     if(userdata->exhale != NULL) exhaleDelete(userdata->exhale);
     packet_free(&userdata->packet);
     frame_free(&userdata->buffer);
-    free(userdata);
+    frame_free(&userdata->samples);
+    membuf_free(&userdata->me.dsi);
 }
 
 static int plugin_open(void* ud, const frame_source* source, const packet_receiver* dest) {
@@ -145,8 +154,7 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     uint8_t usac_config[16];
     uint32_t usac_config_size = 0;
     unsigned int padding = 0;
-    membuf dsi = STRBUF_ZERO;
-    packet_source me = PACKET_SOURCE_ZERO;
+
     packet_source_info ps_info = PACKET_SOURCE_INFO_ZERO;
     packet_source_params ps_params = PACKET_SOURCE_PARAMS_ZERO;
     memset(usac_config,0,sizeof(usac_config));
@@ -159,32 +167,54 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
         return r;
     }
 
+    switch(source->channel_layout) {
+        case LAYOUT_MONO: /* fall-through */
+        case LAYOUT_STEREO: /* fall-through */
+        case LAYOUT_3_0: /* fall-through */
+        case LAYOUT_4_0: /* fall-through */
+        case LAYOUT_5_0: /* fall-through */
+        case LAYOUT_5_1: break;
+        default: {
+            fprintf(stderr,"[encoder:exhane] unsupported channel layout 0x%lx",source->channel_layout);
+            return -1;
+        }
+    }
+
     if( (r = dest->get_segment_info(dest->handle, &ps_info, &ps_params)) != 0) {
         fprintf(stderr,"[encoder:exhale] error getting segment info\n");
         return r;
     }
 
-    userdata->tune_in_period = ps_params.packets_per_segment;
+    /* it seems like exhale's tune-in period is really double what you intend.
+     * I think the idea goes the tune_in_period allows you to technically start
+     * decoding every (x) packets but what we really want are true sync packets */
+    userdata->tune_in_period = ps_params.packets_per_segment >> 1;
 
-    userdata->buffer.format = SAMPLEFMT_S32;
-    userdata->buffer.channels = source->channels;
+    userdata->buffer.format = SAMPLEFMT_S32P;
+    userdata->buffer.channels = channel_count(source->channel_layout);
     userdata->buffer.duration = 0;
     userdata->buffer.sample_rate = source->sample_rate;
+
+    userdata->samples.format = SAMPLEFMT_S32;
+    userdata->samples.channels = channel_count(source->channel_layout);
+    userdata->samples.duration = userdata->frame_len;
+    userdata->samples.sample_rate = source->sample_rate;
 
     userdata->packet.sample_rate = source->sample_rate;
 
     if( (r = frame_ready(&userdata->buffer)) != 0) return r;
+    if( (r = frame_buffer(&userdata->samples)) != 0) return r;
 
-    me.codec       = CODEC_TYPE_AAC;
-    me.profile     = CODEC_PROFILE_AAC_USAC;
-    me.channels    = source->channels;
-    me.sample_rate = source->sample_rate;
-    me.frame_len   = userdata->frame_len;
-    me.padding     = userdata->frame_len == 2048 ? 2048 : 0;
-    me.sync_flag   = 0;
-    me.roll_distance = userdata->frame_len == 2048 ? 2 : 1;
-    me.roll_type   = 1;
-    me.handle      = userdata;
+    userdata->me.codec       = CODEC_TYPE_AAC;
+    userdata->me.profile     = CODEC_PROFILE_AAC_USAC;
+    userdata->me.channel_layout    = source->channel_layout;
+    userdata->me.sample_rate = source->sample_rate;
+    userdata->me.frame_len   = userdata->frame_len;
+    userdata->me.padding     = userdata->frame_len == 2048 ? 2048 : 0;
+    userdata->me.sync_flag   = 0;
+    userdata->me.roll_distance = userdata->frame_len == 2048 ? 2 : 1;
+    userdata->me.roll_type   = 1;
+    userdata->me.handle      = userdata;
 
     /* simplifying some logic from the exhale app:
      * startLength = 1600 / 3200 (regular vs sbr)
@@ -208,17 +238,13 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
         userdata->tune_in_period = ((uint64_t)source->sample_rate) / ((uint64_t)userdata->frame_len);
     }
 
-    userdata->samples = (int32_t*)malloc(sizeof(int32_t) * userdata->frame_len * source->channels);
-    if(userdata->samples == NULL) return -1;
-    memset(userdata->samples,0,sizeof(int32_t)*userdata->frame_len*source->channels);
-
-    if( (r = membuf_ready(&userdata->packet.data,sizeof(uint8_t) * (9216/8) * source->channels)) != 0)
+    if( (r = membuf_ready(&userdata->packet.data,sizeof(uint8_t) * (9216/8) * userdata->buffer.channels)) != 0)
         return r;
-    memset(userdata->packet.data.x,0,sizeof(uint8_t) * (9216/8) * source->channels);
+    memset(userdata->packet.data.x,0,sizeof(uint8_t) * (9216/8) * userdata->buffer.channels);
 
-    userdata->exhale = exhaleCreate(userdata->samples,userdata->packet.data.x,
-      source->sample_rate, source->channels, userdata->frame_len,
-      userdata->tune_in_period, userdata->vbr, userdata->noise_filling, 0);
+    userdata->exhale = exhaleCreate(frame_get_channel_samples(&userdata->samples,0),
+      userdata->packet.data.x, source->sample_rate, userdata->buffer.channels,
+      userdata->frame_len, userdata->tune_in_period, userdata->vbr, userdata->noise_filling, 0);
     if(userdata->exhale == NULL) return -1;
 
     /* the exhale app seems to signal to the encoder to perform pre-rolling by setting
@@ -226,33 +252,37 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     usac_config[0] = 1;
     if(exhaleInitEncoder(userdata->exhale,usac_config,&usac_config_size) != 0) return -1;
 
-    dsi.x = usac_config;
-    dsi.len = usac_config_size;
-    dsi.a = 0;
-    me.dsi = &dsi;
+    userdata->me.dsi.x = usac_config;
+    userdata->me.dsi.len = usac_config_size;
+    userdata->me.dsi.a = 0;
 
-    if(( r = dest->open(dest->handle, &me)) != 0) {
+    if(( r = dest->open(dest->handle, &userdata->me)) != 0) {
         fprintf(stderr,"[encoder:exhale] error opening muxer\n");
     }
 
     return 0;
 }
 
-static int plugin_encode_frame(plugin_userdata *userdata, const packet_receiver* dest) {
+static int plugin_encode_frame(plugin_userdata *userdata, const packet_receiver* dest, unsigned int frame_len) {
     int r = 0;
-    unsigned int i = 0;
-    unsigned int len;
+    size_t i = 0;
+    size_t j = 0;
+    size_t c = 0;
+    size_t len;
     int32_t *samples;
+    int32_t *src;
 
-    samples = (int32_t*)frame_get_channel_samples(&userdata->buffer,0);
+    samples = (int32_t*)frame_get_channel_samples(&userdata->samples,0);
 
-    for(i=0;i< userdata->frame_len * userdata->buffer.channels ;i++) {
-        userdata->samples[i] = samples[i] / ( 1 << 8 );
+    for(i=0;i<userdata->buffer.channels;i++) {
+        c = (size_t)mpeg_channel_layout[userdata->buffer.channels][i];
+
+        src = frame_get_channel_samples(&userdata->buffer,i);
+        for(j=0;j<userdata->frame_len;j++) {
+            samples[(j * ((size_t)userdata->buffer.channels)) + c] = src[j] / (1 << 8);
+        }
     }
 
-    for( ; i < userdata->frame_len * userdata->buffer.channels ; i++) {
-        userdata->samples[i] = 0;
-    }
     frame_trim(&userdata->buffer, userdata->frame_len);
 
     switch(userdata->discard_packets) {
@@ -267,10 +297,9 @@ static int plugin_encode_frame(plugin_userdata *userdata, const packet_receiver*
     }
 
     userdata->packet.data.len = len;
-    userdata->packet.duration = userdata->frame_len;
-    userdata->packet.sync = userdata->packetno++ == 0;
-
-    if(userdata->packetno == userdata->tune_in_period) userdata->packetno = 0;
+    userdata->packet.duration = frame_len;
+    userdata->packet.sync = (userdata->packet.data.x[0] & 0xC0) == 0xC0;
+    userdata->packet.sample_group = (userdata->packet.data.x[0] & 0xC0) == 0x80 ? 1 : 0;
 
     if( ( r = dest->submit_packet(dest->handle, &userdata->packet)) != 0) {
         fprintf(stderr,"[encoder:exhale] error sending packet to muxer\n");
@@ -286,7 +315,7 @@ static int plugin_drain(plugin_userdata* userdata, const packet_receiver* dest) 
     int r = 0;
 
     while(userdata->buffer.duration >= userdata->frame_len) {
-        if( (r = plugin_encode_frame(userdata,dest)) != 0) break;
+        if( (r = plugin_encode_frame(userdata,dest,userdata->frame_len)) != 0) break;
     }
     return r;
 
@@ -309,21 +338,42 @@ static int plugin_submit_frame(void* ud, const frame* frame, const packet_receiv
 static int plugin_flush(void* ud, const packet_receiver* dest) {
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
+    unsigned int duration = 0;
 
+    /* first flush out any whole frames */
     if(userdata->buffer.duration > 0) {
-        if(userdata->buffer.duration < userdata->frame_len) {
-            if( (r = frame_fill(&userdata->buffer,userdata->frame_len)) != 0) {
-                return r;
-            }
+        if( (r = plugin_drain(userdata, dest)) != 0) return r;
+    }
+
+    /* record the final partial duration */
+    if(userdata->buffer.duration > 0) {
+        duration = userdata->buffer.duration;
+        if( (r = frame_fill(&userdata->buffer,userdata->frame_len)) != 0) {
+            return r;
         }
         if( (r = plugin_drain(userdata, dest)) != 0) return r;
     }
 
-    return dest->flush(dest->handle);
+    /* finally encode two final empty frames */
+    if( (r = frame_fill(&userdata->buffer,userdata->frame_len)) != 0) return r;
+    if( (r = plugin_encode_frame(userdata, dest, userdata->frame_len)) != 0) return r;
+
+    if( (r = frame_fill(&userdata->buffer,userdata->frame_len)) != 0) return r;
+    if( (r = plugin_encode_frame(userdata, dest, duration)) != 0) return r;
+
+    return 0;
+}
+
+static int plugin_reset(void* ud) {
+    (void)ud;
+    fprintf(stderr,"no reset function");
+    abort();
+    return -1;
 }
 
 const encoder_plugin encoder_plugin_exhale = {
-    { .a = 0, .len = 6, .x = (uint8_t*)"exhale" },
+    plugin_name,
+    plugin_size,
     plugin_init,
     plugin_deinit,
     plugin_create,
@@ -332,4 +382,5 @@ const encoder_plugin encoder_plugin_exhale = {
     plugin_close,
     plugin_submit_frame,
     plugin_flush,
+    plugin_reset,
 };

@@ -11,6 +11,8 @@
 
 #include <errno.h>
 
+static STRBUF_CONST(plugin_name,"avfilter");
+
 struct plugin_userdata {
     AVFilterGraph *graph;
     AVFilterContext *buffersrc;
@@ -22,7 +24,12 @@ struct plugin_userdata {
     strbuf filter_string;
     int64_t last_pts;
     int last_nb_samples;
+
+    uint64_t in_pts;
+    uint64_t out_pts;
+
     frame_source src_config;
+    samplefmt dest_format;
 };
 
 typedef struct plugin_userdata plugin_userdata;
@@ -38,9 +45,12 @@ static void plugin_deinit(void) {
     return;
 }
 
-static void* plugin_create(void) {
-    plugin_userdata* userdata = malloc(sizeof(plugin_userdata));
-    if(userdata == NULL) return NULL;
+static size_t plugin_size(void) {
+    return sizeof(plugin_userdata);
+}
+
+static int plugin_create(void* ud) {
+    plugin_userdata* userdata = (plugin_userdata*)ud;
 
     userdata->graph = NULL;
     userdata->buffersrc = NULL;
@@ -51,12 +61,16 @@ static void* plugin_create(void) {
     userdata->last_pts = 0;
     userdata->last_nb_samples = 0;
 
+    userdata->in_pts = 0;
+    userdata->out_pts = 0;
+
     userdata->src_config = frame_source_zero;
+    userdata->dest_format = SAMPLEFMT_UNKNOWN;
 
     strbuf_init(&userdata->filter_string);
     frame_init(&userdata->frame);
 
-    return userdata;
+    return 0;
 }
 
 
@@ -99,6 +113,7 @@ static int plugin_graph_open(plugin_userdata* userdata) {
     uint64_t channel_layout;
     int64_t channel_layout_tmp;
 #endif
+    enum AVSampleFormat fmt;
 
     if(buffer_filter == NULL || buffersink_filter == NULL) {
         fprintf(stderr,"[filter:avfilter] unable to find abuffer and abuffersink filters\n");
@@ -112,17 +127,11 @@ static int plugin_graph_open(plugin_userdata* userdata) {
     }
 
 #if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
-    av_channel_layout_default(&ch_layout, userdata->src_config.channels);
+    av_channel_layout_from_mask(&ch_layout, userdata->src_config.channel_layout);
     av_channel_layout_describe(&ch_layout, layout, sizeof(layout));
     av_channel_layout_uninit(&ch_layout);
 #else
-    if( (channel_layout_tmp = av_get_default_channel_layout(userdata->src_config.channels)) < 0) {
-        av_strerror(channel_layout_tmp,args,sizeof(args));
-        fprintf(stderr,"[filter:avfilter] unable to get channel layout: %s\n", args);
-        return -1;
-    }
-    channel_layout = (uint64_t) channel_layout_tmp;
-    av_get_channel_layout_string(layout,sizeof(layout),userdata->src_config.channels,channel_layout);
+    av_get_channel_layout_string(layout,sizeof(layout),av_get_channel_layout_nb_channels(userdata->src_config.channel_layout),userdata->src_config.channel_layout);
 #endif
 
     snprintf(args,sizeof(args),
@@ -172,17 +181,36 @@ static int plugin_graph_open(plugin_userdata* userdata) {
         }
     }
 
+    if(userdata->dest_format != SAMPLEFMT_UNKNOWN) {
+        fmt = samplefmt_to_avsampleformat(userdata->dest_format);
+
+        if(av_opt_set_bin(userdata->buffersink, "sample_fmts",
+            (uint8_t*)&fmt,sizeof(fmt), AV_OPT_SEARCH_CHILDREN) < 0) {
+            fprintf(stderr,"[filter:avfilter] error setting buffersink format\n");
+            return -1;
+        }
+    }
+
+
     if(avfilter_graph_config(userdata->graph,NULL) < 0) {
         fprintf(stderr,"[filter:avfilter] unable to configure graph\n");
         return -1;
     }
 
+    userdata->in_pts = 0;
+
     return 0;
 }
 
 static void plugin_graph_close(plugin_userdata* userdata) {
-    if(userdata->buffersrc != NULL) avfilter_free(userdata->buffersrc);
-    if(userdata->buffersink != NULL) avfilter_free(userdata->buffersink);
+    if(userdata->buffersrc != NULL) {
+        avfilter_free(userdata->buffersrc);
+        userdata->buffersrc = NULL;
+    }
+    if(userdata->buffersink != NULL) {
+        avfilter_free(userdata->buffersink);
+        userdata->buffersink = NULL;
+    }
     if(userdata->inputs != NULL) avfilter_inout_free(&userdata->inputs);
     if(userdata->outputs != NULL) avfilter_inout_free(&userdata->outputs);
     if(userdata->graph  != NULL) avfilter_graph_free(&userdata->graph);
@@ -197,7 +225,9 @@ static int plugin_open(void* ud, const frame_source* source, const frame_receive
     uint64_t channel_layout;
 #endif
 
-    userdata->src_config = *source;
+    userdata->src_config.format = source->format;
+    userdata->src_config.channel_layout = source->channel_layout;
+    userdata->src_config.sample_rate = source->sample_rate;
 
     userdata->av_frame = av_frame_alloc();
     if(userdata->av_frame == NULL) {
@@ -225,15 +255,19 @@ static int plugin_open(void* ud, const frame_source* source, const frame_receive
 #endif
 
 #if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
-    me.channels = ch_layout.nb_channels;
+    me.channel_layout = ch_layout.u.mask;
 #else
-    me.channels = av_get_channel_layout_nb_channels(channel_layout);
+    me.channel_layout = channel_layout;
 #endif
+
 #if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(57,71,0)
     me.format = avsampleformat_to_samplefmt(av_buffersink_get_format(userdata->buffersink));
 #else
     me.format = avsampleformat_to_samplefmt(userdata->buffersink->inputs[0]->format);
 #endif
+
+    /* save our format for future re-opens on format change */
+    userdata->dest_format = me.format;
 
     return dest->open(dest->handle,&me);
 }
@@ -245,15 +279,13 @@ static int plugin_run(plugin_userdata* userdata, const frame_receiver* dest) {
     while( (r = av_buffersink_get_frame(userdata->buffersink, userdata->av_frame)) >= 0) {
         if( (rr = avframe_to_frame(&userdata->frame,userdata->av_frame)) < 0) return rr;
         av_frame_unref(userdata->av_frame);
-
+        userdata->frame.pts = userdata->out_pts;
         if( (rr = dest->submit_frame(dest->handle, &userdata->frame)) < 0) return rr;
+        userdata->out_pts += userdata->frame.duration;
     }
 
     if( r == AVERROR(EAGAIN) ) return 0;
-
-    if( r == AVERROR_EOF) {
-        return dest->flush(dest->handle);
-    }
+    if( r == AVERROR_EOF) return 0;
 
     return r;
 }
@@ -271,13 +303,42 @@ static int plugin_flush(void* ud, const frame_receiver* dest) {
     return plugin_run(userdata,dest);
 }
 
+static int plugin_reset(void* ud) {
+    plugin_userdata* userdata = (plugin_userdata*)ud;
+
+    plugin_graph_close(userdata);
+    av_frame_free(&userdata->av_frame);
+    frame_free(&userdata->frame);
+
+    userdata->out_pts = 0;
+    userdata->last_pts = 0;
+    userdata->last_nb_samples = 0;
+    userdata->dest_format = SAMPLEFMT_UNKNOWN;
+    return 0;
+}
+
 static int plugin_submit_frame(void* ud, const frame* frame, const frame_receiver* dest) {
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
+    /* plugin_flush + reset + open are only called if the sample rate or
+     * channel count/layout changes, but if we have the input format
+     * change we need to deal with that */
+
+    if(frame->format != userdata->src_config.format) {
+        userdata->src_config.format = frame->format;
+        plugin_reset(userdata);
+        if( (r = plugin_graph_open(userdata)) != 0) return r;
+        if( (userdata->av_frame = av_frame_alloc()) == NULL) return -1;
+        frame_init(&userdata->frame);
+    }
+
     if( (r = frame_to_avframe(userdata->av_frame,frame,0)) < 0) return r;
 
+    userdata->av_frame->pts = userdata->in_pts;
     r = av_buffersrc_write_frame(userdata->buffersrc,userdata->av_frame);
+    userdata->in_pts += (uint64_t) userdata->av_frame->nb_samples;
+
     userdata->last_pts = userdata->av_frame->pts;
     userdata->last_nb_samples = userdata->av_frame->nb_samples;
 
@@ -293,12 +354,12 @@ static void plugin_close(void* ud) {
     plugin_graph_close(userdata);
     frame_free(&userdata->frame);
     strbuf_free(&userdata->filter_string);
-    free(userdata);
 }
 
 
 const filter_plugin filter_plugin_avfilter = {
-    { .a = 0, .len = 8, .x = (uint8_t*)"avfilter" },
+    plugin_name,
+    plugin_size,
     plugin_init,
     plugin_deinit,
     plugin_create,
@@ -307,4 +368,5 @@ const filter_plugin filter_plugin_avfilter = {
     plugin_close,
     plugin_submit_frame,
     plugin_flush,
+    plugin_reset,
 };

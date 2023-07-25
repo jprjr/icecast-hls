@@ -33,6 +33,13 @@ int segment_receiver_flush_null(void* handle) {
     return -1;
 }
 
+int segment_receiver_reset_null(void* handle) {
+    (void)handle;
+    fprintf(stderr,"[app error] segment_receiver reset not set\n");
+    abort();
+    return -1;
+}
+
 int segment_source_set_params_null(void* segment_producer, const segment_params* params) {
     (void)segment_producer;
     (void)params;

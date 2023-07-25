@@ -55,12 +55,15 @@ void hls_segment_meta_reset(hls_segment_meta *m) {
     strbuf_reset(&m->filename);
     strbuf_reset(&m->tags);
     m->disc = 0;
+    m->init_id = 0;
 }
 
 void hls_segment_init(hls_segment* s) {
     strbuf_init(&s->expired_files);
     membuf_init(&s->data);
     s->samples = 0;
+    s->init_id = 0;
+    s->disc = 0;
 }
 
 void hls_segment_free(hls_segment* s) {
@@ -72,6 +75,7 @@ void hls_segment_reset(hls_segment* s) {
     membuf_reset(&s->data);
     s->samples = 0;
     s->pts = 0;
+    s->disc = 0;
 }
 
 void hls_playlist_init(hls_playlist* p) {
@@ -159,6 +163,7 @@ void hls_init(hls* h) {
     thread_atomic_uint_store(&counter,0);
     strbuf_init(&h->txt);
     strbuf_init(&h->header);
+    strbuf_init(&h->init_format);
     strbuf_init(&h->init_filename);
     strbuf_init(&h->init_mimetype);
     strbuf_init(&h->segment_format);
@@ -178,9 +183,8 @@ void hls_init(hls* h) {
     h->media_sequence = 0;
     h->disc_sequence = 0;
     h->counter = 0;
+    h->init_counter = 0;
     h->version = 7;
-    h->has_init = 0;
-    h->last_pts = 0;
     h->now.seconds = 0;
     h->now.nanoseconds = 0;
 }
@@ -192,6 +196,7 @@ void hls_free(hls* h) {
     strbuf_free(&h->segment.expired_files);
     strbuf_free(&h->playlist_filename);
     strbuf_free(&h->playlist_mimetype);
+    strbuf_free(&h->init_format);
     strbuf_free(&h->init_filename);
     strbuf_free(&h->init_mimetype);
     strbuf_free(&h->segment_format);
@@ -203,14 +208,13 @@ void hls_free(hls* h) {
 
 int hls_get_segment_info(const hls* h, const segment_source_info* info, segment_params* params) {
     params->segment_length = h->target_duration;
-    params->packets_per_segment = (params->segment_length * info->time_base / info->frame_len / 1000);
+    if(info->frame_len != 0) params->packets_per_segment = (params->segment_length * info->time_base / info->frame_len / 1000);
     return 0;
 }
 
 int hls_open(hls* h, const segment_source* source) {
     int r;
     unsigned int playlist_segments;
-    size_t packets_per_segment;
 
     if(h->init_mimetype.len == 0) {
         /* if the source sets init_ext to NULL it's packed audio (no init segment) */
@@ -219,11 +223,12 @@ int hls_open(hls* h, const segment_source* source) {
         }
     }
 
-    if(h->init_filename.len == 0) {
+    if(h->init_format.len == 0) {
         /* if the source sets init_ext to NULL it's packed audio (no init segment) */
         if(source->init_ext != NULL) {
-            TRYS(strbuf_append_cstr(&h->init_filename,"init"))
-            TRYS(strbuf_cat(&h->init_filename,source->init_ext))
+            TRYS(strbuf_sprintf(&h->init_format,"init-%%02u%.*s",
+              (int)source->init_ext->len,(char *)source->init_ext->x))
+            TRYS(strbuf_term(&h->init_format));
         }
     }
 
@@ -245,8 +250,7 @@ int hls_open(hls* h, const segment_source* source) {
         TRYS(strbuf_copy(&h->segment_mimetype,source->media_mimetype));
     }
 
-    packets_per_segment = (h->target_duration * source->time_base / source->frame_len / 1000);
-    h->target_samples = packets_per_segment * source->frame_len;
+    h->target_samples = (h->target_duration * source->time_base / 1000);
     h->time_base  = source->time_base;
 
     playlist_segments = (h->playlist_length / (h->target_duration / 1000)) + 1;
@@ -269,7 +273,10 @@ static int hls_update_playlist(hls* h) {
     int r;
     size_t i;
     size_t len;
-    hls_segment_meta* s;
+    size_t init_id;
+    const hls_segment_meta* s;
+
+    init_id = 0;
 
     strbuf_reset(&h->txt);
     len = hls_playlist_used(&h->playlist);
@@ -282,18 +289,28 @@ static int hls_update_playlist(hls* h) {
       h->media_sequence,
       h->disc_sequence));
 
-    if(h->has_init) {
-        TRYS(strbuf_sprintf(&h->txt,
-          "#EXT-X-MAP:URI=\"%.*s%.*s\"\n",
-          (int)h->entry_prefix.len,
-          (const char*)h->entry_prefix.x,
-          (int)h->init_filename.len,
-          (const char*)h->init_filename.x));
-    }
-
-
     for(i=0;i<len;i++) {
         s = hls_playlist_get(&h->playlist,i);
+
+        if(s->disc) {
+            TRYS(strbuf_sprintf(&h->txt,
+              "#EXT-X-DISCONTINUITY\n"));
+        }
+
+        if(s->init_id != init_id) {
+
+            h->init_filename.len = 0;
+            TRYS(strbuf_sprintf(&h->init_filename,(char*)h->init_format.x,s->init_id));
+
+            TRYS(strbuf_sprintf(&h->txt,
+                "#EXT-X-MAP:URI=\"%.*s%.*s\"\n",
+                (int)h->entry_prefix.len,
+                (const char*)h->entry_prefix.x,
+                (int)h->init_filename.len,
+                (const char*)h->init_filename.x));
+            init_id = s->init_id;
+        }
+
         TRYS(strbuf_cat(&h->txt,&s->tags))
     }
 
@@ -304,6 +321,7 @@ static int hls_update_playlist(hls* h) {
 static int hls_flush_segment(hls* h) {
     int r;
     hls_segment_meta* t;
+    hls_segment_meta* oldt;
     ich_tm tm;
     ich_frac f;
     strbuf stmp = STRBUF_ZERO;
@@ -311,20 +329,27 @@ static int hls_flush_segment(hls* h) {
     size_t len;
 
     if(hls_playlist_isfull(&h->playlist)) {
-        t = hls_playlist_shift(&h->playlist);
-        h->callbacks.delete(h->callbacks.userdata, &t->filename);
+        oldt = hls_playlist_shift(&h->playlist);
+        h->callbacks.delete(h->callbacks.userdata, &oldt->filename);
         h->media_sequence++;
-        if(t->disc) h->disc_sequence++;
-        if(t->expired_files.len > 0) {
-            stmp.x = (uint8_t*)t->expired_files.x;
-            len = t->expired_files.len;
+        if(oldt->disc) h->disc_sequence++;
+        if(oldt->expired_files.len > 0) {
+            stmp.x = (uint8_t*)oldt->expired_files.x;
+            len = oldt->expired_files.len;
             while(len) {
                 stmp.len = strlen((char*)stmp.x);
                 h->callbacks.delete(h->callbacks.userdata,&stmp);
                 stmp.x += stmp.len + 1;
                 len    -= stmp.len + 1;
             }
-            strbuf_free(&t->expired_files);
+            strbuf_free(&oldt->expired_files);
+        }
+        if( (t = hls_playlist_get(&h->playlist, 0)) != NULL) {
+            if(t->init_id != oldt->init_id) { /* not using this init segment anymore */
+                h->init_filename.len = 0;
+                TRYS(strbuf_sprintf(&h->init_filename,(char *)h->init_format.x,oldt->init_id));
+                h->callbacks.delete(h->callbacks.userdata,&h->init_filename);
+            }
         }
     }
 
@@ -332,10 +357,8 @@ static int hls_flush_segment(hls* h) {
     hls_segment_meta_reset(t);
 
     t->expired_files = h->segment.expired_files;
-    t->disc = h->counter > 0 && (h->segment.pts < h->last_pts || h->next_pts != h->segment.pts);
-
-    h->last_pts = h->segment.pts;
-    h->next_pts = h->last_pts + h->segment.samples;
+    t->disc    = h->segment.disc;
+    t->init_id = h->segment.init_id;
 
     TRYS(strbuf_sprintf(&t->filename,(char*)h->segment_format.x,++(h->counter)));
 
@@ -343,11 +366,6 @@ static int hls_flush_segment(hls* h) {
     TRYS(strbuf_sprintf(&t->tags,
       "#EXT-X-PROGRAM-DATE-TIME:%04u-%02u-%02uT%02u:%02u:%02u.%03uZ\n",
       tm.year,tm.month,tm.day,tm.hour,tm.min,tm.sec,tm.mill));
-
-    if(t->disc) {
-        TRYS(strbuf_sprintf(&t->tags,
-          "#EXT-X-DISCONTINUITY\n"));
-    }
 
     TRYS(strbuf_sprintf(&t->tags,
       "#EXTINF:%f,\n"
@@ -371,16 +389,33 @@ static int hls_flush_segment(hls* h) {
     return r;
 }
 
+static int hls_write_playlist(hls* h) {
+    int r;
+
+    TRY0(h->callbacks.write(h->callbacks.userdata,&h->playlist_filename,&h->txt,&h->playlist_mimetype),LOGS("error writing file %.*s",h->playlist_filename));
+
+    cleanup:
+    return r;
+}
+
 
 int hls_add_segment(hls* h, const segment* s) {
     int r;
     membuf tmp = MEMBUF_ZERO;
 
     if(s->type == SEGMENT_TYPE_INIT) {
-        h->has_init = 1;
+        if(h->segment.samples > 0) { /* force a flush */
+            TRY0(hls_flush_segment(h),LOG0("error flushing segment"));
+            TRY0(hls_write_playlist(h),LOG0("error writing playlist"));
+        }
         tmp.x = (void*)s->data;
         tmp.len = s->len;
-        return h->callbacks.write(h->callbacks.userdata,&h->init_filename,&tmp,&h->init_mimetype);
+        h->init_filename.len = 0;
+        TRYS(strbuf_sprintf(&h->init_filename,(char*)h->init_format.x,++(h->init_counter)));
+        TRY0(h->callbacks.write(h->callbacks.userdata,&h->init_filename,&tmp,&h->init_mimetype),
+          LOGS("error writing file %.*s", h->init_filename));
+        h->segment.init_id = h->init_counter;
+        return 0;
     }
 
     TRYS(membuf_append(&h->segment.data,s->data,s->len));
@@ -389,7 +424,7 @@ int hls_add_segment(hls* h, const segment* s) {
 
     if(h->segment.samples >= h->target_samples) { /* time to flush! */
         TRY0(hls_flush_segment(h),LOG0("error flushing segment"));
-        TRY0(h->callbacks.write(h->callbacks.userdata,&h->playlist_filename,&h->txt,&h->playlist_mimetype),LOGS("error writing file %.*s",h->playlist_filename));
+        TRY0(hls_write_playlist(h),LOG0("error writing playlist"));
     }
 
     cleanup:
@@ -405,8 +440,21 @@ int hls_flush(hls* h) {
     }
 
     TRYS(strbuf_append_cstr(&h->txt,"#EXT-X-ENDLIST\n"));
+    TRY0(hls_write_playlist(h),LOG0("error writing playlist"));
 
-    r = h->callbacks.write(h->callbacks.userdata,&h->playlist_filename,&h->txt,&h->playlist_mimetype);
+    cleanup:
+    return r;
+}
+
+int hls_reset(hls* h) {
+    int r;
+
+    if(h->segment.samples != 0) {
+        TRY0(hls_flush_segment(h),LOG0("hls_flush: error flushing segment"));
+        TRY0(hls_write_playlist(h),LOG0("error writing playlist"));
+    }
+
+    h->segment.disc = 1;
 
     cleanup:
     return r;
@@ -448,8 +496,9 @@ int hls_configure(hls* h, const strbuf* key, const strbuf* value) {
         return 0;
     }
 
-    if(strbuf_ends_cstr(key,"init-filename")) {
-        TRYS(strbuf_copy(&h->init_filename,value));
+    if(strbuf_ends_cstr(key,"init-format")) {
+        TRYS(strbuf_copy(&h->init_format,value));
+        TRYS(strbuf_term(&h->segment_format));
         return 0;
     }
 

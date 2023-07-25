@@ -24,6 +24,7 @@
 #include <unistd.h>
 #endif
 
+static STRBUF_CONST(plugin_name,"folder");
 
 struct plugin_userdata {
     hls hls;
@@ -108,7 +109,6 @@ static void plugin_close(void* userdata) {
     strbuf_free(&ud->initname);
     strbuf_free(&ud->picture_filename);
     hls_free(&ud->hls);
-    free(ud);
 }
 
 static int plugin_init(void) {
@@ -233,6 +233,11 @@ static int plugin_flush(void* ud) {
     return hls_flush(&userdata->hls);
 }
 
+static int plugin_reset(void* ud) {
+    plugin_userdata* userdata = (plugin_userdata*)ud;
+    return hls_reset(&userdata->hls);
+}
+
 static int plugin_submit_picture(void* ud, const picture* src, picture* out) {
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
@@ -244,10 +249,12 @@ static int plugin_submit_picture(void* ud, const picture* src, picture* out) {
     return r;
 }
 
+static size_t plugin_size(void) {
+    return sizeof(plugin_userdata);
+}
 
-static void* plugin_create(void) {
-    plugin_userdata* userdata = (plugin_userdata*)malloc(sizeof(plugin_userdata));
-    if(userdata == NULL) return userdata;
+static int plugin_create(void* ud) {
+    plugin_userdata* userdata = (plugin_userdata*)ud;
 
     strbuf_init(&userdata->foldername);
     strbuf_init(&userdata->initname);
@@ -259,7 +266,7 @@ static void* plugin_create(void) {
     userdata->hls.callbacks.delete = plugin_hls_delete;
     userdata->hls.callbacks.userdata = userdata;
 
-    return userdata;
+    return 0;
 }
 
 static int plugin_set_time(void* ud, const ich_time* now) {
@@ -275,7 +282,8 @@ static int plugin_submit_tags(void* ud, const taglist* tags) {
 }
 
 const output_plugin output_plugin_folder = {
-    { .a = 0, .len = 6, .x = (uint8_t*)"folder" },
+    plugin_name,
+    plugin_size,
     plugin_init,
     plugin_deinit,
     plugin_create,
@@ -287,5 +295,6 @@ const output_plugin output_plugin_folder = {
     plugin_submit_picture,
     plugin_submit_tags,
     plugin_flush,
+    plugin_reset,
     plugin_get_segment_info,
 };

@@ -1,5 +1,7 @@
 #include "encoder_plugin.h"
 
+#include "encoder_plugin_passthrough.h"
+
 #ifndef ENCODER_PLUGIN_AVCODEC
 #define ENCODER_PLUGIN_AVCODEC 0
 #endif
@@ -33,6 +35,7 @@
 #endif
 
 const encoder_plugin* encoder_plugin_list[] = {
+    &encoder_plugin_passthrough,
 #if ENCODER_PLUGIN_AVCODEC
     &encoder_plugin_avcodec,
 #endif

@@ -15,6 +15,8 @@
 #define TRY(exp, act) if(!(exp)) { act; }
 #define TRYNULL(exp, act) if((exp) == NULL) { act; }
 
+static STRBUF_CONST(plugin_name,"packed-audio");
+
 static STRBUF_CONST(mime_aac,"audio/aac");
 static STRBUF_CONST(mime_mp3,"audio/mpeg");
 static STRBUF_CONST(mime_ac3,"audio/ac3");
@@ -28,15 +30,13 @@ static STRBUF_CONST(ext_eac3,".eac3");
 static STRBUF_CONST(key_mpegts,"PRIV:com.apple.streaming.transportStreamTimestamp");
 
 struct plugin_userdata {
-    unsigned int segment_length;
-    unsigned int packets_per_segment;
-    unsigned int mpeg_samples_per_packet; /* packet # of samples scaled to mpeg-ts ticks */
+    uint64_t samplecount;
+    uint64_t samples_per_segment;
     membuf samples;
     membuf segment;
     uint8_t profile;
     uint8_t freq;
     uint8_t ch_index;
-    unsigned int packetcount;
     uint64_t ts; /* represents the 33-bit MPEG timestamp */
     id3 id3;
     taglist taglist;
@@ -81,24 +81,38 @@ static int append_packet_adts(struct plugin_userdata* userdata, const packet* p)
     return r;
 }
 
-static void* plugin_create(void) {
-    plugin_userdata* userdata = NULL;
-    TRYNULL(userdata = (plugin_userdata*)malloc(sizeof(plugin_userdata)),
-      LOGERRNO("error allocating plugin"); abort());
-    membuf_init(&userdata->samples);
-    membuf_init(&userdata->segment);
-    id3_init(&userdata->id3);
-    taglist_init(&userdata->taglist);
+static size_t plugin_size(void) {
+    return sizeof(plugin_userdata);
+}
+
+static int plugin_reset(void* ud) {
+    plugin_userdata* userdata = (plugin_userdata*) ud;
+
+    membuf_reset(&userdata->samples);
+    membuf_reset(&userdata->segment);
+    id3_reset(&userdata->id3);
+    taglist_reset(&userdata->taglist);
+
     userdata->append_packet = NULL;
     userdata->profile = 0;
     userdata->freq = 0;
     userdata->ch_index = 0;
-    userdata->packets_per_segment = 0;
-    userdata->mpeg_samples_per_packet = 0;
-    userdata->packetcount = 0;
-    userdata->ts = 0x200000000ULL;
+    userdata->samples_per_segment = 0;
+    userdata->ts = 0;
+    userdata->samplecount = 0;
 
-    return userdata;
+    return 0;
+}
+
+static int plugin_create(void* ud) {
+    plugin_userdata* userdata = (plugin_userdata*) ud;
+
+    membuf_init(&userdata->samples);
+    membuf_init(&userdata->segment);
+    id3_init(&userdata->id3);
+    taglist_init(&userdata->taglist);
+
+    return plugin_reset(userdata);
 }
 
 static void plugin_close(void* ud) {
@@ -108,7 +122,7 @@ static void plugin_close(void* ud) {
     membuf_free(&userdata->segment);
     id3_free(&userdata->id3);
     taglist_free(&userdata->taglist);
-    free(userdata);
+
 }
 
 static int plugin_open(void* ud, const packet_source* source, const segment_receiver* dest) {
@@ -120,28 +134,38 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     segment_params s_params = SEGMENT_PARAMS_ZERO;
 
     unsigned int sample_rate = source->sample_rate;
-    unsigned int channels = source->channels;
+    uint64_t channel_layout = source->channel_layout;
     unsigned int profile = source->profile;
 
     if( (source->frame_len * 90000) % source->sample_rate != 0) {
         LOG1("WARNING, sample rate %u prevents MPEG-TS timestamps from aligning, consider resampling", source->sample_rate);
     }
 
-    userdata->mpeg_samples_per_packet = source->frame_len * 90000 / source->sample_rate;
-
     s_info.time_base = 90000;
-    s_info.frame_len = userdata->mpeg_samples_per_packet;
+    if(source->frame_len != 0) {
+        s_info.frame_len = source->frame_len * 90000 / source->sample_rate;
+    }
     dest->get_segment_info(dest->handle,&s_info, &s_params);
 
     me.handle = userdata;
     me.time_base = 90000;
-    me.frame_len = userdata->mpeg_samples_per_packet;
+    me.frame_len = s_info.frame_len;
+
+    userdata->samples_per_segment = (uint64_t)s_params.segment_length * 90000ULL / 1000ULL;
 
     switch(source->codec) {
         case CODEC_TYPE_AAC: {
             switch(profile) {
                 case CODEC_PROFILE_AAC_LC: break;
-                case CODEC_PROFILE_AAC_HE2: channels = 1; /* fall-through */
+                case CODEC_PROFILE_AAC_HE2: {
+                    if(source->channel_layout != LAYOUT_STEREO) {
+                        LOG1("unsupported channels for HE2: requires stereo, total channels=%u",
+                          (unsigned int)channel_count(source->channel_layout));
+                        return -1;
+                    }
+                    channel_layout = LAYOUT_MONO;
+                }
+                /* fall-through */
                 case CODEC_PROFILE_AAC_HE: sample_rate /= 2; profile = CODEC_PROFILE_AAC_LC; break;
                 case CODEC_PROFILE_AAC_USAC: /* fall-through */
                 default: {
@@ -170,11 +194,16 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
                 }
             }
 
-            switch(channels) {
-                case 1: /* fall-through */
-                case 2: userdata->ch_index = channels; break;
+            switch(channel_layout) {
+                case LAYOUT_MONO: userdata->ch_index = 1; break;
+                case LAYOUT_STEREO: userdata->ch_index = 2; break;
+                case LAYOUT_STEREO | CHANNEL_FRONT_CENTER: userdata->ch_index = 3; break;
+                case LAYOUT_STEREO | CHANNEL_FRONT_CENTER | CHANNEL_BACK_CENTER: userdata->ch_index = 4; break;
+                case LAYOUT_5_0: userdata->ch_index = 5; break;
+                case LAYOUT_5_1: userdata->ch_index = 6; break;
+                case LAYOUT_7_1: userdata->ch_index = 7; break;
                 default: {
-                    LOG1("unsupported channel count %u", channels);
+                    LOG1("unsupported channel layout 0x%lx", channel_layout);
                     return -1;
                 }
             }
@@ -213,8 +242,6 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     if( (r = dest->open(dest->handle, &me)) != 0) return r;
     if( (r = id3_ready(&userdata->id3)) != 0) return r;
-
-    userdata->ts -= (uint64_t)source->padding * (uint64_t)90000 / (uint64_t)source->sample_rate;
 
     return 0;
 }
@@ -266,7 +293,7 @@ static int plugin_send(plugin_userdata* userdata, const segment_receiver* dest) 
     s.type = SEGMENT_TYPE_MEDIA;
     s.data = userdata->segment.x;
     s.len  = userdata->segment.len;
-    s.samples = userdata->packetcount * userdata->mpeg_samples_per_packet;
+    s.samples = userdata->samplecount;
     s.pts = userdata->ts;
 
     if( (r = dest->submit_segment(dest->handle,&s)) != 0) {
@@ -286,12 +313,14 @@ static int plugin_submit_packet(void* ud, const packet* packet, const segment_re
     if( (r = userdata->append_packet(userdata,packet)) != 0) {
         return r;
     }
-    userdata->packetcount++;
 
-    if(userdata->packetcount >= userdata->packets_per_segment) {
+    userdata->samplecount +=
+      ((uint64_t)packet->duration) * 90000ULL / ((uint64_t)packet->sample_rate);
+
+    if(userdata->samplecount >= userdata->samples_per_segment) {
         if( (r = plugin_send(userdata,dest)) != 0) return r;
-        userdata->ts += (uint64_t)userdata->packetcount * (uint64_t)userdata->mpeg_samples_per_packet;
-        userdata->packetcount = 0;
+        userdata->ts += (uint64_t)userdata->samplecount;
+        userdata->samplecount = 0;
     }
 
     return r;
@@ -301,11 +330,11 @@ static int plugin_flush(void* ud, const segment_receiver* dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
 
-    if(userdata->packetcount != 0) {
+    if(userdata->samplecount != 0) {
         if( (r = plugin_send(userdata,dest)) != 0) return r;
     }
 
-    return dest->flush(dest->handle);
+    return 0;
 }
 
 static int plugin_submit_tags(void* ud, const taglist* tags, const segment_receiver* dest) {
@@ -344,8 +373,8 @@ static uint32_t plugin_get_caps(void* ud) {
 static int plugin_get_segment_info(const void* ud, const packet_source_info* s, const segment_receiver* dest, packet_source_params* i) {
     (void)ud;
 
-    segment_source_info s_info;
-    segment_params s_params;
+    segment_source_info s_info = SEGMENT_SOURCE_INFO_ZERO;
+    segment_params s_params = SEGMENT_PARAMS_ZERO;
 
     s_info.time_base = 90000;
     s_info.frame_len = s->frame_len * 90000 / s->time_base;
@@ -358,7 +387,8 @@ static int plugin_get_segment_info(const void* ud, const packet_source_info* s, 
 }
 
 const muxer_plugin muxer_plugin_packed_audio = {
-    {.a = 0, .len = 12, .x = (uint8_t*)"packed-audio" },
+    plugin_name,
+    plugin_size,
     plugin_init,
     plugin_deinit,
     plugin_create,
@@ -368,6 +398,7 @@ const muxer_plugin muxer_plugin_packed_audio = {
     plugin_submit_packet,
     plugin_submit_tags,
     plugin_flush,
+    plugin_reset,
     plugin_get_caps,
     plugin_get_segment_info,
 };

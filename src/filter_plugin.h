@@ -8,8 +8,9 @@
 
 typedef int (*filter_plugin_init)(void);
 typedef void (*filter_plugin_deinit)(void);
+typedef size_t (*filter_plugin_size)(void);
 
-typedef void* (*filter_plugin_create)(void);
+typedef int (*filter_plugin_create)(void* userdata);
 
 typedef int (*filter_plugin_config)(void* userdata, const strbuf* key, const strbuf* value);
 
@@ -17,10 +18,15 @@ typedef int (*filter_plugin_open)(void* userdata, const frame_source*, const fra
 typedef void (*filter_plugin_close)(void* userdata);
 
 typedef int (*filter_plugin_submit_frame)(void* userdata, const frame*, const frame_receiver* handler);
+
+/* flush audio out, prepare for another call to open(), MUST NOT call frame_receiver flush() */
 typedef int (*filter_plugin_flush)(void* userdata, const frame_receiver* handler);
+
+typedef int (*filter_plugin_reset)(void* userdata);
 
 struct filter_plugin {
     const strbuf name;
+    filter_plugin_size size;
     filter_plugin_init init;
     filter_plugin_deinit deinit;
     filter_plugin_create create;
@@ -29,6 +35,7 @@ struct filter_plugin {
     filter_plugin_close close;
     filter_plugin_submit_frame submit_frame;
     filter_plugin_flush flush;
+    filter_plugin_reset reset;
 };
 
 typedef struct filter_plugin filter_plugin;

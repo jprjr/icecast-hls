@@ -20,6 +20,8 @@
 #define TRY0(exp, act) if( (r = (exp)) != 0 ) { act; goto cleanup; }
 #define TRYS(exp) TRY0(exp, LOG0("out of memory"); abort())
 
+static STRBUF_CONST(plugin_name,"icecast");
+
 #define BASE64_ENCODE_IMPLEMENTATION
 #include "base64encode.h"
 
@@ -54,12 +56,12 @@ static void output_plugin_icecast_deinit(void) {
     ich_socket_cleanup();
 }
 
-static void* output_plugin_icecast_create(void) {
-    int r = -1;
-    output_plugin_icecast_userdata* userdata = NULL;
+static size_t output_plugin_icecast_size(void) {
+    return sizeof(output_plugin_icecast_userdata);
+}
 
-    TRYNULL(userdata = (output_plugin_icecast_userdata*)malloc(sizeof(output_plugin_icecast_userdata)),
-      LOGERRNO("error creating plugin"));
+static int output_plugin_icecast_create(void* ud) {
+    output_plugin_icecast_userdata* userdata = (output_plugin_icecast_userdata*)ud;
 
     userdata->socket = INVALID_SOCKET;
 
@@ -81,15 +83,14 @@ static void* output_plugin_icecast_create(void) {
     strbuf_init(&userdata->ice_streamtitle);
     userdata->ice_public = 2; /* 2 = unmapped / don't specify */
 
-    cleanup:
-    (void)r;
-    return userdata;
+    return 0;
 }
 
 static void output_plugin_icecast_close(void* ud) {
     output_plugin_icecast_userdata* userdata = (output_plugin_icecast_userdata*)ud;
     if(userdata->socket != INVALID_SOCKET) {
         ich_socket_close(userdata->socket);
+        userdata->socket = INVALID_SOCKET;
     }
 
     strbuf_free(&userdata->host);
@@ -108,8 +109,6 @@ static void output_plugin_icecast_close(void* ud) {
     strbuf_free(&userdata->ice_bitrate);
     strbuf_free(&userdata->ice_audio_info);
     strbuf_free(&userdata->ice_streamtitle);
-
-    free(ud);
 }
 
 static int output_plugin_icecast_config(void* ud, const strbuf* key, const strbuf* val) {
@@ -369,6 +368,11 @@ static int output_plugin_icecast_flush(void* ud) {
     return 0;
 }
 
+static int output_plugin_icecast_reset(void* ud) {
+    (void)ud;
+    return 0;
+}
+
 static const char alphabet[16] = "0123456789ABCDEF";
 static const char rfc3986[256] = {
   '\0','\0', '\0', '\0', '\0', '\0', '\0', '\0',
@@ -543,7 +547,8 @@ static int output_plugin_icecast_submit_tags(void *ud, const taglist* tags) {
 }
 
 const output_plugin output_plugin_icecast = {
-    { .a = 0, .len = 7, .x = (uint8_t*)"icecast" },
+    plugin_name,
+    output_plugin_icecast_size,
     output_plugin_icecast_init,
     output_plugin_icecast_deinit,
     output_plugin_icecast_create,
@@ -555,5 +560,6 @@ const output_plugin output_plugin_icecast = {
     output_plugin_icecast_submit_picture,
     output_plugin_icecast_submit_tags,
     output_plugin_icecast_flush,
+    output_plugin_icecast_reset,
     output_plugin_icecast_get_segment_info,
 };

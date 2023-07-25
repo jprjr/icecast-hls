@@ -26,13 +26,19 @@ static void plugin_deinit(void) {
     return;
 }
 
-static void* plugin_create(void) {
+static size_t plugin_size(void) {
+    return sizeof(opened);
+}
+
+static int plugin_create(void* ud) {
+    (void)ud;
+
     if(opened) {
         fprintf(stderr,"[input:stdin] only one instance of this plugin can be active at a time\n");
-        return NULL;
+        return -1;
     }
     opened = 1;
-    return &opened;
+    return 0;
 }
 
 static int plugin_config(void* userdata, const strbuf* key, const strbuf* value) {
@@ -63,6 +69,7 @@ static size_t plugin_read(void* userdata, void* dest, size_t len, const tag_hand
 
 const input_plugin input_plugin_stdin = {
     { .a = 0, .len = 5, .x = (uint8_t*)"stdin" },
+    plugin_size,
     plugin_init,
     plugin_deinit,
     plugin_create,

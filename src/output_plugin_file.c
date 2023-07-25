@@ -39,9 +39,12 @@
 
 static thread_atomic_uint_t counter;
 
+static STRBUF_CONST(plugin_name,"file");
+
 struct file_userdata {
     strbuf filename;
     strbuf basename;
+    unsigned int fragment_duration;
     FILE *f;
 };
 
@@ -79,7 +82,6 @@ static void plugin_close(void* userdata) {
     }
     strbuf_free(&ud->filename);
     strbuf_free(&ud->basename);
-    free(ud);
 }
 
 static int plugin_init(void) {
@@ -91,25 +93,27 @@ static void plugin_deinit(void) {
     return;
 }
 
-static void* plugin_create(void) {
-    file_userdata* userdata = NULL;
-    int r = -1;
-    TRYNULL(userdata = (file_userdata*)malloc(sizeof(file_userdata)),
-      LOGERRNO("error creating plugin"));
+static size_t plugin_size(void) {
+    return sizeof(file_userdata);
+}
+
+static int plugin_create(void* ud) {
+    file_userdata* userdata = (file_userdata*)ud;
 
     userdata->f = NULL;
     strbuf_init(&userdata->filename);
     strbuf_init(&userdata->basename);
+    userdata->fragment_duration = 1000;
 
-    cleanup:
-    (void)r;
-    return userdata;
+    return 0;
 }
 
 static int plugin_get_segment_info(const void*  ud, const segment_source_info* info, segment_params* params) {
-    (void)ud;
+    file_userdata* userdata = (file_userdata*)ud;
     (void)info;
-    (void)params;
+
+    params->segment_length = userdata->fragment_duration;
+
     return 0;
 }
 
@@ -124,6 +128,11 @@ static int plugin_open(void* ud, const segment_source* source) {
     r = 0;
 
     file_userdata* userdata = (file_userdata*)ud;
+
+    if(userdata->f != NULL) { /* already open, probably called after a flush */
+        return 0;
+    }
+
     TRY(userdata->filename.len != 0, LOG0("no filename given"); r=-1; goto cleanup);
     /* error already logged in file open, we'll just flush stderr */
     TRYNULL(userdata->f = file_open(&userdata->filename), fflush(stderr));
@@ -151,6 +160,20 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* val) {
     if(strbuf_equals_cstr(key,"file")) {
         TRYS(strbuf_copy(&userdata->filename,val));
         TRYS(strbuf_term(&userdata->filename));
+        return 0;
+    }
+
+    if(strbuf_equals_cstr(key,"fragment-duration") || strbuf_equals_cstr(key,"fragment duration")) {
+        errno = 0;
+        userdata->fragment_duration = strbuf_strtoul(val,10);
+        if(errno != 0) {
+            LOGS("error parsing fragment-duration value %.*s",(*val));
+            return -1;
+        }
+        if(userdata->fragment_duration == 0) {
+            LOGS("invalid fragment-duration %.*s",(*val));
+            return -1;
+        }
         return 0;
     }
 
@@ -237,8 +260,14 @@ static int plugin_flush(void* userdata) {
     return 0;
 }
 
+static int plugin_reset(void* userdata) {
+    (void)userdata;
+    return 0;
+}
+
 const output_plugin output_plugin_file = {
-    { .a = 0, .len = 4, .x = (uint8_t*)"file" },
+    plugin_name,
+    plugin_size,
     plugin_init,
     plugin_deinit,
     plugin_create,
@@ -250,5 +279,6 @@ const output_plugin output_plugin_file = {
     plugin_submit_picture,
     plugin_submit_tags,
     plugin_flush,
+    plugin_reset,
     plugin_get_segment_info,
 };

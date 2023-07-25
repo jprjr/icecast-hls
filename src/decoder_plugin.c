@@ -4,6 +4,8 @@
 #define DECODER_PLUGIN_AVCODEC 0
 #endif
 
+#include "decoder_plugin_auto.h"
+#include "decoder_plugin_passthrough.h"
 #include "decoder_plugin_miniflac.h"
 
 #if DECODER_PLUGIN_AVCODEC
@@ -11,6 +13,8 @@
 #endif
 
 const decoder_plugin* decoder_plugin_list[] = {
+    &decoder_plugin_auto,
+    &decoder_plugin_passthrough,
     &decoder_plugin_miniflac,
 #if DECODER_PLUGIN_AVCODEC
     &decoder_plugin_avcodec,

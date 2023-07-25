@@ -10,8 +10,11 @@
 typedef int (*input_plugin_init)(void);
 typedef void (*input_plugin_deinit)(void);
 
-/* create a new instance of a plugin, not configured */
-typedef void* (*input_plugin_create)(void);
+/* get the size of the userdata that needs to be allocated */
+typedef size_t (*input_plugin_size)(void);
+
+/* create (really - initialize) the plugin userdata */
+typedef int (*input_plugin_create)(void* userdata);
 
 /* configure a plugin with entries from the INI file */
 typedef int (*input_plugin_config)(void* userdata, const strbuf* key, const strbuf* value);
@@ -27,6 +30,7 @@ typedef size_t (*input_plugin_read)(void* userdata, void* dest, size_t len, cons
 
 struct input_plugin {
     const strbuf name;
+    input_plugin_size size;
     input_plugin_init init;
     input_plugin_deinit deinit;
     input_plugin_create create;

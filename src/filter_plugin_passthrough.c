@@ -7,8 +7,10 @@
  * buffering, format conversion, etc. Used as the
  * default filter in sources */
 
+static STRBUF_CONST(plugin_name, "passthrough");
+
 struct plugin_userdata {
-    unsigned int dummy;
+    unsigned int opened;
 };
 
 typedef struct plugin_userdata plugin_userdata;
@@ -21,12 +23,18 @@ static void plugin_deinit(void) {
     return;
 }
 
-static void* plugin_create(void) {
-    return malloc(sizeof(plugin_userdata));
+static size_t plugin_size(void) {
+    return sizeof(plugin_userdata);
+}
+
+static int plugin_create(void* ud) {
+    plugin_userdata* userdata = (plugin_userdata*)ud;
+    userdata->opened = 0;
+    return 0;
 }
 
 static void plugin_close(void* ud) {
-    free(ud);
+    (void)ud;
 }
 
 static int plugin_config(void* ud, const strbuf* key, const strbuf* val) {
@@ -37,7 +45,9 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* val) {
 }
 
 static int plugin_open(void* ud, const frame_source* source, const frame_receiver* dest) {
-    (void)ud;
+    plugin_userdata* userdata = (plugin_userdata*)ud;
+    (void)userdata;
+
     return dest->open(dest->handle,source);
 }
 
@@ -48,11 +58,18 @@ static int plugin_submit_frame(void* ud, const frame* f, const frame_receiver* d
 
 static int plugin_flush(void* ud, const frame_receiver* dest) {
     (void)ud;
-    return dest->flush(dest->handle);
+    (void)dest;
+    return 0;
+}
+
+static int plugin_reset(void* ud) {
+    (void)ud;
+    return 0;
 }
 
 const filter_plugin filter_plugin_passthrough = {
-    { .a = 0, .len = 11, .x = (uint8_t*)"passthrough" },
+    plugin_name,
+    plugin_size,
     plugin_init,
     plugin_deinit,
     plugin_create,
@@ -61,5 +78,6 @@ const filter_plugin filter_plugin_passthrough = {
     plugin_close,
     plugin_submit_frame,
     plugin_flush,
+    plugin_reset,
 };
 

@@ -18,6 +18,7 @@ enum samplefmt {
     SAMPLEFMT_FLOATP  = 10,
     SAMPLEFMT_DOUBLE  = 11,
     SAMPLEFMT_DOUBLEP = 12,
+    SAMPLEFMT_BINARY  = 13, /* used by the passthrough decoder */
 };
 
 typedef enum samplefmt samplefmt;

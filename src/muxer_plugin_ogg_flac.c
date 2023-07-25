@@ -26,6 +26,7 @@
 #define TRY0(exp, act) if( (r = (exp)) != 0 ) { act; goto cleanup; }
 #define TRYS(exp) TRY0(exp, LOG0("out of memory"); abort())
 
+static STRBUF_CONST(plugin_name,"ogg:flac");
 static STRBUF_CONST(mime_ogg,"application/ogg");
 static STRBUF_CONST(ext_ogg,".ogg");
 
@@ -41,18 +42,18 @@ static const uint8_t oggflac_header[13] = {
 
 struct ogg_flac_plugin {
     unsigned int padding;
-    unsigned int keyframes;
-    packet_source psource;
     uint64_t samples_per_segment;
 
     strbuf head;
     strbuf tags;
     uint32_t tagpos;
+    uint32_t tagtotal;
     strbuf segment;
     miniogg ogg;
     uint64_t pts;
     uint64_t granulepos;
     uint64_t samples;
+    uint64_t channel_layout;
     uint8_t flag;
     strbuf scratch;
 
@@ -144,25 +145,51 @@ static int stream_add_strbuf(ogg_flac_plugin* stream, const strbuf* data,uint64_
     return r;
 }
 
-static void* plugin_create(void) {
-    ogg_flac_plugin *userdata = (ogg_flac_plugin*)malloc(sizeof(ogg_flac_plugin));
-    if(userdata == NULL) return NULL;
+static size_t plugin_size(void) {
+    return sizeof(ogg_flac_plugin);
+}
 
-    userdata->keyframes = 0;
-    userdata->psource = packet_source_zero;
-    userdata->samples_per_segment = 0;
+static int plugin_create(void* ud) {
+    ogg_flac_plugin *userdata = (ogg_flac_plugin*)ud;
+
     userdata->chaining = 1;
+
+    userdata->samples_per_segment = 0;
 
     strbuf_init(&userdata->head);
     strbuf_init(&userdata->tags);
     strbuf_init(&userdata->segment);
     strbuf_init(&userdata->scratch);
+
     userdata->tagpos = 0;
+    userdata->tagtotal = 0;
     userdata->granulepos = 0;
     userdata->samples = 0;
     userdata->pts = 0;
+    userdata->flag  = 0;
+
     miniogg_init(&userdata->ogg,(uint32_t)rand());
-    return userdata;
+
+    return 0;
+}
+
+static int plugin_reset(void* ud) {
+    ogg_flac_plugin* userdata = (ogg_flac_plugin*)ud;
+
+    strbuf_init(&userdata->head);
+    strbuf_init(&userdata->tags);
+    strbuf_init(&userdata->segment);
+    strbuf_init(&userdata->scratch);
+
+    userdata->tagpos = 0;
+    userdata->tagtotal = 0;
+    userdata->granulepos = 0;
+    userdata->samples = 0;
+    userdata->pts = 0;
+    userdata->flag  = 0;
+
+    miniogg_init(&userdata->ogg,userdata->ogg.serialno + 1);
+    return 0;
 }
 
 static void plugin_close(void* ud) {
@@ -172,7 +199,6 @@ static void plugin_close(void* ud) {
     strbuf_free(&userdata->tags);
     strbuf_free(&userdata->segment);
     strbuf_free(&userdata->scratch);
-    free(userdata);
 }
 
 static int plugin_open(void* ud, const packet_source* source, const segment_receiver* dest) {
@@ -183,16 +209,23 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     segment_source_info info = SEGMENT_SOURCE_INFO_ZERO;
     segment_params s_params = SEGMENT_PARAMS_ZERO;
 
+    userdata->pts = 0 - userdata->padding;
+    userdata->flag = 0;
+
     info.time_base = source->sample_rate;
     info.frame_len = source->frame_len;
     dest->get_segment_info(dest->handle,&info,&s_params);
 
-    userdata->samples_per_segment = s_params.packets_per_segment * source->frame_len;
+    userdata->samples_per_segment = s_params.segment_length * source->sample_rate / 1000;
+    userdata->channel_layout = source->channel_layout;
 
     /* setup and buffer the FLAC header packet */
     userdata->head.len = 0;
     TRYS(membuf_append(&userdata->head,oggflac_header,13));
-    TRYS(strbuf_cat(&userdata->head,source->dsi));
+    TRYS(membuf_readyplus(&userdata->head,4));
+    pack_u32be(&userdata->head.x[13],34);
+    userdata->head.len += 4;
+    TRYS(strbuf_cat(&userdata->head,&source->dsi));
     userdata->head.x[13] &= 0x7F; /* clear the last-metadata-block flag */
 
     TRYS(stream_add_strbuf(userdata,&userdata->head,0));
@@ -208,16 +241,36 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     } else {
         TRYS(ogg_pack_str(&userdata->tags,(const char *)source->name->x,source->name->len));
     }
+
+    /* reserve 4 bytes for writing the total number of tags */
     TRYS(strbuf_readyplus(&userdata->tags,4));
     userdata->tagpos = userdata->tags.len;
+    userdata->tagtotal = 0;
     userdata->tags.len += 4;
 
+    switch(userdata->channel_layout) {
+        case LAYOUT_MONO: /* fall-through */
+        case LAYOUT_STEREO: /* fall-through */
+        case LAYOUT_3_0: /* fall-through */
+        case LAYOUT_QUAD: /* fall-through */
+        case LAYOUT_5_0: /* fall-through */
+        case LAYOUT_5_1: /* fall-through */
+        case LAYOUT_6_1: /* fall-through */
+        case LAYOUT_7_1: break;
+        default: {
+            userdata->scratch.len = 0;
+            TRYS(strbuf_sprintf(&userdata->scratch,"WAVEFORMATEXTENSIBLE_CHANNEL_MASK=0x%llx",
+              userdata->channel_layout));
+            TRYS(ogg_pack_str(&userdata->tags,(const char *)userdata->scratch.x,userdata->scratch.len));
+            userdata->tagtotal++;
+            break;
+        }
+    }
+
     pack_u32be(&userdata->tags.x[0],(0x84 << 24) | (userdata->tags.len - 4));
-    pack_u32le(&userdata->tags.x[userdata->tagpos],0);
+    pack_u32le(&userdata->tags.x[userdata->tagpos],userdata->tagtotal);
     userdata->padding = source->padding;
     userdata->pts = 0 - source->padding;
-
-    userdata->psource = *source;
 
     me.media_ext = &ext_ogg;
     me.media_mimetype = &mime_ogg;
@@ -232,16 +285,88 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     return r;
 }
 
+static int plugin_submit_tags(void* ud, const taglist* tags, const segment_receiver* dest) {
+    int r = -1;
+    ogg_flac_plugin* userdata = (ogg_flac_plugin*)ud;
+    strbuf* tagdata;
+
+    const tag* t;
+    size_t i = 0;
+    size_t m = 0;
+    size_t len = 0;
+
+    tagdata = &userdata->tags;
+    tagdata->len = userdata->tagpos + 4; /* we're going to rewrite all tags */
+    userdata->tagtotal = 0;
+
+    switch(userdata->channel_layout) {
+        case LAYOUT_MONO: /* fall-through */
+        case LAYOUT_STEREO: /* fall-through */
+        case LAYOUT_3_0: /* fall-through */
+        case LAYOUT_QUAD: /* fall-through */
+        case LAYOUT_5_0: /* fall-through */
+        case LAYOUT_5_1: /* fall-through */
+        case LAYOUT_6_1: /* fall-through */
+        case LAYOUT_7_1: break;
+        default: {
+            if(!userdata->chaining) {
+                LOG0("ogg is set to non-chaining mode but audio channel layout requires chaining");
+                return -1;
+            }
+            userdata->scratch.len = 0;
+            TRYS(strbuf_sprintf(&userdata->scratch,"WAVEFORMATEXTENSIBLE_CHANNEL_MASK=0x%x",
+              userdata->channel_layout));
+            TRYS(ogg_pack_str(tagdata,(const char *)userdata->scratch.x,userdata->scratch.len));
+            userdata->tagtotal++;
+            break;
+        }
+    }
+
+    if(!userdata->chaining) {
+        return dest->submit_tags(dest->handle,tags);
+    }
+
+
+    if(tags != NULL) m = taglist_len(tags);
+    for(i=0;i<m;i++) {
+        t = taglist_get_tag(tags,i);
+
+        userdata->scratch.len = 0;
+        TRYS(strbuf_copy(&userdata->scratch,&t->key));
+        TRYS(strbuf_append_cstr(&userdata->scratch,"="));
+        if(strbuf_caseequals_cstr(&t->key,"metadata_block_picture")) {
+            len = t->value.len * 4 / 3 + 4;
+            TRYS(strbuf_readyplus(&userdata->scratch,len));
+            base64encode(t->value.x,t->value.len,&userdata->scratch.x[userdata->scratch.len],&len);
+            userdata->scratch.len += len;
+        } else {
+            TRYS(strbuf_cat(&userdata->scratch,&t->value));
+        }
+        TRYS(ogg_pack_str(tagdata,(const char *)userdata->scratch.x,userdata->scratch.len));
+
+        userdata->tagtotal++;
+    }
+    pack_u32be(&tagdata->x[0],(0x84 << 24) | (tagdata->len - 4));
+    pack_u32le(&tagdata->x[userdata->tagpos],userdata->tagtotal);
+
+    TRYS(stream_add_strbuf(userdata,&userdata->tags,0));
+    TRYS(stream_buffer(userdata));
+
+    userdata->flag = 1;
+
+    r = 0;
+    cleanup:
+    return r;
+}
+
 static int plugin_submit_packet(void* ud, const packet* p, const segment_receiver* dest) {
     int r = -1;
 
     ogg_flac_plugin* userdata = (ogg_flac_plugin*)ud;
 
-    if(userdata->flag == 0) {
+    if(userdata->flag == 0 && userdata->chaining) {
         /* getting a packet before tags, add our blank flactags block */
-        TRYS(stream_add_strbuf(userdata,&userdata->tags,0));
-        TRYS(stream_buffer(userdata));
-        userdata->flag = 1;
+        if( (r = plugin_submit_tags(userdata, NULL, dest)) != 0) return r;
     }
 
     userdata->granulepos += p->duration;
@@ -266,94 +391,11 @@ static int plugin_flush(void* ud, const segment_receiver* dest) {
 
     if(userdata->flag == 0) {
         /* getting a flush before we ever got tags / sent anything, just close */
-        return dest->flush(dest->handle);
+        return 0;
     }
 
     TRYS(stream_end(userdata));
     TRYS(stream_send(userdata,dest));
-
-    r = dest->flush(dest->handle);
-    cleanup:
-    return r;
-}
-
-typedef struct reset_wrapper {
-    ogg_flac_plugin* userdata;
-    const segment_receiver* dest;
-} reset_wrapper;
-
-static int reset_cb(void* ud, const packet* p) {
-    reset_wrapper* wrap = (reset_wrapper*)ud;
-    return plugin_submit_packet(wrap->userdata, p, wrap->dest);
-}
-
-static int plugin_submit_tags(void* ud, const taglist* tags, const segment_receiver* dest) {
-    int r = -1;
-    ogg_flac_plugin* userdata = (ogg_flac_plugin*)ud;
-    strbuf* tagdata;
-    reset_wrapper wrap;
-
-    const tag* t;
-    size_t i = 0;
-    size_t m = 0;
-    size_t total = 0;
-    size_t len = 0;
-
-    if(!userdata->chaining) {
-        return dest->submit_tags(dest->handle,tags);
-    }
-
-    if(userdata->flag == 1) {
-        wrap.userdata = userdata;
-        wrap.dest = dest;
-        r = userdata->psource.reset(userdata->psource.handle,&wrap,reset_cb);
-        if(r != 0) return r;
-
-        TRYS(stream_end(userdata));
-        TRYS(stream_send(userdata,dest));
-
-        miniogg_init(&userdata->ogg,userdata->ogg.serialno + 1);
-        userdata->granulepos = 0;
-        userdata->pts = 0 - userdata->padding;
-        userdata->flag = 0;
-
-        TRYS(stream_add_strbuf(userdata,&userdata->head,0));
-        TRYS(stream_buffer(userdata));
-    }
-
-    tagdata = &userdata->tags;
-
-    tagdata->len = userdata->tagpos + 4;
-
-    m = taglist_len(tags);
-    for(i=0;i<m;i++) {
-        t = taglist_get_tag(tags,i);
-
-        userdata->scratch.len = 0;
-        TRYS(strbuf_copy(&userdata->scratch,&t->key));
-        TRYS(strbuf_append_cstr(&userdata->scratch,"="));
-        if(strbuf_caseequals_cstr(&t->key,"metadata_block_picture")) {
-            len = t->value.len * 4 / 3 + 4;
-            TRYS(strbuf_readyplus(&userdata->scratch,len));
-            base64encode(t->value.x,t->value.len,&userdata->scratch.x[userdata->scratch.len],&len);
-            userdata->scratch.len += len;
-        } else {
-            TRYS(strbuf_cat(&userdata->scratch,&t->value));
-        }
-        TRYS(ogg_pack_str(tagdata,(const char *)userdata->scratch.x,userdata->scratch.len));
-
-        total++;
-    }
-    pack_u32be(&tagdata->x[0],(0x84 << 24) | (tagdata->len - 4));
-    pack_u32le(&tagdata->x[userdata->tagpos],total);
-
-    TRYS(stream_add_strbuf(userdata,&userdata->tags,0));
-    TRYS(stream_buffer(userdata));
-
-    userdata->flag = 1;
-
-    (void)tags;
-    (void)dest;
 
     r = 0;
     cleanup:
@@ -391,8 +433,10 @@ static void plugin_deinit(void) {
 }
 
 static uint32_t plugin_get_caps(void* ud) {
-    (void)ud;
-    return MUXER_CAP_GLOBAL_HEADERS;
+    ogg_flac_plugin* userdata = (ogg_flac_plugin*)ud;
+    uint32_t caps = MUXER_CAP_GLOBAL_HEADERS;
+    if(userdata->samples > 0) caps |= MUXER_CAP_TAGS_RESET;
+    return caps;
 }
 
 static int plugin_get_segment_info(const void* ud, const packet_source_info* s, const segment_receiver* dest, packet_source_params* i) {
@@ -404,7 +448,8 @@ static int plugin_get_segment_info(const void* ud, const packet_source_info* s, 
 }
 
 const muxer_plugin muxer_plugin_ogg_flac = {
-    {.a = 0, .len = 8, .x = (uint8_t*)"ogg_flac" },
+    plugin_name,
+    plugin_size,
     plugin_init,
     plugin_deinit,
     plugin_create,
@@ -414,6 +459,7 @@ const muxer_plugin muxer_plugin_ogg_flac = {
     plugin_submit_packet,
     plugin_submit_tags,
     plugin_flush,
+    plugin_reset,
     plugin_get_caps,
     plugin_get_segment_info,
 };

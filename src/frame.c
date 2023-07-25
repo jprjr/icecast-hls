@@ -9,6 +9,7 @@
 
 void frame_init(frame* f) {
     membuf_init(&f->samples);
+    packet_init(&f->packet);
     f->channels = 0;
     f->duration = 0;
     f->format = SAMPLEFMT_UNKNOWN;
@@ -29,6 +30,7 @@ void frame_free(frame* f) {
     }
     membuf_free(&f->samples);
 
+    packet_free(&f->packet);
     frame_init(f);
 }
 
@@ -88,8 +90,8 @@ int frame_ready(frame* f) {
 int frame_buffer(frame* f) {
     int r;
     size_t i;
-    membuf* m;
     size_t samplesize;
+    membuf* m;
 
     if(f->duration == 0) return -1;
     if( (r = frame_ready(f)) != 0) return r;
@@ -159,11 +161,15 @@ int frame_copy(frame* dest, const frame* src) {
     const membuf* src_buf;
     membuf* dest_buf;
 
-    dest->format   = src->format;
-    dest->channels = src->channels;
-    dest->duration = src->duration;
+    dest->format      = src->format;
+    dest->channels    = src->channels;
+    dest->duration    = src->duration;
     dest->sample_rate = src->sample_rate;
-    dest->pts = src->pts;
+    dest->pts         = src->pts;
+
+    if(src->format == SAMPLEFMT_BINARY) {
+        return packet_copy(&dest->packet, &src->packet);
+    }
 
     if( (r = frame_buffer(dest)) != 0) return r;
 
@@ -327,6 +333,14 @@ int frame_trim(frame* f, unsigned int len) {
     return 0;
 }
 
+int frame_source_copy(frame_source* dest, const frame_source* source) {
+    dest->handle = source->handle;
+    dest->format = source->format;
+    dest->channel_layout = source->channel_layout;
+    dest->duration = source->duration;
+    dest->sample_rate = source->sample_rate;
+    return packet_source_copy(&dest->packet_source,&source->packet_source);
+}
 
 const frame_receiver frame_receiver_zero = FRAME_RECEIVER_ZERO;
 const frame_source frame_source_zero = FRAME_SOURCE_ZERO;
@@ -351,6 +365,20 @@ int frame_receiver_submit_frame_null(void* handle, const frame* frame) {
 int frame_receiver_flush_null(void* handle) {
     (void)handle;
     fprintf(stderr,"[app error] frame_receiver flush not set\n");
+    abort();
+    return -1;
+}
+
+int frame_receiver_reset_null(void* handle) {
+    (void)handle;
+    fprintf(stderr,"[app error] frame_receiver reset not set\n");
+    abort();
+    return -1;
+}
+
+int frame_receiver_close_null(void* handle) {
+    (void)handle;
+    fprintf(stderr,"[app error] frame_receiver close not set\n");
     abort();
     return -1;
 }

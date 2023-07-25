@@ -12,6 +12,8 @@
 #define TRY(exp, act) if(!(exp)) { act; }
 #define TRYNULL(exp, act) if((exp) == NULL) { act; }
 
+static STRBUF_CONST(plugin_name,"passthrough");
+
 static STRBUF_CONST(mime_mp3,"audio/mpeg");
 static STRBUF_CONST(mime_ac3,"audio/ac3");
 static STRBUF_CONST(mime_eac3,"audio/eac3");
@@ -25,17 +27,18 @@ struct muxer_plugin_passthrough_userdata {
 };
 typedef struct muxer_plugin_passthrough_userdata muxer_plugin_passthrough_userdata;
 
-static void* muxer_plugin_passthrough_create(void) {
-    muxer_plugin_passthrough_userdata* userdata = NULL;
-    TRYNULL(userdata = (muxer_plugin_passthrough_userdata*)malloc(sizeof(muxer_plugin_passthrough_userdata)),
-      LOGERRNO("error allocating plugin"); abort());
+static size_t muxer_plugin_passthrough_size(void) {
+    return sizeof(muxer_plugin_passthrough_userdata);
+}
 
-    return userdata;
+static int muxer_plugin_passthrough_create(void* ud) {
+    (void)ud;
+
+    return 0;
 }
 
 static void muxer_plugin_passthrough_close(void* ud) {
-    muxer_plugin_passthrough_userdata* userdata = (muxer_plugin_passthrough_userdata*)ud;
-    free(userdata);
+    (void)ud;
 }
 
 static int muxer_plugin_passthrough_open(void* ud, const packet_source* source, const segment_receiver* dest) {
@@ -90,7 +93,13 @@ static int muxer_plugin_passthrough_submit_packet(void* ud, const packet* packet
 
 static int muxer_plugin_passthrough_flush(void* ud, const segment_receiver* dest) {
     (void)ud;
-    return dest->flush(dest->handle);
+    (void)dest;
+    return 0;
+}
+
+static int muxer_plugin_passthrough_reset(void* ud) {
+    (void)ud;
+    return 0;
 }
 
 static int muxer_plugin_passthrough_submit_tags(void* ud, const taglist* tags, const segment_receiver* dest) {
@@ -122,8 +131,8 @@ static uint32_t muxer_plugin_passthrough_get_caps(void* ud) {
 static int muxer_plugin_passthrough_get_segment_info(const void* ud, const packet_source_info* s, const segment_receiver* dest, packet_source_params* i) {
     (void)ud;
 
-    segment_source_info s_info;
-    segment_params s_params;
+    segment_source_info s_info = SEGMENT_SOURCE_INFO_ZERO;
+    segment_params s_params = SEGMENT_PARAMS_ZERO;
 
     s_info.time_base = s->time_base;
     s_info.frame_len = s->frame_len;
@@ -135,7 +144,8 @@ static int muxer_plugin_passthrough_get_segment_info(const void* ud, const packe
 }
 
 const muxer_plugin muxer_plugin_passthrough = {
-    {.a = 0, .len = 11, .x = (uint8_t*)"passthrough" },
+    plugin_name,
+    muxer_plugin_passthrough_size,
     muxer_plugin_passthrough_init,
     muxer_plugin_passthrough_deinit,
     muxer_plugin_passthrough_create,
@@ -145,6 +155,7 @@ const muxer_plugin muxer_plugin_passthrough = {
     muxer_plugin_passthrough_submit_packet,
     muxer_plugin_passthrough_submit_tags,
     muxer_plugin_passthrough_flush,
+    muxer_plugin_passthrough_reset,
     muxer_plugin_passthrough_get_caps,
     muxer_plugin_passthrough_get_segment_info,
 };

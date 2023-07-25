@@ -56,7 +56,6 @@ static void plugin_close(void* userdata) {
         ud->f = NULL;
     }
     strbuf_free(&ud->filename);
-    free(ud);
 }
 
 static int plugin_init(void) {
@@ -67,13 +66,16 @@ static void plugin_deinit(void) {
     return;
 }
 
-static void* plugin_create(void) {
-    file_userdata* userdata = (file_userdata*)malloc(sizeof(file_userdata));
-    if(userdata == NULL) return userdata;
+static size_t plugin_size(void) {
+    return sizeof(file_userdata);
+}
+
+static int plugin_create(void* ud) {
+    file_userdata* userdata = (file_userdata*)ud;
 
     userdata->f = NULL;
     strbuf_init(&userdata->filename);
-    return userdata;
+    return 0;
 }
 
 static int plugin_open(void* ud) {
@@ -105,6 +107,7 @@ static size_t plugin_read(void *ud, void* dest, size_t len, const tag_handler* h
 
 const input_plugin input_plugin_file = {
     { .a = 0, .len = 4, .x = (uint8_t*)"file" },
+    plugin_size,
     plugin_init,
     plugin_deinit,
     plugin_create,
