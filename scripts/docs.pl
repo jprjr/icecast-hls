@@ -8,6 +8,7 @@ mkdir 'docs';
 my $text = '';
 
 my $titles = {
+    'Plugins:-Demuxer' => 'Demuxer Plugins',
     'Plugins:-Decoder' => 'Decoder Plugins',
     'Plugins:-Encoder' => 'Encoder Plugins',
     'Plugins:-Filter' => 'Filter Plugins',
@@ -22,6 +23,7 @@ my $sections = [
   'Documentation',
   'Configuration Reference',
   'Plugins:-Input',
+  'Plugins:-Demuxer',
   'Plugins:-Decoder',
   'Plugins:-Filter',
   'Plugins:-Encoder',
@@ -42,6 +44,8 @@ foreach my $file (@$sections) {
 # fix-up internal links
 $text =~ s/\(Plugins%3A-Input\)/(#input-plugins)/xmg;
 $text =~ s/\(Plugins%3A-Input\#/(#/xmg;
+$text =~ s/\(Plugins%3A-Demuxer\)/(#demuxer-plugins)/xmg;
+$text =~ s/\(Plugins%3A-Demuxer\#/(#/xmg;
 $text =~ s/\(Plugins%3A-Decoder\)/(#decoder-plugins)/xmg;
 $text =~ s/\(Plugins%3A-Decoder\#/(#/xmg;
 $text =~ s/\(Plugins%3A-Filter\)/(#filter-plugins)/xmg;

@@ -1,0 +1,20 @@
+.PHONY: release
+
+VERSION = $(shell ./scripts/dump-version)
+
+release: scripts/dump-version
+	perl scripts/docs.pl
+	mkdir -p dist
+	rm -rf dist/icecast-hls-$(VERSION)
+	mkdir -p dist/icecast-hls-$(VERSION)/scripts
+	rsync -av --exclude='*.o' src/ dist/icecast-hls-$(VERSION)/src/
+	rsync -av Makefile dist/icecast-hls-$(VERSION)/Makefile
+	rsync -av LICENSE dist/icecast-hls-$(VERSION)/LICENSE
+	rsync -av README.md dist/icecast-hls-$(VERSION)/README.md
+	rsync -av docs/ dist/icecast-hls-$(VERSION)/docs/
+
+scripts/dump-version: scripts/dump-version.o
+	$(CC) -o $@ $^
+
+scripts/dump-version.o: scripts/dump-version.c src/version.h
+	$(CC) -o $@ -c $<

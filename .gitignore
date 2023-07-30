@@ -1,3 +1,5 @@
 *.o
+*.exe
 /icecast-hls
 /docs
+/scripts/dump-version
