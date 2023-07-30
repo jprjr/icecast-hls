@@ -32,7 +32,9 @@ including [S3-compatible storage](https://github.com/jprjr/icecast-hls/wiki/Plug
     * [exhale](https://gitlab.com/ecodis/exhale) (USAC Audio)
     * [fdk-aac](https://github.com/mstorsjo/fdk-aac) (AAC, HE-AAC/V2)
     * [libavcodec](https://ffmpeg.org/ffmpeg-codecs.html) (AAC, MP3, (E)-AC-3, FLAC, ALAC, Opus)
-* Output to packed audio and/or fragmented MP4.
+    * [libopus](https://www.opus-codec.org/) (Opus audio)
+* Output to HLS using packed audio and/or fragmented MP4.
+* Output to Icecast using AAC, MP3, Opus, and FLAC.
 * Embed timed ID3 metadata.
 * Embed album art (either in-band or as a linked image).
 
@@ -42,6 +44,10 @@ I've tried to write as extensive documentation as possible as
 a [wiki](https://github.com/jprjr/icecast-hls/wiki/Documentation).
 It includes details on every plugin and its options, as well as tips
 on how to produce chained Ogg streams with FLAC audio.
+
+Release tarballs will include an offline copy of the wiki in the `docs`
+folder. There will be a pre-generated, standalone HTML file, as well
+as the original wiki content in Markdown format.
 
 ## License
 
