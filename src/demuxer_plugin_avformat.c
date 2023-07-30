@@ -535,7 +535,8 @@ static int demuxer_plugin_avformat_config(void* ud, const strbuf* key, const str
 
     if(strbuf_equals_cstr(key,"bsf filters") ||
        strbuf_equals_cstr(key,"bsf-filters") ||
-       strbuf_equals_cstr(key,"bsf filters")) {
+       strbuf_equals_cstr(key,"bitstream-filters") ||
+       strbuf_equals_cstr(key,"bitstream- ilters")) {
         if(userdata->bsf_filters.len > 0) {
             LOG0("only 1 filter string is supported");
             return -1;
