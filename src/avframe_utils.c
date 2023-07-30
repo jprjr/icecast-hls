@@ -2,6 +2,7 @@
 
 #include <libavutil/samplefmt.h>
 #include <libavutil/channel_layout.h>
+#include "ffmpeg-versions.h"
 #include <string.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -18,7 +19,7 @@ samplefmt avsampleformat_to_samplefmt(enum AVSampleFormat f) {
         case AV_SAMPLE_FMT_FLTP: return SAMPLEFMT_FLOATP;
         case AV_SAMPLE_FMT_DBL:  return SAMPLEFMT_DOUBLE;
         case AV_SAMPLE_FMT_DBLP: return SAMPLEFMT_DOUBLEP;
-#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(55,34,0)
+#if ICH_AVUTIL_SAMPLE_FMT_S64
         case AV_SAMPLE_FMT_S64:  return SAMPLEFMT_S64;
         case AV_SAMPLE_FMT_S64P: return SAMPLEFMT_S64P;
 #endif
@@ -39,7 +40,7 @@ enum AVSampleFormat samplefmt_to_avsampleformat(samplefmt f) {
         case SAMPLEFMT_FLOATP: return AV_SAMPLE_FMT_FLTP;
         case SAMPLEFMT_DOUBLE:  return AV_SAMPLE_FMT_DBL;
         case SAMPLEFMT_DOUBLEP: return AV_SAMPLE_FMT_DBLP;
-#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(55,34,0)
+#if ICH_AVUTIL_SAMPLE_FMT_S64
         case SAMPLEFMT_S64:  return AV_SAMPLE_FMT_S64;
         case SAMPLEFMT_S64P: return AV_SAMPLE_FMT_S64P;
 #endif
@@ -48,7 +49,7 @@ enum AVSampleFormat samplefmt_to_avsampleformat(samplefmt f) {
     return AV_SAMPLE_FMT_NONE;
 }
 
-int frame_to_avframe(AVFrame* out, const frame* in, unsigned int duration) {
+int frame_to_avframe(AVFrame* out, const frame* in, unsigned int duration, uint64_t mask) {
     int r;
     size_t i = 0;
     void* samples;
@@ -58,16 +59,18 @@ int frame_to_avframe(AVFrame* out, const frame* in, unsigned int duration) {
 
     av_frame_unref(out);
 
-#if LIBAVUTIL_VERSION_MAJOR >= 57
+#if ICH_AVUTIL_FRAME_HAS_TIME_BASE
     out->time_base.num = 1;
     out->time_base.den = in->sample_rate;
 #endif
     out->sample_rate = in->sample_rate;
-#if LIBAVUTIL_VERSION_MAJOR >= 58
-    av_channel_layout_default(&out->ch_layout,in->channels);
+
+#if ICH_AVUTIL_CHANNEL_LAYOUT
+    av_channel_layout_from_mask(&out->ch_layout, mask);
 #else
-    out->channel_layout = av_get_default_channel_layout(in->channels);
+    out->channel_layout = mask;
 #endif
+
     out->nb_samples = duration;
     out->pts = in->pts;
     out->pkt_dts = in->pts;
@@ -99,7 +102,7 @@ int avframe_to_frame(frame* out, const AVFrame* in) {
 
     out->duration = in->nb_samples;
     out->format = avsampleformat_to_samplefmt(in->format);
-#if LIBAVUTIL_VERSION_MAJOR >= 58
+#if ICH_AVUTIL_CHANNEL_LAYOUT
     out->channels = in->ch_layout.nb_channels;
 #else
     out->channels = av_get_channel_layout_nb_channels(in->channel_layout);

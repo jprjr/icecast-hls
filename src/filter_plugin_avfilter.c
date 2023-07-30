@@ -8,6 +8,7 @@
 #include <libavutil/opt.h>
 #include <libavutil/frame.h>
 #include <libavutil/channel_layout.h>
+#include "ffmpeg-versions.h"
 
 #include <errno.h>
 
@@ -35,7 +36,7 @@ struct plugin_userdata {
 typedef struct plugin_userdata plugin_userdata;
 
 static int plugin_init(void) {
-#if LIBAVFILTER_VERSION_MAJOR < 7
+#if ICH_AVFILTER_REGISTER_ALL
     avfilter_register_all();
 #endif
     return 0;
@@ -107,11 +108,8 @@ static int plugin_graph_open(plugin_userdata* userdata) {
     const char* out_name = NULL;
     char args[512];
     char layout[64];
-#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
+#if ICH_AVUTIL_CHANNEL_LAYOUT
     AVChannelLayout ch_layout;
-#else
-    uint64_t channel_layout;
-    int64_t channel_layout_tmp;
 #endif
     enum AVSampleFormat fmt;
 
@@ -126,7 +124,7 @@ static int plugin_graph_open(plugin_userdata* userdata) {
         return -1;
     }
 
-#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
+#if ICH_AVUTIL_CHANNEL_LAYOUT
     av_channel_layout_from_mask(&ch_layout, userdata->src_config.channel_layout);
     av_channel_layout_describe(&ch_layout, layout, sizeof(layout));
     av_channel_layout_uninit(&ch_layout);
@@ -138,6 +136,7 @@ static int plugin_graph_open(plugin_userdata* userdata) {
       "time_base=%u/%u:sample_rate=%u:sample_fmt=%s:channel_layout=%s",
         1, userdata->src_config.sample_rate, userdata->src_config.sample_rate,
         av_get_sample_fmt_name(samplefmt_to_avsampleformat(userdata->src_config.format)), layout);
+    fprintf(stderr,"args: %s\n",args);
 
     if(userdata->filter_string.len > 0) {
         if(avfilter_graph_parse_ptr(userdata->graph,(const char *)userdata->filter_string.x,
@@ -219,7 +218,7 @@ static void plugin_graph_close(plugin_userdata* userdata) {
 static int plugin_open(void* ud, const frame_source* source, const frame_receiver *dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     frame_source me = FRAME_SOURCE_ZERO;
-#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
+#if ICH_AVUTIL_CHANNEL_LAYOUT
     AVChannelLayout ch_layout;
 #else
     uint64_t channel_layout;
@@ -240,27 +239,27 @@ static int plugin_open(void* ud, const frame_source* source, const frame_receive
         return -1;
     }
 
-#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
+#if ICH_AVUTIL_CHANNEL_LAYOUT
     if(av_buffersink_get_ch_layout(userdata->buffersink, &ch_layout) < 0) return -1;
-#elif LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,71,0)
+#elif ICH_AVFILTER_BUFFERSINK_GET
     channel_layout = av_buffersink_get_channel_layout(userdata->buffersink);
 #else
     channel_layout = userdata->buffersink->inputs[0]->channel_layout;
 #endif
 
-#if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(57,71,0)
+#if ICH_AVFILTER_BUFFERSINK_GET
     me.sample_rate = av_buffersink_get_sample_rate(userdata->buffersink);
 #else
     me.sample_rate = userdata->buffersink->inputs[0]->sample_rate;
 #endif
 
-#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57,28,100)
+#if ICH_AVUTIL_CHANNEL_LAYOUT
     me.channel_layout = ch_layout.u.mask;
 #else
     me.channel_layout = channel_layout;
 #endif
 
-#if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(57,71,0)
+#if ICH_AVFILTER_BUFFERSINK_GET
     me.format = avsampleformat_to_samplefmt(av_buffersink_get_format(userdata->buffersink));
 #else
     me.format = avsampleformat_to_samplefmt(userdata->buffersink->inputs[0]->format);
@@ -294,7 +293,7 @@ static int plugin_flush(void* ud, const frame_receiver* dest) {
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
-#if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(6,107,0)
+#if ICH_AVFILTER_BUFFERSRC_CLOSE
     if( (r = av_buffersrc_close(userdata->buffersrc,userdata->last_pts + userdata->last_nb_samples, 0)) < 0) return r;
 #else
     if( (r = av_buffersrc_add_frame_flags(userdata->buffersrc,NULL,0)) < 0) return r;
@@ -333,7 +332,7 @@ static int plugin_submit_frame(void* ud, const frame* frame, const frame_receive
         frame_init(&userdata->frame);
     }
 
-    if( (r = frame_to_avframe(userdata->av_frame,frame,0)) < 0) return r;
+    if( (r = frame_to_avframe(userdata->av_frame,frame,0,userdata->src_config.channel_layout)) < 0) return r;
 
     userdata->av_frame->pts = userdata->in_pts;
     r = av_buffersrc_write_frame(userdata->buffersrc,userdata->av_frame);

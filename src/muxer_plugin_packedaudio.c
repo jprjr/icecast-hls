@@ -309,19 +309,19 @@ static int plugin_send(plugin_userdata* userdata, const segment_receiver* dest) 
 static int plugin_submit_packet(void* ud, const packet* packet, const segment_receiver* dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
+    uint64_t rescaled_duration = ((uint64_t)packet->duration) * 90000ULL / ((uint64_t)packet->sample_rate);
+
+    if(userdata->samplecount + rescaled_duration > userdata->samples_per_segment) {
+        if( (r = plugin_send(userdata,dest)) != 0) return r;
+        userdata->ts += (uint64_t)userdata->samplecount;
+        userdata->samplecount = 0;
+    }
 
     if( (r = userdata->append_packet(userdata,packet)) != 0) {
         return r;
     }
 
-    userdata->samplecount +=
-      ((uint64_t)packet->duration) * 90000ULL / ((uint64_t)packet->sample_rate);
-
-    if(userdata->samplecount >= userdata->samples_per_segment) {
-        if( (r = plugin_send(userdata,dest)) != 0) return r;
-        userdata->ts += (uint64_t)userdata->samplecount;
-        userdata->samplecount = 0;
-    }
+    userdata->samplecount += rescaled_duration;
 
     return r;
 }

@@ -48,8 +48,12 @@ static int muxer_plugin_ogg_create(void* ud) {
 
 static int muxer_plugin_ogg_reset(void* ud) {
     muxer_plugin_ogg_userdata* userdata = (muxer_plugin_ogg_userdata*)ud;
+    int r = 0;
 
-    return userdata->plugin->reset(userdata->handle);
+    if(userdata->plugin != NULL) {
+        r = userdata->plugin->reset(userdata->handle);
+    }
+    return r;
 }
 
 

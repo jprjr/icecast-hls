@@ -2,7 +2,7 @@
 #define AVCODEC_UTILS
 
 #include "codecs.h"
-#include <libavcodec/codec_id.h>
+#include <libavcodec/avcodec.h>
 
 #ifdef __cplusplus
 extern "C" {

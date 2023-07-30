@@ -16,6 +16,7 @@ void encoder_init(encoder* e) {
 void encoder_free(encoder* e) {
     if(e->userdata != NULL) {
         e->plugin->close(e->userdata);
+        free(e->userdata);
     }
     e->userdata = NULL;
     e->plugin = NULL;

@@ -31,6 +31,11 @@ struct packet_source_params {
 };
 typedef struct packet_source_params packet_source_params;
 
+/* function to copy the priv data in the packet_source */
+typedef void* (*packet_source_priv_copy)(void*);
+/* function to free a copied priv data */
+typedef void  (*packet_source_priv_free)(void*);
+
 /* this struct is a small wrapper around the encoder (packet source),
  * used during the muxer open (packet receiver) so it knows
  * some stuff about the incoming packets - default frame length, sample rate,
@@ -43,21 +48,15 @@ struct packet_source {
     uint64_t channel_layout;
     unsigned int sample_rate;
     unsigned int frame_len;
+    unsigned int bit_rate;
     unsigned int sync_flag; /* if non-zero, all samples are sync samples */
     unsigned int padding; /* number of samples that need to be discarded */
     int roll_distance; /* number of frames that need to be discarded, -1 means 1 frame before current */
     uint8_t roll_type; /* roll type, 0 = roll, 1 = prol */
 
-    /* these are really only used by avcodec */
-    uint32_t codec_tag;
-    int block_align;
-    int format;
-    int64_t bit_rate;
-    int bits_per_coded_sample;
-    int bits_per_raw_sample;
-    int avprofile;
-    int avlevel;
-    int trailing_padding;
+    void* priv; /* private, plugin-specific data */
+    packet_source_priv_copy priv_copy;
+    packet_source_priv_free priv_free;
     membuf dsi;
 };
 
@@ -124,19 +123,12 @@ typedef struct packet_receiver packet_receiver;
     .channel_layout = 0, \
     .sample_rate = 0, \
     .frame_len = 0, \
+    .bit_rate = 0, \
     .sync_flag = 0, \
     .padding = 0, \
     .roll_distance = 0, \
     .roll_type = 0, \
-    .codec_tag = 0,\
-    .block_align = 0,\
-    .format = 0,\
-    .bit_rate = 0,\
-    .bits_per_coded_sample = 0,\
-    .bits_per_raw_sample = 0,\
-    .avprofile = 0,\
-    .avlevel = 0,\
-    .trailing_padding = 0,\
+    .priv = NULL, \
     .dsi = MEMBUF_ZERO, \
 }
 
@@ -148,6 +140,7 @@ void packet_init(packet*);
 void packet_free(packet*);
 void packet_reset(packet*);
 void packet_source_reset(packet_source*);
+void packet_source_free(packet_source*);
 int packet_copy(packet* dest, const packet* source);
 
 int packet_set_data(packet*, const void* src, size_t len);

@@ -107,7 +107,7 @@ static int encoder_plugin_opus_reset(void* ud) {
         opus_multistream_encoder_destroy(userdata->enc);
         userdata->enc = NULL;
     }
-    membuf_free(&userdata->me.dsi);
+    packet_source_free(&userdata->me);
     return 0;
 }
 

@@ -81,7 +81,7 @@ static void plugin_close(void* ud) {
     taglist_free(&userdata->tags);
     strbuf_free(&userdata->scratch);
     packet_free(&userdata->packet);
-    membuf_free(&userdata->me.dsi);
+    packet_source_free(&userdata->me);
 }
 
 static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {

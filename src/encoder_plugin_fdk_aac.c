@@ -522,11 +522,11 @@ static int plugin_reset(void* ud) {
 
     if(userdata->aacEncoder != NULL) aacEncClose(&userdata->aacEncoder);
     userdata->aacEncoder = NULL;
+
     packet_free(&userdata->packet);
     packet_free(&userdata->packet2);
     frame_free(&userdata->buffer);
-    membuf_free(&userdata->me.dsi);
-    userdata->me = packet_source_zero;
+    packet_source_free(&userdata->me);
 
     return 0;
 }

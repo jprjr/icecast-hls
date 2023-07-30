@@ -18,7 +18,9 @@ void decoder_init(decoder* dec) {
 void decoder_free(decoder* dec) {
     if(dec->userdata != NULL) {
         dec->plugin->close(dec->userdata);
+        free(dec->userdata);
     }
+    frame_free(&dec->frame);
     dec->userdata = NULL;
     dec->plugin = NULL;
 }

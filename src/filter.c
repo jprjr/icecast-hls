@@ -19,6 +19,7 @@ void filter_free(filter* f) {
         f->plugin->close(f->userdata);
         free(f->userdata);
     }
+    frame_free(&f->frame);
     f->userdata = NULL;
     f->plugin = NULL;
 }

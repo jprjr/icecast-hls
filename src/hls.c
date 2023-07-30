@@ -418,14 +418,14 @@ int hls_add_segment(hls* h, const segment* s) {
         return 0;
     }
 
-    TRYS(membuf_append(&h->segment.data,s->data,s->len));
-    if(h->segment.samples == 0) h->segment.pts = s->pts;
-    h->segment.samples += s->samples;
-
-    if(h->segment.samples >= h->target_samples) { /* time to flush! */
+    if(h->segment.samples + s->samples > h->target_samples) { /* time to flush! */
         TRY0(hls_flush_segment(h),LOG0("error flushing segment"));
         TRY0(hls_write_playlist(h),LOG0("error writing playlist"));
     }
+
+    TRYS(membuf_append(&h->segment.data,s->data,s->len));
+    if(h->segment.samples == 0) h->segment.pts = s->pts;
+    h->segment.samples += s->samples;
 
     cleanup:
     return r;

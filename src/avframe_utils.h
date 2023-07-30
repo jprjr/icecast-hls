@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-int frame_to_avframe(AVFrame* out, const frame* in, unsigned int duration);
+int frame_to_avframe(AVFrame* out, const frame* in, unsigned int duration, uint64_t mask);
 enum AVSampleFormat samplefmt_to_avsampleformat(samplefmt f);
 
 int avframe_to_frame(frame* out, const AVFrame* in);

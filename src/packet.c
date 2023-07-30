@@ -24,23 +24,29 @@ void packet_source_reset(packet_source* s) {
     s->handle = NULL;
     s->name = NULL;
     s->codec = CODEC_TYPE_UNKNOWN;
+    s->profile = 0;
     s->channel_layout = 0;
     s->sample_rate = 0;
     s->frame_len = 0;
+    s->bit_rate = 0;
     s->sync_flag = 0;
     s->padding = 0;
     s->roll_distance = 0;
     s->roll_type = 0;
+    if(s->priv != NULL) {
+        s->priv_free(s->priv);
+        s->priv = NULL;
+    }
+    s->priv_free = NULL;
+    s->priv_copy = NULL;
+}
 
-    s->codec_tag = 0;
-    s->block_align = 0;
-    s->format = 0;
-    s->bit_rate = 0;
-    s->bits_per_coded_sample = 0;
-    s->bits_per_raw_sample = 0;
-    s->avprofile = 0;
-    s->avlevel = 0;
-    s->trailing_padding = 0;
+void packet_source_free(packet_source *s) {
+    packet_source_reset(s);
+    membuf_free(&s->dsi);
+    if(s->priv != NULL) {
+        s->priv_free(s->priv);
+    }
 }
 
 int packet_set_data(packet* p, const void* src, size_t len) {
@@ -68,15 +74,12 @@ int packet_source_copy(packet_source* dest, const packet_source* source) {
     dest->padding = source->padding;
     dest->roll_distance = source->roll_distance;
     dest->roll_type = source->roll_type;
-    dest->codec_tag = source->codec_tag;
-    dest->block_align = source->block_align;
-    dest->format = source->format;
     dest->bit_rate = source->bit_rate;
-    dest->bits_per_coded_sample = source->bits_per_coded_sample;
-    dest->bits_per_raw_sample = source->bits_per_raw_sample;
-    dest->avprofile = source->avprofile;
-    dest->avlevel = source->avlevel;
-    dest->trailing_padding = source->trailing_padding;
+    if(source->priv != NULL) {
+        if( (dest->priv = source->priv_copy(source->priv)) == NULL) return -1;
+        dest->priv_copy = source->priv_copy;
+        dest->priv_free = source->priv_free;
+    }
 
     membuf_reset(&dest->dsi);
     return membuf_copy(&dest->dsi, &source->dsi);

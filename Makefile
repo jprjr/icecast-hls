@@ -1,4 +1,4 @@
-.PHONY: all clean
+.PHONY: all clean scripts
 
 CFLAGS = -Wall -Wextra -g -O0 -fPIC
 LDFLAGS =
@@ -149,29 +149,11 @@ REQUIRED_OBJS = \
 
 PKGCONFIG=pkg-config
 
+PKGCONFIG_LIBS =
+# libcurl fdk-aac opus libavformat libavfilter libavutil libavcodec
+
 CFLAGS_EXHALE =
 LDFLAGS_EXHALE = -lexhale
-
-CFLAGS_CURL = $(shell $(PKGCONFIG) --cflags libcurl)
-LDFLAGS_CURL = $(shell $(PKGCONFIG) --libs libcurl)
-
-CFLAGS_FDK_AAC = $(shell $(PKGCONFIG) --cflags fdk-aac)
-LDFLAGS_FDK_AAC = $(shell $(PKGCONFIG) --libs fdk-aac)
-
-CFLAGS_OPUS = $(shell $(PKGCONFIG) --cflags opus)
-LDFLAGS_OPUS = $(shell $(PKGCONFIG) --libs opus)
-
-CFLAGS_AVFORMAT = $(shell $(PKGCONFIG) --cflags libavformat)
-LDFLAGS_AVFORMAT = $(shell $(PKGCONFIG) --libs libavformat)
-
-CFLAGS_AVFILTER = $(shell $(PKGCONFIG) --cflags libavfilter)
-LDFLAGS_AVFILTER = $(shell $(PKGCONFIG) --libs libavfilter)
-
-CFLAGS_AVUTIL = $(shell $(PKGCONFIG) --cflags libavutil)
-LDFLAGS_AVUTIL = $(shell $(PKGCONFIG) --libs libavutil)
-
-CFLAGS_AVCODEC = $(shell $(PKGCONFIG) --cflags libavcodec)
-LDFLAGS_AVCODEC = $(shell $(PKGCONFIG) --libs libavcodec)
 
 ENCODER_PLUGIN_CFLAGS =
 FILTER_PLUGIN_CFLAGS =
@@ -245,28 +227,28 @@ LDFLAGS += $(LDFLAGS_EXHALE)
 endif
 
 ifeq ($(FDK_AAC_REQUIRED),1)
-LDFLAGS += $(LDFLAGS_FDK_AAC)
+PKGCONFIG_LIBS += fdk-aac
 endif
 
 ifeq ($(OPUS_REQUIRED),1)
-LDFLAGS += $(LDFLAGS_OPUS)
+PKGCONFIG_LIBS += opus
 endif
 
 ifeq ($(AVFORMAT_REQUIRED),1)
-LDFLAGS += $(LDFLAGS_AVFORMAT)
+PKGCONFIG_LIBS += libavformat
 endif
 
 ifeq ($(AVFILTER_REQUIRED),1)
-LDFLAGS += $(LDFLAGS_AVFILTER)
+PKGCONFIG_LIBS += libavfilter
 endif
 
 ifeq ($(AVCODEC_REQUIRED),1)
 REQUIRED_OBJS += src/avcodec_utils.o
-LDFLAGS += $(LDFLAGS_AVCODEC)
+PKGCONFIG_LIBS += libavcodec
 endif
 
 ifeq ($(AVUTIL_REQUIRED),1)
-LDFLAGS += $(LDFLAGS_AVUTIL)
+PKGCONFIG_LIBS += libavutil
 endif
 
 ifeq ($(AVFRAME_REQUIRED),1)
@@ -278,16 +260,18 @@ REQUIRED_OBJS += src/avpacket_utils.o
 endif
 
 ifeq ($(CURL_REQUIRED),1)
-LDFLAGS += $(LDFLAGS_CURL)
+PKGCONFIG_LIBS += libcurl
 endif
 
 all: icecast-hls
 
 clean:
 	rm -f $(OBJS) icecast-hls
+	rm -f scripts/codec-verify scripts/codec-verify.exe scripts/codec-verify.o
+	rm -f scripts/list-bsfs scripts/list-bsfs.exe scripts/list-bsfs.o
 
 icecast-hls: $(REQUIRED_OBJS)
-	$(CC) -o $@ $^ $(LDFLAGS)
+	$(CC) -o $@ $^ $(LDFLAGS) $(shell $(PKGCONFIG) --libs $(PKGCONFIG_LIBS))
 
 src/decoder_plugin.o: src/decoder_plugin.c
 	$(CC) $(CFLAGS) $(DECODER_PLUGIN_CFLAGS) -c -o $@ $<
@@ -307,32 +291,35 @@ src/input_plugin.o: src/input_plugin.c
 src/output_plugin.o: src/output_plugin.c
 	$(CC) $(CFLAGS) $(OUTPUT_PLUGIN_CFLAGS) -c -o $@ $<
 
-src/avpacket_utils.o: src/avpacket_utils.c
-	$(CC) $(CFLAGS) $(CFLAGS_AVCODEC) -c -o $@ $<
+src/avcodec_utils.o: src/avcodec_utils.c src/ffmpeg-versions.h
+	$(CC) $(CFLAGS) $(shell $(PKGCONFIG) --cflags libavcodec) -c -o $@ $<
 
-src/avframe_utils.o: src/avframe_utils.c
-	$(CC) $(CFLAGS) $(CFLAGS_AVUTIL) -c -o $@ $<
+src/avpacket_utils.o: src/avpacket_utils.c src/ffmpeg-versions.h
+	$(CC) $(CFLAGS) $(shell $(PKGCONFIG) --cflags libavcodec) -c -o $@ $<
 
-src/filter_plugin_avfilter.o: src/filter_plugin_avfilter.c
-	$(CC) $(CFLAGS) $(CFLAGS_AVFILTER) $(CFLAGS_AVUTIL) -c -o $@ $<
+src/avframe_utils.o: src/avframe_utils.c src/ffmpeg-versions.h
+	$(CC) $(CFLAGS) $(shell $(PKGCONFIG) --cflags libavutil) -c -o $@ $<
+
+src/filter_plugin_avfilter.o: src/filter_plugin_avfilter.c src/ffmpeg-versions.h
+	$(CC) $(CFLAGS) $(shell $(PKGCONFIG) --cflags libavfilter libavutil) -c -o $@ $<
 
 src/encoder_plugin_exhale.o: src/encoder_plugin_exhale.c
 	$(CC) $(CFLAGS) $(CFLAGS_EXHALE) -c -o $@ $<
 
 src/encoder_plugin_opus.o: src/encoder_plugin_opus.c
-	$(CC) $(CFLAGS) $(CFLAGS_OPUS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(shell $(PKGCONFIG) --cflags opus) -c -o $@ $<
 
-src/decoder_plugin_avcodec.o: src/decoder_plugin_avcodec.c
-	$(CC) $(CFLAGS) $(CFLAGS_AVFORMAT) $(CFLAGS_AVCODEC) $(CFLAGS_AVUTIL) -c -o $@ $<
+src/decoder_plugin_avcodec.o: src/decoder_plugin_avcodec.c src/ffmpeg-versions.h
+	$(CC) $(CFLAGS) $(shell $(PKGCONFIG) --cflags libavformat libavcodec libavutil) -c -o $@ $<
 
-src/encoder_plugin_avcodec.o: src/encoder_plugin_avcodec.c
-	$(CC) $(CFLAGS) $(CFLAGS_AVCODEC) $(CFLAGS_AVUTIL) -c -o $@ $<
+src/encoder_plugin_avcodec.o: src/encoder_plugin_avcodec.c src/ffmpeg-versions.h
+	$(CC) $(CFLAGS) $(shell $(PKGCONFIG) --cflags libavcodec libavutil ) -c -o $@ $<
 
 src/encoder_plugin_fdk_aac.o: src/encoder_plugin_fdk_aac.c
-	$(CC) $(CFLAGS) $(CFLAGS_FDK_AAC) -c -o $@ $<
+	$(CC) $(CFLAGS) $(shell $(PKGCONFIG) --cflags fdk-aac) -c -o $@ $<
 
 src/input_plugin_curl.o: src/input_plugin_curl.c
-	$(CC) $(CFLAGS) $(CFLAGS_CURL) -c -o $@ $<
+	$(CC) $(CFLAGS) $(shell $(PKGCONFIG) --cflags libcurl) -c -o $@ $<
 
 src/output_plugin_curl.o: src/output_plugin_curl.c
 	$(CC) $(CFLAGS) $(CFLAGS_CURL) -c -o $@ $<
@@ -340,8 +327,8 @@ src/output_plugin_curl.o: src/output_plugin_curl.c
 src/decoder_plugin_miniflac.o: src/decoder_plugin_miniflac.c src/miniflac.h src/base64decode.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-src/demuxer_plugin_avformat.o: src/demuxer_plugin_avformat.c
-	$(CC) $(CFLAGS) $(CFLAGS_AVFORMAT) $(CFLAGS_AVCODEC) $(CFLAGS_AVUTIL) -c -o $@ $<
+src/demuxer_plugin_avformat.o: src/demuxer_plugin_avformat.c src/ffmpeg-versions.h
+	$(CC) $(CFLAGS) $(shell $(PKGCONFIG) --cflags libavformat libavcodec libavutil) -c -o $@ $<
 
 src/minifmp4.o: src/minifmp4.c src/minifmp4.h
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -355,17 +342,3 @@ src/miniflac.o: src/miniflac.c src/miniflac.h
 dump:
 	echo $(OBJS)
 
-test-demuxer-plugin: test-demuxer-plugin.o src/demuxer_plugin.o src/demuxer_plugin_auto.o src/demuxer_plugin_avformat.o src/demuxer_plugin_ogg.o src/demuxer_plugin_flac.o src/avpacket_utils.o src/packet.o src/input.o src/input_plugin.o src/input_plugin_file.o src/input_plugin_stdin.o src/input_plugin_curl.o src/tag.o src/strbuf.o src/membuf.o src/ich_time.o src/codecs.o
-	$(CC) -o $@ $^ $(LDFLAGS_CURL) $(LDFLAGS_AVFORMAT) $(LDFLAGS_AVCODEC) $(LDFLAGS_AVUTIL)
-
-test-demuxer-plugin.o: test-demuxer-plugin.c
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-test-decoder-plugin: test-decoder-plugin.o src/decoder_plugin.o src/decoder_plugin_auto.o src/decoder_plugin_miniflac.o src/decoder_plugin_passthrough.o src/decoder_plugin_avcodec.o src/demuxer.o src/demuxer_plugin.o src/demuxer_plugin_auto.o src/demuxer_plugin_avformat.o src/demuxer_plugin_ogg.o src/demuxer_plugin_flac.o src/avframe_utils.o src/avpacket_utils.o src/avcodec_utils.o src/avpacket_utils.o src/packet.o src/input.o src/input_plugin.o src/input_plugin_file.o src/input_plugin_stdin.o src/input_plugin_curl.o src/frame.o src/tag.o src/strbuf.o src/membuf.o src/ich_time.o src/codecs.o src/samplefmt.o src/miniflac.o
-	$(CC) -o $@ $^ $(LDFLAGS_CURL) $(LDFLAGS_AVFORMAT) $(LDFLAGS_AVCODEC) $(LDFLAGS_AVUTIL)
-
-test-filter-plugin: test-filter-plugin.o src/filter_plugin.o src/filter_plugin_passthrough.o src/filter_plugin_avfilter.o src/decoder.o src/decoder_plugin.o src/decoder_plugin_auto.o src/decoder_plugin_miniflac.o src/decoder_plugin_passthrough.o src/decoder_plugin_avcodec.o src/demuxer.o src/demuxer_plugin.o src/demuxer_plugin_auto.o src/demuxer_plugin_avformat.o src/demuxer_plugin_ogg.o src/demuxer_plugin_flac.o src/avframe_utils.o src/avpacket_utils.o src/avcodec_utils.o src/avpacket_utils.o src/packet.o src/input.o src/input_plugin.o src/input_plugin_file.o src/input_plugin_stdin.o src/input_plugin_curl.o src/frame.o src/tag.o src/strbuf.o src/membuf.o src/ich_time.o src/codecs.o src/samplefmt.o src/miniflac.o
-	$(CC) -o $@ $^ $(LDFLAGS_CURL) $(LDFLAGS_AVFORMAT) $(LDFLAGS_AVFILTER) $(LDFLAGS_AVCODEC) $(LDFLAGS_AVUTIL)
-
-test-decoder-plugin.o: test-decoder-plugin.c
-	$(CC) $(CFLAGS) -c -o $@ $<

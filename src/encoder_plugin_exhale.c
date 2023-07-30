@@ -144,7 +144,7 @@ static void plugin_close(void* ud) {
     packet_free(&userdata->packet);
     frame_free(&userdata->buffer);
     frame_free(&userdata->samples);
-    membuf_free(&userdata->me.dsi);
+    packet_source_free(&userdata->me);
 }
 
 static int plugin_open(void* ud, const frame_source* source, const packet_receiver* dest) {
