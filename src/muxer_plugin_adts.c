@@ -4,13 +4,12 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <inttypes.h>
 
-#define LOG0(str) fprintf(stderr,"[muxer:adts] "str"\n")
-#define LOG1(s, a) fprintf(stderr,"[muxer:adts] "s"\n", (a))
+#define LOG_PREFIX "[muxer:adts]"
+#include "logger.h"
 
-#define LOGERRNO(s) LOG1(s": %s", strerror(errno))
-#define TRY(exp, act) if(!(exp)) { act; }
-#define TRYNULL(exp, act) if((exp) == NULL) { act; }
+#define LOGERRNO(s) log_error(s": %s", strerror(errno))
 
 static STRBUF_CONST(plugin_name,"adts");
 static STRBUF_CONST(mime_aac,"audio/aac");
@@ -70,7 +69,7 @@ static int muxer_plugin_adts_open(void* ud, const packet_source* source, const s
                 case CODEC_PROFILE_AAC_LC: break;
                 case CODEC_PROFILE_AAC_HE2: {
                     if(source->channel_layout != LAYOUT_STEREO) {
-                        LOG1("unsupported channels for HE2: requires stereo, total channels=%u",
+                        log_error("unsupported channels for HE2: requires stereo, total channels=%u",
                           (unsigned int)channel_count(source->channel_layout));
                         return -1;
                     }
@@ -80,7 +79,7 @@ static int muxer_plugin_adts_open(void* ud, const packet_source* source, const s
                 case CODEC_PROFILE_AAC_HE: sample_rate /= 2; profile = CODEC_PROFILE_AAC_LC; break;
                 case CODEC_PROFILE_AAC_USAC: /* fall-through */
                 default: {
-                    LOG1("unsupported AAC profile %u",source->profile);
+                    log_error("unsupported AAC profile %u",source->profile);
                     return -1;
                 }
             }
@@ -100,7 +99,7 @@ static int muxer_plugin_adts_open(void* ud, const packet_source* source, const s
                 case  8000: userdata->freq = 0x0B; break;
                 case  7350: userdata->freq = 0x0C; break;
                 default: {
-                    LOG1("unsupported sample rate %u",sample_rate);
+                    log_error("unsupported sample rate %u",sample_rate);
                     return -1;
                 }
             }
@@ -114,7 +113,7 @@ static int muxer_plugin_adts_open(void* ud, const packet_source* source, const s
                 case LAYOUT_5_1: userdata->ch_index = 6; break;
                 case LAYOUT_7_1: userdata->ch_index = 7; break;
                 default: {
-                    LOG1("unsupported channel layout 0x%lx", channel_layout);
+                    log_error("unsupported channel layout 0x%" PRIx64, channel_layout);
                     return -1;
                 }
             }
@@ -125,7 +124,7 @@ static int muxer_plugin_adts_open(void* ud, const packet_source* source, const s
         }
 
         default: {
-            LOG1("unsupported codec %s", codec_name(source->codec));
+            log_error("unsupported codec %s", codec_name(source->codec));
             return -1;
         }
     }

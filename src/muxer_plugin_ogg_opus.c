@@ -5,25 +5,26 @@
 #include <errno.h>
 #include <time.h>
 #include <string.h>
+#include <inttypes.h>
 
 #include "pack_u32le.h"
+
+#define LOG_PREFIX "[muxer:ogg:opus]"
+#include "logger.h"
 
 #define MINIOGG_API static
 #include "miniogg.h"
 
 #include "base64encode.h"
 
-#define LOG0(s) fprintf(stderr,"[muxer:ogg:opus] "s"\n")
-#define LOG1(s, a) fprintf(stderr,"[muxer:ogg:opus] "s"\n", (a))
-#define LOG2(s, a, b) fprintf(stderr,"[muxer:ogg:opus] "s"\n", (a), (b))
-#define LOGS(s, a) LOG2(s, (int)(a).len, (const char *)(a).x )
+#define LOGS(s, a) log_error(s, (int)(a).len, (const char *)(a).x )
 
-#define LOGERRNO(s) LOG1(s": %s", strerror(errno))
+#define LOGERRNO(s) log_error(s": %s", strerror(errno))
 
 #define TRYNULL(exp, act) if( (exp) == NULL) { act; r=-1; goto cleanup; }
 #define TRY(exp, act) if(!(exp)) { act; r=-1; goto cleanup ; }
 #define TRY0(exp, act) if( (r = (exp)) != 0 ) { act; goto cleanup; }
-#define TRYS(exp) TRY0(exp, LOG0("out of memory"); abort())
+#define TRYS(exp) TRY0(exp, logs_fatal("out of memory"); abort())
 
 #define USE_KEYFRAMES 1
 
@@ -79,7 +80,7 @@ static int stream_send(ogg_opus_plugin* userdata, const segment_receiver* dest) 
     s.samples = userdata->samples;
     s.pts     = userdata->pts;
 
-    TRY0(dest->submit_segment(dest->handle,&s),LOG0("error submitting segment"));
+    TRY0(dest->submit_segment(dest->handle,&s),logs_error("error submitting segment"));
 
     userdata->pts += userdata->samples;
     userdata->samples = 0;
@@ -234,7 +235,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     me.handle = userdata;
 
 
-    TRY0(dest->open(dest->handle,&me),LOG0("error opening destination"));
+    TRY0(dest->open(dest->handle,&me),logs_error("error opening destination"));
 
     r = 0;
     cleanup:

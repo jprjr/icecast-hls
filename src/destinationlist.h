@@ -12,6 +12,7 @@ struct destinationlist_entry {
     thread_ptr_t thread;
     destination_sync sync;
     destination destination;
+    int loglevel;
 };
 
 typedef struct destinationlist_entry destinationlist_entry;

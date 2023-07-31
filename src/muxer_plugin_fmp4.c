@@ -16,6 +16,9 @@
 #include "unpack_u32le.h"
 #include "unpack_u16le.h"
 
+#define LOG_PREFIX "[muxer:fmp4]"
+#include "logger.h"
+
 static STRBUF_CONST(plugin_name,"fmp4");
 
 static const char* AOID3_SCHEME_ID_URI = "https://aomedia.org/emsg/ID3";
@@ -144,7 +147,7 @@ static int plugin_config_measurement(plugin_userdata* userdata, const strbuf* ke
         r = fmp4_measurement_set_value(userdata->measurement,strbuf_strtod(value));
         if(r != FMP4_OK || errno) {
             errno = 0;
-            fprintf(stderr,"[muxer:fmp4] error parsing measurement value %.*s\n",(int)value->len,(char*)value->x);
+            log_error("error parsing measurement value %.*s",(int)value->len,(char*)value->x);
             return -1;
         }
         return 0;
@@ -160,7 +163,7 @@ static int plugin_config_measurement(plugin_userdata* userdata, const strbuf* ke
         }
         if(r != FMP4_OK || errno) {
             errno = 0;
-            fprintf(stderr,"[muxer:fmp4] error parsing measurement-system value %.*s\n",(int)value->len,(char*)value->x);
+            log_error("error parsing measurement-system value %.*s",(int)value->len,(char*)value->x);
             return -1;
         }
         return 0;
@@ -177,7 +180,7 @@ static int plugin_config_measurement(plugin_userdata* userdata, const strbuf* ke
         }
         if(r != FMP4_OK || errno) {
             errno = 0;
-            fprintf(stderr,"[muxer:fmp4] error parsing reliability value %.*s\n",(int)value->len,(char*)value->x);
+            log_error("error parsing reliability value %.*s",(int)value->len,(char*)value->x);
             return -1;
         }
         return 0;
@@ -195,7 +198,7 @@ static int plugin_config_loudness(plugin_userdata* userdata, const strbuf* key, 
         r = fmp4_loudness_set_true_peak(userdata->loudness,strbuf_strtod(value));
         if(r != FMP4_OK || errno) {
             errno = 0;
-            fprintf(stderr,"[muxer:fmp4] error parsing true-peak value %.*s\n",(int)value->len,(char*)value->x);
+            log_error("error parsing true-peak value %.*s",(int)value->len,(char*)value->x);
             return -1;
         }
         return 0;
@@ -206,7 +209,7 @@ static int plugin_config_loudness(plugin_userdata* userdata, const strbuf* key, 
         r = fmp4_loudness_set_sample_peak(userdata->loudness,strbuf_strtod(value));
         if(r != FMP4_OK || errno) {
             errno = 0;
-            fprintf(stderr,"[muxer:fmp4] error parsing sample-peak value %.*s\n",(int)value->len,(char*)value->x);
+            log_error("error parsing sample-peak value %.*s",(int)value->len,(char*)value->x);
             return -1;
         }
         return 0;
@@ -222,7 +225,7 @@ static int plugin_config_loudness(plugin_userdata* userdata, const strbuf* key, 
         }
         if(r != FMP4_OK || errno) {
             errno = 0;
-            fprintf(stderr,"[muxer:fmp4] error parsing measurement-system value %.*s\n",(int)value->len,(char*)value->x);
+            log_error("error parsing measurement-system value %.*s",(int)value->len,(char*)value->x);
             return -1;
         }
         return 0;
@@ -238,7 +241,7 @@ static int plugin_config_loudness(plugin_userdata* userdata, const strbuf* key, 
         }
         if(r != FMP4_OK || errno) {
             errno = 0;
-            fprintf(stderr,"[muxer:fmp4] error parsing reliability value %.*s\n",(int)value->len,(char*)value->x);
+            log_error("error parsing reliability value %.*s",(int)value->len,(char*)value->x);
             return -1;
         }
         return 0;
@@ -246,7 +249,7 @@ static int plugin_config_loudness(plugin_userdata* userdata, const strbuf* key, 
 
     if(strbuf_equals(key,&KEY_measurement_method)) {
         if( (userdata->measurement = fmp4_loudness_new_measurement(userdata->loudness)) == NULL) {
-            fprintf(stderr,"[muxer:fmp4] error adding measurement to loudness\n");
+            logs_error("error adding measurement to loudness");
             return -1;
         }
 
@@ -260,7 +263,7 @@ static int plugin_config_loudness(plugin_userdata* userdata, const strbuf* key, 
 
         if(r != FMP4_OK || errno) {
             errno = 0;
-            fprintf(stderr,"[muxer:fmp4] error parsing measurement value %.*s\n",(int)value->len,(char*)value->x);
+            log_error("error parsing measurement value %.*s",(int)value->len,(char*)value->x);
             return -1;
         }
         userdata->configuring = CONFIGURING_MEASUREMENT;
@@ -273,7 +276,7 @@ static int plugin_config_loudness(plugin_userdata* userdata, const strbuf* key, 
 static int plugin_config_main(plugin_userdata* userdata, const strbuf* key, const strbuf* value) {
     if(strbuf_equals(key,&KEY_loudness)) {
         if( (userdata->loudness = fmp4_track_new_loudness(userdata->track)) == NULL) {
-            fprintf(stderr,"[muxer:fmp4] error allocating new loudness\n");
+            logs_error("error allocating new loudness");
             return -1;
         }
         if(strbuf_equals(value,&KEY_track)) {
@@ -281,7 +284,7 @@ static int plugin_config_main(plugin_userdata* userdata, const strbuf* key, cons
         } else if(strbuf_equals(value,&KEY_album)) {
             userdata->loudness->type = FMP4_LOUDNESS_ALBUM;
         } else {
-            fprintf(stderr,"[muxer:fmp4] unknown loudness type %.*s\n",(int)value->len,(char *)value->x);
+            log_error("unknown loudness type %.*s",(int)value->len,(char *)value->x);
             return -1;
         }
 
@@ -304,7 +307,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
     }
 
     if(r == -2) {
-        fprintf(stderr,"[muxer:fmp4] unknown config key: %.*s\n",
+        log_error("unknown config key: %.*s",
           (int)key->len,(char *)key->x);
         r = -1;
     }
@@ -344,7 +347,7 @@ static int plugin_submit_tags(void* ud, const taglist* tags, const segment_recei
 
     id3_reset(&userdata->id3);
     if(id3_add_taglist(&userdata->id3,tags) < 0) {
-        fprintf(stderr,"had some kind of error on making a taglist!\n");
+        fprintf(stderr,"had some kind of error on making a taglist!");
         return -1;
     }
 
@@ -520,7 +523,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
             break;
         }
         default: {
-            fprintf(stderr,"[muxer:fmp4] unsupported codec\n");
+            log_error("unsupported codec %s",codec_name(source->codec));
             return -1;
         }
     }
@@ -542,7 +545,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     fmp4_track_set_default_sample_info(userdata->track, &userdata->default_info);
 
     if( (r = dest->open(dest->handle, &me)) != 0) {
-        fprintf(stderr,"[muxer:fmp4] error opening output\n");
+        logs_error("error opening output");
         return r;
     }
 
@@ -552,7 +555,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     if(source->dsi.len > 0) {
         if(membuf_copy(&userdata->dsi,&source->dsi) != 0) {
-            fprintf(stderr,"[muxer:fmp4] error copying dsi\n");
+            logs_fatal("error copying dsi");
             return -1;
         }
     }
@@ -562,7 +565,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
             switch(userdata->track->object_type) {
                 case FMP4_OBJECT_TYPE_AAC: {
                     if(userdata->dsi.len == 0) {
-                        fprintf(stderr,"[muxer:fmp4] expected dsi for AAC\n");
+                        logs_fatal("expected dsi for AAC");
                         return -1;
                     }
                     break;
@@ -576,7 +579,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
             /* the dsi we get is a whole OpusHead for Ogg, convert
              * to mp4 format */
             if(userdata->dsi.len <= 8 || memcmp(&userdata->dsi.x[0],"OpusHead",8) != 0) {
-                fprintf(stderr,"[muxer:fmp4] expected an OpusHead packet for dsi\n");
+                logs_fatal("expected an OpusHead packet for dsi");
                 return -1;
             }
             membuf_trim(&userdata->dsi,8);
@@ -597,7 +600,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
             /* the dsi we get has mp4box headers (4 bytes of size, 'alac', 4 bytes of flagss)
              * so we need to trim those */
             if(userdata->dsi.len <= 12) {
-                fprintf(stderr,"[muxer:fmp4] expected ALAC mp4box for dsi\n");
+                logs_fatal("expected ALAC mp4box for dsi");
                 return -1;
             }
             membuf_trim(&userdata->dsi,12);
@@ -606,7 +609,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
         case FMP4_CODEC_FLAC: {
             if(userdata->dsi.len != 34) {
-                fprintf(stderr,"[muxer:fmp4] expected FLAC STREAMINFO block for dsi\n");
+                logs_fatal("expected FLAC STREAMINFO block for dsi");
                 return -1;
             }
             pack_u32be(buf,0x80000000 | 34);
@@ -684,7 +687,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
                     case 44100: tmp = 0x01; break;
                     case 32000: tmp = 0x02; break;
                     default: {
-                        fprintf(stderr,"[muxer:fmp4] unsupported sample rate for AC3\n");
+                        logs_fatal("unsupported sample rate for AC3");
                         return -1;
                     }
                 }
@@ -700,7 +703,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
                     case LAYOUT_QUAD: tmp = 0x06; break;
                     case LAYOUT_5_0: tmp = 0x07; break;
                     default: {
-                        fprintf(stderr,"[muxer:fmp4] unsupported channel layout\n");
+                        logs_fatal("unsupported channel layout");
                         return -1;
                     }
                 }
@@ -738,7 +741,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
                 bitwriter_align(&bw);
 
                 if(membuf_append(&userdata->dsi,buf,bw.len) != 0) {
-                    fprintf(stderr,"[muxer:fmp4] error copying dsi\n");
+                    logs_fatal("error copying dsi");
                     return -1;
                 }
             }
@@ -777,7 +780,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
                     case 44100: tmp = 0x01; break;
                     case 32000: tmp = 0x02; break;
                     default: {
-                        fprintf(stderr,"[muxer:fmp4] unsupported sample rate for EAC3\n");
+                        logs_fatal("unsupported sample rate for EAC3");
                         return -1;
                     }
                 }
@@ -795,7 +798,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
                     case LAYOUT_QUAD: tmp = 0x06; break;
                     case LAYOUT_5_0: tmp = 0x07; break;
                     default: {
-                        fprintf(stderr,"[muxer:fmp4] unsupported channel layout\n");
+                        logs_fatal("unsupported channel layout");
                         return -1;
                     }
                 }
@@ -807,7 +810,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
                 bitwriter_align(&bw);
 
                 if(membuf_append(&userdata->dsi,buf,bw.len) != 0) {
-                    fprintf(stderr,"[muxer:fmp4] error copying dsi\n");
+                    logs_fatal("error copying dsi");
                     return -1;
                 }
             }
@@ -819,7 +822,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     if(userdata->dsi.len > 0) {
         if( fmp4_track_set_dsi(userdata->track, userdata->dsi.x, userdata->dsi.len) != FMP4_OK) {
-            fprintf(stderr,"[muxer:fmp4] error setting dsi\n");
+            logs_fatal("error setting dsi");
             return -1;
         }
     }

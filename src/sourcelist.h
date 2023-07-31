@@ -10,6 +10,7 @@ typedef void (*sourcelist_quit_func)(void*,int);
 
 struct sourcelist_entry {
     strbuf id;
+    int loglevel;
     thread_ptr_t thread;
     thread_atomic_int_t status;
     source source;

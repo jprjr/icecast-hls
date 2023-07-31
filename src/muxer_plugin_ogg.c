@@ -5,17 +5,17 @@
 #include <errno.h>
 #include <string.h>
 
-#define LOG0(s) fprintf(stderr,"[muxer:ogg] "s"\n")
-#define LOG1(s, a) fprintf(stderr,"[muxer:ogg] "s"\n", (a))
-#define LOG2(s, a, b) fprintf(stderr,"[muxer:ogg] "s"\n", (a), (b))
-#define LOGS(s, a) LOG2(s, (int)(a).len, (const char *)(a).x )
+#define LOG_PREFIX "[muxer:ogg]"
+#include "logger.h"
 
-#define LOGERRNO(s) LOG1(s": %s", strerror(errno))
+#define LOGS(s, a) log_error(s, (int)(a).len, (const char *)(a).x )
+
+#define LOGERRNO(s) log_error(s": %s", strerror(errno))
 
 #define TRYNULL(exp, act) if( (exp) == NULL) { act; r=-1; goto cleanup; }
 #define TRY(exp, act) if(!(exp)) { act; r=-1; goto cleanup ; }
 #define TRY0(exp, act) if( (r = (exp)) != 0 ) { act; goto cleanup; }
-#define TRYS(exp) TRY0(exp, LOG0("out of memory"); abort())
+#define TRYS(exp) TRY0(exp, logs_error("out of memory"); abort())
 
 #include "muxer_plugin_ogg_opus.h"
 #include "muxer_plugin_ogg_flac.h"
@@ -82,7 +82,7 @@ static int muxer_plugin_ogg_open(void* ud, const packet_source* source, const se
                 break;
             }
             default: {
-                LOG1("unsupported codec %s",codec_name(source->codec));
+                log_error("unsupported codec %s",codec_name(source->codec));
                 return -1;
             }
         }
@@ -96,7 +96,7 @@ static int muxer_plugin_ogg_open(void* ud, const packet_source* source, const se
                 break;
             }
             default: {
-                LOG1("unsupported codec %s",codec_name(source->codec));
+                log_error("unsupported codec %s",codec_name(source->codec));
                 return -1;
             }
         }
@@ -110,7 +110,7 @@ static int muxer_plugin_ogg_open(void* ud, const packet_source* source, const se
                 break;
             }
             default: {
-                LOG1("unsupported codec %s",codec_name(source->codec));
+                log_error("unsupported codec %s",codec_name(source->codec));
                 return -1;
             }
         }
@@ -185,8 +185,8 @@ static int muxer_plugin_ogg_config(void* ud, const strbuf* key, const strbuf* va
 static int muxer_plugin_ogg_init(void) {
     int r = -1;
 
-    TRY0(muxer_plugin_ogg_opus.init(), LOG0("error initializing ogg_opus"));
-    TRY0(muxer_plugin_ogg_flac.init(), LOG0("error initializing ogg_flac"));
+    TRY0(muxer_plugin_ogg_opus.init(), logs_error("error initializing ogg_opus"));
+    TRY0(muxer_plugin_ogg_flac.init(), logs_error("error initializing ogg_flac"));
 
     r = 0;
     cleanup:

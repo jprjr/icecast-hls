@@ -5,12 +5,8 @@
 #include <stdlib.h>
 #include <errno.h>
 
-#define LOG0(str) fprintf(stderr,"[muxer:passthrough] "str"\n")
-#define LOG1(s, a) fprintf(stderr,"[muxer:passthrough] "s"\n", (a))
-
-#define LOGERRNO(s) LOG1(s": %s", strerror(errno))
-#define TRY(exp, act) if(!(exp)) { act; }
-#define TRYNULL(exp, act) if((exp) == NULL) { act; }
+#define LOG_PREFIX "[muxer:passthrough]"
+#include "logger.h"
 
 static STRBUF_CONST(plugin_name,"passthrough");
 
@@ -66,7 +62,7 @@ static int muxer_plugin_passthrough_open(void* ud, const packet_source* source, 
         }
 
         default: {
-            LOG1("unsupported codec %s", codec_name(source->codec));
+            log_error("unsupported codec %s", codec_name(source->codec));
             return -1;
         }
     }

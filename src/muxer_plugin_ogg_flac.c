@@ -5,26 +5,27 @@
 #include <errno.h>
 #include <time.h>
 #include <string.h>
+#include <inttypes.h>
 
 #include "pack_u32le.h"
 #include "pack_u32be.h"
+
+#define LOG_PREFIX "[muxer:ogg:flac]"
+#include "logger.h"
 
 #define MINIOGG_API static
 #include "miniogg.h"
 
 #include "base64encode.h"
 
-#define LOG0(s) fprintf(stderr,"[muxer:ogg:flac] "s"\n")
-#define LOG1(s, a) fprintf(stderr,"[muxer:ogg:flac] "s"\n", (a))
-#define LOG2(s, a, b) fprintf(stderr,"[muxer:ogg:flac] "s"\n", (a), (b))
-#define LOGS(s, a) LOG2(s, (int)(a).len, (const char *)(a).x )
+#define LOGS(s, a) log_error(s, (int)(a).len, (const char *)(a).x )
 
-#define LOGERRNO(s) LOG1(s": %s", strerror(errno))
+#define LOGERRNO(s) log_error(s": %s", strerror(errno))
 
 #define TRYNULL(exp, act) if( (exp) == NULL) { act; r=-1; goto cleanup; }
 #define TRY(exp, act) if(!(exp)) { act; r=-1; goto cleanup ; }
 #define TRY0(exp, act) if( (r = (exp)) != 0 ) { act; goto cleanup; }
-#define TRYS(exp) TRY0(exp, LOG0("out of memory"); abort())
+#define TRYS(exp) TRY0(exp, logs_error("out of memory"); abort())
 
 static STRBUF_CONST(plugin_name,"ogg:flac");
 static STRBUF_CONST(mime_ogg,"application/ogg");
@@ -90,7 +91,7 @@ static int stream_send(ogg_flac_plugin* stream, const segment_receiver* dest) {
     s.samples = stream->samples;
     s.pts     = stream->pts;
 
-    TRY0(dest->submit_segment(dest->handle,&s),LOG0("error submitting segment"));
+    TRY0(dest->submit_segment(dest->handle,&s),logs_error("error submitting segment"));
 
     stream->pts += stream->samples;
     stream->samples = 0;
@@ -278,7 +279,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     me.frame_len = source->frame_len;
     me.handle = userdata;
 
-    TRY0(dest->open(dest->handle,&me),LOG0("error opening destination"));
+    TRY0(dest->open(dest->handle,&me),logs_error("error opening destination"));
 
     r = 0;
     cleanup:
@@ -310,11 +311,11 @@ static int plugin_submit_tags(void* ud, const taglist* tags, const segment_recei
         case LAYOUT_7_1: break;
         default: {
             if(!userdata->chaining) {
-                LOG0("ogg is set to non-chaining mode but audio channel layout requires chaining");
+                logs_error("ogg is set to non-chaining mode but audio channel layout requires chaining");
                 return -1;
             }
             userdata->scratch.len = 0;
-            TRYS(strbuf_sprintf(&userdata->scratch,"WAVEFORMATEXTENSIBLE_CHANNEL_MASK=0x%x",
+            TRYS(strbuf_sprintf(&userdata->scratch,"WAVEFORMATEXTENSIBLE_CHANNEL_MASK=0x%" PRIx64,
               userdata->channel_layout));
             TRYS(ogg_pack_str(tagdata,(const char *)userdata->scratch.x,userdata->scratch.len));
             userdata->tagtotal++;

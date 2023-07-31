@@ -32,6 +32,9 @@ void logger_set_default_fileinfo(int enable);
 /* set the default log level */
 void logger_set_default_level(enum LOG_LEVEL level);
 
+/* get the default log level */
+enum LOG_LEVEL logger_get_default_level(void);
+
 /* initializes thread-local storage, needs to be called in main */
 int logger_tls_init(void);
 
@@ -52,6 +55,7 @@ int logger_set_fileinfo(int enable);
 void logger_thread_cleanup(void);
 
 void logger_log(enum LOG_LEVEL level, const char *file, int line, const char *fmt, ...);
+void vlogger_log(enum LOG_LEVEL level, const char *file, int line, const char *fmt, va_list args_list);
 
 #ifdef LOG_PREFIX
 
