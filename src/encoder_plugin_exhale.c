@@ -6,10 +6,14 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include <inttypes.h>
 
 #include "mpeg_mappings.h"
 
 #define KEY(v,t) static STRBUF_CONST(KEY_##v,#t)
+
+#define LOG_PREFIX "[encoder:exhale]"
+#include "logger.h"
 
 KEY(vbr,vbr);
 KEY(sbr,sbr);
@@ -81,7 +85,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
     if(strbuf_equals(key,&KEY_vbr)) {
         userdata->vbr = strbuf_strtoul(value,10);
         if(errno != 0) {
-            fprintf(stderr,"[encoder:exhale] error parsing vbr value %.*s\n",
+            log_error("error parsing vbr value %.*s",
               (int)value->len,(char *)value->x);
             return -1;
         }
@@ -97,7 +101,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
             userdata->frame_len = 1024;
             return 0;
         }
-        fprintf(stderr,"[encoder:exhale] error parsing sbr value: %.*s\n",
+        log_error("error parsing sbr value: %.*s",
           (int)value->len,(char *)value->x);
         return -1;
     }
@@ -111,7 +115,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
             userdata->noise_filling = 0;
             return 0;
         }
-        fprintf(stderr,"[encoder:exhale] error parsing use-noise-filling value: %.*s\n",
+        log_error("error parsing use-noise-filling value: %.*s",
           (int)value->len,(char *)value->x);
         return -1;
     }
@@ -163,7 +167,7 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     ps_info.frame_len = userdata->frame_len;
 
     if( (r = check_sample_rate(source->sample_rate)) < 0) {
-        fprintf(stderr,"[encoder:exhale] unsupported sample rate %u\n",source->sample_rate);
+        log_error("unsupported sample rate %u",source->sample_rate);
         return r;
     }
 
@@ -175,20 +179,27 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
         case LAYOUT_5_0: /* fall-through */
         case LAYOUT_5_1: break;
         default: {
-            fprintf(stderr,"[encoder:exhane] unsupported channel layout 0x%lx",source->channel_layout);
+            log_error("unsupported channel layout 0x%" PRIx64,source->channel_layout);
             return -1;
         }
     }
 
     if( (r = dest->get_segment_info(dest->handle, &ps_info, &ps_params)) != 0) {
-        fprintf(stderr,"[encoder:exhale] error getting segment info\n");
+        logs_error("error getting segment info");
         return r;
     }
+
+    logs_debug("opening");
+    log_debug("  vbr = %u", userdata->vbr);
+    log_debug("  sbr = %u", userdata->frame_len == 2048);
+    log_debug("  samplerate = %u", source->sample_rate);
+    log_debug("  channel layout = 0x%" PRIx64, source->channel_layout);
 
     /* it seems like exhale's tune-in period is really double what you intend.
      * I think the idea goes the tune_in_period allows you to technically start
      * decoding every (x) packets but what we really want are true sync packets */
     userdata->tune_in_period = ps_params.packets_per_segment >> 1;
+    log_debug("  tune_in_period = %u", userdata->tune_in_period);
 
     userdata->buffer.format = SAMPLEFMT_S32P;
     userdata->buffer.channels = channel_count(source->channel_layout);
@@ -257,7 +268,8 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     userdata->me.dsi.a = 0;
 
     if(( r = dest->open(dest->handle, &userdata->me)) != 0) {
-        fprintf(stderr,"[encoder:exhale] error opening muxer\n");
+        logs_error("error opening muxer");
+        return r;
     }
 
     return 0;
@@ -302,7 +314,7 @@ static int plugin_encode_frame(plugin_userdata *userdata, const packet_receiver*
     userdata->packet.sample_group = (userdata->packet.data.x[0] & 0xC0) == 0x80 ? 1 : 0;
 
     if( ( r = dest->submit_packet(dest->handle, &userdata->packet)) != 0) {
-        fprintf(stderr,"[encoder:exhale] error sending packet to muxer\n");
+        logs_error("error sending packet to muxer");
         return r;
     }
 
@@ -326,7 +338,7 @@ static int plugin_submit_frame(void* ud, const frame* frame, const packet_receiv
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
     if( (r = frame_append(&userdata->buffer,frame)) != 0) {
-        fprintf(stderr,"[encoder:exhale] error appending frame to buffer: %d\n",r);
+        log_error("error appending frame to buffer: %d",r);
         return r;
     }
 
@@ -366,7 +378,7 @@ static int plugin_flush(void* ud, const packet_receiver* dest) {
 
 static int plugin_reset(void* ud) {
     (void)ud;
-    fprintf(stderr,"no reset function");
+    logs_fatal("no reset function");
     abort();
     return -1;
 }

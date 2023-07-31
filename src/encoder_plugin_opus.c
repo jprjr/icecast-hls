@@ -8,11 +8,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <inttypes.h>
 
 #include "pack_u16le.h"
 #include "pack_u32le.h"
 #include "version.h"
 #include "vorbis_mappings.h"
+
+#define LOG_PREFIX "[encoder:exhale]"
+#include "logger.h"
 
 /* TODO switch to the multistream API and go up to 8 channels */
 #define MAX_CHANNELS 8
@@ -30,14 +34,9 @@
  * stream for the center. I figure just allocating for 8 mono streams is safe. */
 #define MAX_PACKET (61440 * MAX_CHANNELS)
 
-#define LOG0(s) fprintf(stderr,"[encoder:opus] "s"\n")
-#define LOG1(s,a) fprintf(stderr,"[encoder:opus] "s"\n",(a))
-#define LOG2(s,a,b) fprintf(stderr,"[encoder:opus] "s"\n",(a),(b))
-#define LOG3(s,a,b,c) fprintf(stderr,"[encoder:opus] "s"\n",(a),(b),(c))
-#define LOGS(s,a) LOG2(s,(int)(a).len,(char *)(a).x)
-
-#define LOGERRNO(s) LOG1(s": %s", strerror(errno))
-#define LOGSERRNO(s,a) LOG3(s": %s", (int)a.len, (char *)(a).x, strerror(errno))
+#define LOGS(s, a) log_error(s, (int)(a).len, (char *)(a).x);
+#define LOGERRNO(s) log_error(s": %s", strerror(errno))
+#define LOGSERRNO(s,a) log_error(s": %s", (int)a.len, (char *)(a).x, strerror(errno))
 
 static STRBUF_CONST(plugin_name,"opus");
 
@@ -221,7 +220,7 @@ static int encoder_plugin_opus_configure(encoder_plugin_opus_userdata* userdata)
     int err;
     userdata->enc = opus_multistream_surround_encoder_create(48000, userdata->channels, userdata->channels > 2 ? 1 : 0, &userdata->streams, &userdata->coupled_streams, userdata->mapping, userdata->application, &err);
     if(userdata->enc == NULL) {
-        LOG1("error creating opus encoder: %s",opus_strerror(err));
+        log_error("error creating opus encoder: %s",opus_strerror(err));
         return -1;
     }
 
@@ -257,7 +256,7 @@ static int opus_drain(encoder_plugin_opus_userdata* userdata, const packet_recei
 
         result = opus_multistream_encode_float(userdata->enc, samples, userdata->framelen, userdata->packet.data.x,MAX_PACKET);
         if(result <= 0) {
-            LOG1("received error in opus_encode: %s", opus_strerror(result));
+            log_error("received error in opus_encode: %s", opus_strerror(result));
             return -1;
         }
 
@@ -269,7 +268,7 @@ static int opus_drain(encoder_plugin_opus_userdata* userdata, const packet_recei
         userdata->packet.sample_group = 1;
 
         if( (r = dest->submit_packet(dest->handle, &userdata->packet)) != 0) {
-            LOG0("error sending packet to muxer");
+            logs_error("error sending packet to muxer");
             return r;
         }
 
@@ -294,25 +293,25 @@ static int encoder_plugin_opus_open(void *ud, const frame_source* source, const 
         case LAYOUT_6_1:    userdata->channels = 7; break;
         case LAYOUT_7_1:    userdata->channels = 8; break;
         default: {
-            LOG1("unsupported channel layout 0x%lx", source->channel_layout);
+            log_error("unsupported channel layout 0x%" PRIx64, source->channel_layout);
             return -1;
         }
     }
 
     if(userdata->channels > MAX_CHANNELS) {
-        LOG2("unsupported channel config - requested %u channels, max is %u channels",userdata->channels, (unsigned int)MAX_CHANNELS);
+        log_error("unsupported channel config - requested %u channels, max is %u channels",userdata->channels, (unsigned int)MAX_CHANNELS);
         return r;
     }
 
     if(source->sample_rate != 48000) {
-        LOG1("unsupported sample rate %u", source->sample_rate);
+        log_error("unsupported sample rate %u", source->sample_rate);
         return r;
     }
 
     muxer_caps = dest->get_caps(dest->handle);
 
     if(!(muxer_caps & MUXER_CAP_GLOBAL_HEADERS)) {
-        LOG0("selected muxer does not have global header, select a different muxer");
+        logs_error("selected muxer does not have global header, select a different muxer");
         return -1;
     }
 
@@ -418,7 +417,7 @@ static int encoder_plugin_opus_flush(void* ud, const packet_receiver* dest) {
         if(userdata->buffer.duration < userdata->framelen) {
             framelen = userdata->framelen;
             if( (r = frame_fill(&userdata->buffer,userdata->framelen)) != 0) {
-                LOG0("error filling frame buffer");
+                logs_fatal("error filling frame buffer");
                 return r;
             }
             if( (r = opus_drain(userdata,dest,framelen)) != 0) return r;
@@ -433,7 +432,7 @@ static int encoder_plugin_opus_submit_frame(void* ud, const frame* frame, const 
     encoder_plugin_opus_userdata* userdata = (encoder_plugin_opus_userdata*)ud;
 
     if( (r = frame_append(&userdata->buffer,frame)) != 0) {
-        LOG1("error appending frame to internal buffer: %d",r);
+        log_error("error appending frame to internal buffer: %d",r);
         return r;
     }
 

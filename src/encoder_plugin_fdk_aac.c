@@ -8,15 +8,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <inttypes.h>
 
-#define LOG0(s) fprintf(stderr,"[encoder:fdk-aac] "s"\n")
-#define LOG1(s,a) fprintf(stderr,"[encoder:fdk-aac] "s"\n",(a))
-#define LOG2(s,a,b) fprintf(stderr,"[encoder:fdk-aac] "s"\n",(a),(b))
-#define LOG3(s,a,b,c) fprintf(stderr,"[encoder:fdk-aac] "s"\n",(a),(b),(c))
-#define LOGS(s,a) LOG2(s,(int)(a).len,(char *)(a).x)
+#define LOG_PREFIX "[encoder:fdk-aac]"
+#include "logger.h"
 
-#define LOGERRNO(s) LOG1(s": %s", strerror(errno))
-#define LOGSERRNO(s,a) LOG3(s": %s", (int)a.len, (char *)(a).x, strerror(errno))
+#define LOGS(s,a) log_error(s,(int)(a).len,(char *)(a).x)
+#define LOGERRNO(s) log_error(s": %s", strerror(errno))
+#define LOGSERRNO(s,a) log_error(s": %s", (int)a.len, (char *)(a).x, strerror(errno))
 
 #define MAX_CHANNELS 8
 
@@ -115,7 +114,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
             userdata->aot = AOT_PS;
             return 0;
         }
-        LOGS("unknown/unsupported value for profile: %.*s",*value);
+        log_error("unknown/unsupported value for profile: %.*s",*value);
         return -1;
     }
 
@@ -200,23 +199,23 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
         case LAYOUT_5_1: channel_mode = 6; break;
         case LAYOUT_7_1: channel_mode = 7; break;
         default: {
-            LOG2("unsupported channel layout 0x%lx (%u channels)", source->channel_layout,(unsigned int)channel_count(source->channel_layout));
+            log_error("unsupported channel layout 0x%" PRIx64 " (%u channels)", source->channel_layout,(unsigned int)channel_count(source->channel_layout));
             return -1;
         }
     }
 
     if( (r = check_sample_rate(source->sample_rate)) != 0) {
-        LOG1("unsupported sample rate %u", source->sample_rate);
+        log_error("unsupported sample rate %u", source->sample_rate);
         return r;
     }
 
     if(userdata->aot == AOT_PS && source->channel_layout != LAYOUT_STEREO) {
-        LOG0("warning: HE-AACv2 specified but source is not stereo, downgrading to HE-AACv1");
+        logs_warn("HE-AACv2 specified but source is not stereo, downgrading to HE-AACv1");
         userdata->aot = AOT_SBR;
     }
 
     if( (r = dest->get_segment_info(dest->handle, &ps_info, &ps_params)) != 0) {
-        LOG0("warning: error getting segment info");
+        logs_error("error getting segment info");
         return r;
     }
 
@@ -228,7 +227,7 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
     muxer_caps = dest->get_caps(dest->handle);
 
     if( (e = aacEncOpen(&userdata->aacEncoder, 0, 0)) !=  AACENC_OK) {
-        LOG1("error opening AAC encoder: %u", e);
+        log_error("error opening AAC encoder: %u", e);
         return -1;
     }
 
@@ -237,61 +236,61 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
     }
 
     if( (e = aacEncoder_SetParam(userdata->aacEncoder, AACENC_HEADER_PERIOD, ps_params.packets_per_segment)) != AACENC_OK) {
-        LOG1("error setting AAC header period %u", e);
+        log_error("error setting AAC header period %u", e);
     }
 
     if( (e = aacEncoder_SetParam(userdata->aacEncoder, AACENC_AOT, userdata->aot)) != AACENC_OK) {
-        LOG1("error setting AAC AOT: %u", e);
+        log_error("error setting AAC AOT: %u", e);
         return -1;
     }
 
     if( (e = aacEncoder_SetParam(userdata->aacEncoder, AACENC_SAMPLERATE, source->sample_rate)) != AACENC_OK) {
-        LOG1("error setting AAC sample rate: %u", e);
+        log_error("error setting AAC sample rate: %u", e);
         return -1;
     }
 
     if( (e = aacEncoder_SetParam(userdata->aacEncoder, AACENC_CHANNELORDER, 1)) != AACENC_OK) {
-        LOG1("error setting AAC channel mode: %u", e);
+        log_error("error setting AAC channel mode: %u", e);
         return -1;
     }
 
     if( (e = aacEncoder_SetParam(userdata->aacEncoder, AACENC_CHANNELMODE, channel_mode)) != AACENC_OK) {
-        LOG1("error setting AAC channel mode: %u", e);
+        log_error("error setting AAC channel mode: %u", e);
         return -1;
     }
 
     if( (e = aacEncoder_SetParam(userdata->aacEncoder, AACENC_BITRATEMODE, userdata->vbr)) != AACENC_OK) {
-        LOG1("error setting AAC vbr mode: %u", e);
+        log_error("error setting AAC vbr mode: %u", e);
         return -1;
     }
 
     if( (e = aacEncoder_SetParam(userdata->aacEncoder, AACENC_BITRATE, userdata->bitrate)) != AACENC_OK) {
-        LOG1("error setting AAC bitrate: %u", e);
+        log_error("error setting AAC bitrate: %u", e);
         return -1;
     }
 
     if( (e = aacEncoder_SetParam(userdata->aacEncoder, AACENC_AFTERBURNER, userdata->afterburner)) != AACENC_OK) {
-        LOG1("error setting AAC bitrate: %u", e);
+        log_error("error setting AAC bitrate: %u", e);
         return -1;
     }
 
     if( (e = aacEncoder_SetParam(userdata->aacEncoder, AACENC_TRANSMUX, 0)) != AACENC_OK) {
-        LOG1("error setting AAC transmux: %u", e);
+        log_error("error setting AAC transmux: %u", e);
         return -1;
     }
 
     if( (e = aacEncoder_SetParam(userdata->aacEncoder, AACENC_SIGNALING_MODE, muxer_caps & MUXER_CAP_GLOBAL_HEADERS ? 2 : 0)) != AACENC_OK) {
-        LOG1("error setting AAC signaling mode: %u", e);
+        log_error("error setting AAC signaling mode: %u", e);
         return -1;
     }
 
     if( (e = aacEncEncode(userdata->aacEncoder, NULL, NULL, NULL, NULL)) != AACENC_OK) {
-        LOG1("error initializing AAC encoder: %u", e);
+        log_error("error initializing AAC encoder: %u", e);
         return -1;
     }
 
     if( (e = aacEncInfo(userdata->aacEncoder, &info)) != AACENC_OK) {
-        LOG1("error initializing AAC encoder: %u", e);
+        log_error("error initializing AAC encoder: %u", e);
         return -1;
     }
 
@@ -324,7 +323,7 @@ static int plugin_open(void *ud, const frame_source* source, const packet_receiv
             break;
         }
         default: {
-            LOG0("unsupported profile?!");
+            logs_error("unsupported profile?!");
             return -1;
         }
     }
@@ -400,7 +399,7 @@ static int plugin_encode_frame(plugin_userdata* userdata, const packet_receiver*
     inArgs.numAncBytes = 0;
 
     if( (e = aacEncEncode(userdata->aacEncoder, &inBufDesc, &outBufDesc, &inArgs, &outArgs)) != AACENC_OK) {
-        LOG1("error encoding audio frame: %u", e);
+        log_error("error encoding audio frame: %u", e);
         return -1;
     }
 
@@ -409,7 +408,7 @@ static int plugin_encode_frame(plugin_userdata* userdata, const packet_receiver*
     userdata->packet.sync = 1;
 
     if( (r = dest->submit_packet(dest->handle, &userdata->packet)) != 0) {
-        LOG0("error sending packet to muxer");
+        logs_error("error sending packet to muxer");
         return r;
     }
     userdata->packet.pts += userdata->frame_len;
@@ -449,7 +448,7 @@ static int plugin_flush(void* ud, const packet_receiver* dest) {
 
         if(userdata->buffer.duration < userdata->frame_len) {
             if( (r = frame_fill(&userdata->buffer, userdata->frame_len)) != 0) {
-                LOG0("error filling frame buffer");
+                logs_fatal("error filling frame buffer");
                 return r;
             }
         }
@@ -474,7 +473,7 @@ static int plugin_flush(void* ud, const packet_receiver* dest) {
     inArgs.numAncBytes = 0;
 
     if( (e = aacEncEncode(userdata->aacEncoder, &inBufDesc, &outBufDesc, &inArgs, &outArgs)) != AACENC_OK) {
-        LOG1("error starting flush: %d",e);
+        log_error("error starting flush: %d",e);
         return -1;
     }
 
@@ -490,7 +489,7 @@ static int plugin_flush(void* ud, const packet_receiver* dest) {
         }
 
         if( (r = dest->submit_packet(dest->handle, &userdata->packet)) != 0) {
-            LOG0("error sending packet to muxer");
+            logs_error("error sending packet to muxer");
             return r;
         }
         userdata->packet.pts += userdata->packet.duration;
@@ -498,7 +497,7 @@ static int plugin_flush(void* ud, const packet_receiver* dest) {
     } while(e == AACENC_OK);
 
     if(e != AACENC_ENCODE_EOF) {
-        LOG1("error flushing final packet: %d",e);
+        log_error("error flushing final packet: %d",e);
         return -1;
     }
 
@@ -510,7 +509,7 @@ static int plugin_submit_frame(void* ud, const frame* frame, const packet_receiv
     int r;
 
     if( (r = frame_append(&userdata->buffer,frame)) != 0) {
-        LOG1("error appending frame to internval buffer: %d",r);
+        log_fatal("error appending frame to internal buffer: %d",r);
         return r;
     }
 

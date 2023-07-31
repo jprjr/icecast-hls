@@ -5,7 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define LOG0(fmt) fprintf(stderr,"[encoder:passthrough] " fmt "\n")
+#define LOG_PREFIX "[encoder:passthrough]"
+#include "logger.h"
 
 static STRBUF_CONST(plugin_name, "passthrough");
 
@@ -35,7 +36,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
 static int plugin_open(void* ud, const frame_source* source, const packet_receiver* dest) {
     (void)ud;
     if(source->format != SAMPLEFMT_BINARY) {
-        LOG0("passthrough encoder only supports packets");
+        logs_error("passthrough encoder only supports packets");
         return -1;
     }
 
