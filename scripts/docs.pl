@@ -15,7 +15,7 @@ my $titles = {
     'Plugins:-Input' => 'Input Plugins',
     'Plugins:-Muxer' => 'Muxer Plugins',
     'Plugins:-Output' => 'Output Plugins',
-    'Misc:-Ogg-Chaining-With-FLAC' => 'Notes: Ogg Chaining with FLAC',
+    'Misc:-Tips' => 'Notes and Tips',
     'Configuration Reference' => 'Configuration File Reference',
 };
 
@@ -29,7 +29,7 @@ my $sections = [
   'Plugins:-Encoder',
   'Plugins:-Muxer',
   'Plugins:-Output',
-  'Misc:-Ogg-Chaining-With-FLAC',
+  'Misc:-Tips',
 ];
 
 foreach my $file (@$sections) {
@@ -56,7 +56,8 @@ $text =~ s/\(Plugins%3A-Muxer\)/(#muxer-plugins)/xmg;
 $text =~ s/\(Plugins%3A-Muxer\#/(#/xmg;
 $text =~ s/\(Plugins%3A-Output\)/(#output-plugins)/xmg;
 $text =~ s/\(Plugins%3A-Output\#/(#/xmg;
-$text =~ s/\(Misc%3A-Ogg-Chaining-With-FLAC\)/(#notes-ogg-chaining-with-flac)/xmg;
+$text =~ s/\(Misc%3A-Tips\)/(#notes-and-tips)/xmg;
+$text =~ s/\(Misc%3A-Tips\#/(#/xmg;
 $text =~ s/\(Configuration%20Reference\)/(#configuration-file-reference)/xmg;
 open(my $pandoc_fh, '|-', 'pandoc', '--toc-depth=2', '--toc=true', '-s', '--metadata','title=icecast-hls', '-f','markdown','-t','html','-o','docs/index.html');
 print $pandoc_fh $text;
