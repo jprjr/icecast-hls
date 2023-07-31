@@ -47,6 +47,8 @@ void app_config_init(app_config* config) {
 void app_config_free(app_config* config) {
     sourcelist_free(config->slist);
     destinationlist_free(config->dlist);
+
+    logger_set_prefix("main",4);
     tagmap_free(config->tagmap);
 }
 
@@ -68,6 +70,8 @@ static int config_handler(void* user, const char* section, const char* name, con
     value_buf.len = strlen(value);
     value_buf.x   = (uint8_t *)value;
     value_buf.a   = 0;
+
+    logger_set_prefix("main",4);
 
     if(strbuf_begins_cstr(&section_buf,"source.")) {
         if(section_buf.len < strlen("source.") + 1) {
@@ -237,7 +241,7 @@ int main(int argc, const char* argv[]) {
         return 1;
     }
 
-    logger_set_prefix("thread: main",12);
+    logger_set_prefix("main",4);
 
     ich_time_now(&now);
 
@@ -264,6 +268,7 @@ int main(int argc, const char* argv[]) {
         goto cleanup;
     }
 
+    logger_set_prefix("main",4);
     prep_tagmaps(&tagmap);
 
     r = link_destinations(&slist,&dlist,&tagmap);
@@ -280,6 +285,8 @@ int main(int argc, const char* argv[]) {
         fprintf(stderr,"[main] error opening a destination\n");
         goto cleanup;
     }
+
+    logger_set_prefix("main",4);
 
     destinationlist_start(&dlist);
     sourcelist_start(&slist);

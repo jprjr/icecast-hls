@@ -67,6 +67,8 @@ void sourcelist_free(sourcelist* slist) {
     len = slist->len / sizeof(sourcelist_entry);
 
     for(i=0;i<len;i++) {
+        logger_set_prefix("source.",7);
+        logger_append_prefix((const char *)entry[i].id.x, entry[i].id.len);
         sourcelist_entry_free(&entry[i]);
     }
 
@@ -109,6 +111,9 @@ int sourcelist_configure(const strbuf* id, const strbuf* key, const strbuf* valu
         source_init(&entry->source);
     }
 
+    logger_set_prefix("source.",7);
+    logger_append_prefix((const char *)entry->id.x, entry->id.len);
+
     return source_config(&entry->source,key,value);
 }
 
@@ -121,6 +126,9 @@ int sourcelist_open(const sourcelist* list, uint8_t shortflag) {
     len = list->len / sizeof(sourcelist_entry);
 
     for(i=0;i<len;i++) {
+        logger_set_prefix("source.",7);
+        logger_append_prefix((const char *)entry[i].id.x, entry[i].id.len);
+
         if( (r = source_open(&entry[i].source)) != 0) {
             fprintf(stderr,"[sourcelist] error opening source %.*s\n",
               (int)entry[i].id.len, (char *)entry[i].id.x);
@@ -325,7 +333,7 @@ static int sourcelist_entry_run(void *userdata) {
     int r = 0;
     sourcelist_entry* entry = (sourcelist_entry *)userdata;
 
-    logger_set_prefix("thread: source.",15);
+    logger_set_prefix("source.",7);
     logger_append_prefix((const char *)entry->id.x,entry->id.len);
 
     /* this is where/how we forward tags, previously the source just cached them */

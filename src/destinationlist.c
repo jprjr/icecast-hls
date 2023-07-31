@@ -19,6 +19,8 @@ void destinationlist_free(destinationlist* dlist) {
     len = dlist->len / sizeof(destinationlist_entry);
 
     for(i=0;i<len;i++) {
+        logger_set_prefix("destination.",12);
+        logger_append_prefix((const char *)entry[i].id.x, entry[i].id.len);
         destinationlist_entry_free(&entry[i]);
     }
 
@@ -86,6 +88,9 @@ int destinationlist_configure(const strbuf* id, const strbuf* key, const strbuf*
         if(entry == NULL) abort();
     }
 
+    logger_set_prefix("destination.",12);
+    logger_append_prefix((const char *)entry->id.x, entry->id.len);
+
     return destination_config(&entry->destination,key,value);
 }
 
@@ -98,6 +103,8 @@ int destinationlist_open(const destinationlist* list, const ich_time* now) {
     len = list->len / sizeof(destinationlist_entry);
 
     for(i=0;i<len;i++) {
+        logger_set_prefix("destination.",12);
+        logger_append_prefix((const char *)entry[i].id.x, entry[i].id.len);
         if( (r = destination_create(&entry[i].destination,now)) != 0) {
             fprintf(stderr,"[destinationlist] error prepping destination %.*s\n",
               (int)entry[i].id.len, (char *)entry[i].id.x);
@@ -112,7 +119,7 @@ static int destinationlist_entry_run(void *userdata) {
     int r;
     destinationlist_entry* entry = (destinationlist_entry*)userdata;
 
-    logger_set_prefix("thread: destination.",20);
+    logger_set_prefix("destination.",12);
     logger_append_prefix((const char *)entry->id.x,entry->id.len);
 
     entry->sync.frame_receiver.open         = (frame_receiver_open_cb)destination_open;
