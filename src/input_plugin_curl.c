@@ -9,14 +9,13 @@
 #include <errno.h>
 #include <ctype.h>
 
-#define LOG0(s) fprintf(stderr,"[input:curl] "s"\n")
-#define LOG1(s,a) fprintf(stderr,"[input:curl] "s"\n",(a))
-#define LOG2(s,a,b) fprintf(stderr,"[input:curl] "s"\n",(a),(b))
-#define LOGS(s,a) LOG2(s,(int)(a).len,(char *)(a).x)
+#define LOG_PREFIX "[input:curl]"
+#include "logger.h"
 
-#define LOGERRNO(s) LOG1(s": %s", strerror(errno))
-#define LOGCURLE(s,e) LOG1(s": %s", curl_easy_strerror(e))
-#define LOGINT(s, i) LOG1(s": %d", i)
+#define LOGERRNO(s) log_error(s": %s", strerror(errno))
+#define LOGCURLE(s,e) log_error(s": %s", curl_easy_strerror(e))
+#define LOGINT(s, i) log_error(s": %d", i)
+#define LOGS(s,a) log_error(s, (int)(a).len, (char *)(a).x)
 
 static STRBUF_CONST(ICY_TITLE,"icy_title");
 static STRBUF_CONST(ICY_NAME,"icy_name");
@@ -90,7 +89,7 @@ static size_t input_plugin_curl_buffer(input_plugin_curl_userdata* userdata, siz
             }
             ich_time_now(&now);
             if(ich_time_cmp(&now,&deadline) > 0) {
-                LOG1("buffer timeout, bytes read: %lu", userdata->buffer.len - s);
+                log_error("buffer timeout, bytes read: %lu", userdata->buffer.len - s);
                 return userdata->buffer.len;
             }
         } while(numfds == 0);
@@ -130,7 +129,7 @@ static size_t input_plugin_curl_read_dummy(input_plugin_curl_userdata* userdata,
             }
             ich_time_now(&now);
             if(ich_time_cmp(&now,&deadline) > 0) {
-                LOG0("connection timeout, returning 0 bytes");
+                logs_error("connection timeout, returning 0 bytes");
                 return 0;
             }
         } while(numfds == 0);
@@ -423,7 +422,7 @@ static int input_plugin_curl_config(void* ud, const strbuf* key, const strbuf* v
         slist_temp = curl_slist_append(userdata->headers,(const char *)userdata->tmp.x);
         userdata->tmp.len = 0;
         if(slist_temp == NULL) {
-            LOG0("error appending header");
+            logs_error("error appending header");
             return -1;
         }
         userdata->headers = slist_temp;
@@ -473,7 +472,7 @@ static size_t input_plugin_curl_header_callback(char* ptr, size_t size, size_t n
         t.len = userdata->tmp.len - 12;
         trim(&t);
         if(t.len == 0) {
-            LOG0("metaint - no value");
+            logs_error("metaint - no value");
             return 0;
         }
         errno = 0;
@@ -496,7 +495,7 @@ static size_t input_plugin_curl_header_callback(char* ptr, size_t size, size_t n
             return size*nmemb;
         }
         if(taglist_add(&userdata->tags, &ICY_NAME, &t) != 0) {
-            LOG0("error adding tag");
+            logs_error("error adding tag");
             return 0;
         }
     }
@@ -508,7 +507,7 @@ static size_t input_plugin_curl_header_callback(char* ptr, size_t size, size_t n
             return size*nmemb;
         }
         if(taglist_add(&userdata->tags, &ICY_GENRE, &t) != 0) {
-            LOG0("error adding tag");
+            logs_error("error adding tag");
             return 0;
         }
     }
@@ -520,7 +519,7 @@ static size_t input_plugin_curl_header_callback(char* ptr, size_t size, size_t n
             return size*nmemb;
         }
         if(taglist_add(&userdata->tags, &ICY_DESCRIPTION, &t) != 0) {
-            LOG0("error adding tag");
+            logs_error("error adding tag");
             return 0;
         }
     }
@@ -532,7 +531,7 @@ static size_t input_plugin_curl_header_callback(char* ptr, size_t size, size_t n
             return size*nmemb;
         }
         if(taglist_add(&userdata->tags, &ICY_URL, &t) != 0) {
-            LOG0("error adding tag");
+            logs_error("error adding tag");
             return 0;
         }
     }
@@ -547,19 +546,25 @@ static int input_plugin_curl_open(void* ud) {
     input_plugin_curl_userdata* userdata = (input_plugin_curl_userdata*)ud;
 
     if(userdata->url.len == 0) {
-        LOG0("url not set");
+        logs_error("url not set");
         return -1;
     }
+    logs_debug("open:");
+    log_debug("  url=%.*s",(int)userdata->url.len,(const char *)userdata->url.x);
+    log_debug("  ignore_icecast=%d",userdata->ignore_icecast);
+    log_debug("  verbose=%d",userdata->verbose);
+    log_debug("  connect_timeout=%dms",userdata->connect_timeout);
+    log_debug("  read_timeout=%dms",userdata->read_timeout);
 
     userdata->handle = curl_easy_init();
     if(userdata->handle == NULL) {
-        LOG0("error creating curl handle");
+        logs_error("error creating curl handle");
         return -1;
     }
 
     userdata->mhandle = curl_multi_init();
     if(userdata->mhandle == NULL) {
-        LOG0("error creating curl multi handle");
+        logs_error("error creating curl multi handle");
         return -1;
     }
 
@@ -591,7 +596,7 @@ static int input_plugin_curl_open(void* ud) {
     if(userdata->ignore_icecast == 0 && !userdata->icy_header) { /* user didn't specify ignore_icy and didn't add the icy-metadata header  - we'll add */
         slist_temp = curl_slist_append(userdata->headers, "Icy-MetaData:1");
         if(slist_temp == NULL) {
-            LOG0("error adding Icy-MetaData header");
+            logs_error("error adding Icy-MetaData header");
             return -1;
         }
         userdata->headers = slist_temp;
@@ -608,7 +613,7 @@ static int input_plugin_curl_open(void* ud) {
     curl_easy_setopt(userdata->handle, CURLOPT_FOLLOWLOCATION, 1L);
 
     if((mc = curl_multi_add_handle(userdata->mhandle, userdata->handle)) != 0) {
-        LOG0("error adding easy handle to multi handle");
+        logs_error("error adding easy handle to multi handle");
         return -1;
     }
 
@@ -636,7 +641,7 @@ const input_plugin input_plugin_curl = {
     input_plugin_curl_init,
     input_plugin_curl_deinit,
     input_plugin_curl_create,
-    input_plugin_curl_config, /* config */
+    input_plugin_curl_config,
     input_plugin_curl_open,
     input_plugin_curl_close,
     input_plugin_curl_read,

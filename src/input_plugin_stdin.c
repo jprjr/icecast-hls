@@ -12,6 +12,9 @@
 #include <fcntl.h>
 #endif
 
+#define LOG_PREFIX "[input:stdin]"
+#include "logger.h"
+
 /* global flag to make sure we only have 1
  * stdin input configured */
 
@@ -34,7 +37,7 @@ static int plugin_create(void* ud) {
     (void)ud;
 
     if(opened) {
-        fprintf(stderr,"[input:stdin] only one instance of this plugin can be active at a time\n");
+        logs_error("only one instance of this plugin can be active at a time");
         return -1;
     }
     opened = 1;

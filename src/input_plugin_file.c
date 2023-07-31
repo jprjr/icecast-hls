@@ -18,6 +18,9 @@
 #include <unistd.h>
 #endif
 
+#define LOG_PREFIX "[input:file]"
+#include "logger.h"
+
 struct file_userdata {
     strbuf filename;
     FILE *f;
@@ -38,7 +41,7 @@ static FILE* file_open(const strbuf* filename) {
     f = fopen((const char *)filename->x,"rb");
 #endif
     if(f == NULL) {
-        printf("error opening file: %.*s\n",(int)filename->len,filename->x);
+        log_error("error opening file: %.*s",(int)filename->len,filename->x);
     }
 
 #ifdef DR_WINDOWS
@@ -81,6 +84,10 @@ static int plugin_create(void* ud) {
 static int plugin_open(void* ud) {
     file_userdata* userdata = (file_userdata*)ud;
     if(userdata->filename.len == 0) return -1;
+
+    log_debug("opening %.*s",
+      (int)userdata->filename.len, (const char *)userdata->filename.x);
+
     userdata->f = file_open(&userdata->filename);
     if(userdata->f == NULL) return -1;
     return 0;
@@ -95,7 +102,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* val) {
         if( (r = strbuf_term(&userdata->filename)) != 0) return r;
         return 0;
     }
-    fprintf(stderr,"file plugin: unknown key \"%.*s\"\n",(int)key->len,(const char *)key->x);
+    log_error("unknown key \"%.*s\"",(int)key->len,(const char *)key->x);
     return -1;
 }
 
