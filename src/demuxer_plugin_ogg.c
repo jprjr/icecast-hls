@@ -15,10 +15,8 @@
 
 #define MAX_PAGES 10
 
-#define LOG0(fmt) fprintf(stderr, "[demuxer:ogg] " fmt "\n")
-#define LOG1(fmt,a) fprintf(stderr, "[demuxer:ogg] " fmt "\n", (a))
-#define LOG2(fmt,a,b) fprintf(stderr, "[demuxer:ogg] " fmt "\n", (a), (b))
-#define LOG4(fmt,a,b,c,d) fprintf(stderr, "[demuxer:ogg] " fmt "\n", (a), (b), (c), (d))
+#define LOG_PREFIX "[demuxer:ogg]"
+#include "logger.h"
 
 #define OPUS_DURATION_2_5MS 120
 #define OPUS_DURATION_5MS   (OPUS_DURATION_2_5MS * 2)
@@ -90,7 +88,7 @@ static size_t buffer_read(plugin_userdata* userdata, size_t len) {
     int t;
 
     if( (t = membuf_readyplus(&userdata->buffer,len)) != 0) {
-        LOG1("error allocating buffer %d",t);
+        logs_fatal("error allocating buffer");
         return 0;
     }
     r = input_read(userdata->input,&userdata->buffer.x[userdata->buffer.len],len);
@@ -207,7 +205,7 @@ static int getpacket(plugin_userdata* userdata) {
         }
 
         if( (r = membuf_append(&userdata->packet.data, data, datalen)) != 0) {
-            LOG0("error appending packet to buffer");
+            logs_fatal("error appending packet to buffer");
             return r;
         }
     }
@@ -274,7 +272,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
             userdata->empty_tags = 0;
             return 0;
         }
-        LOG4("unknown value for key %.*s: %.*s",
+        log_error("unknown value for key %.*s: %.*s",
           (int)key->len,(char *)key->x,(int)value->len,(char *)value->x);
 
         return -1;
@@ -289,12 +287,12 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
             userdata->ignore_tags = 0;
             return 0;
         }
-        LOG4("unknown value for key %.*s: %.*s",
+        log_error("unknown value for key %.*s: %.*s",
           (int)key->len,(char *)key->x,(int)value->len,(char *)value->x);
         return -1;
     }
 
-    LOG2("unknown key %.*s",
+    log_error("unknown key %.*s",
       (int)key->len,(char *)key->x);
     return -1;
 }
@@ -311,7 +309,7 @@ static int plugin_open(void* ud, input* in) {
        userdata->buffer.x[1] != 'g' ||
        userdata->buffer.x[2] != 'g' ||
        userdata->buffer.x[3] != 'S') {
-        LOG0("missing OggS signature");
+        logs_error("missing OggS signature");
         return -1;
     }
 
@@ -358,15 +356,19 @@ static int handle_comment_block(plugin_userdata* userdata) {
         if(val.len == 0 && !userdata->empty_tags) continue;
         strbuf_lower(&key);
 
+        log_debug("comment: %.*s=%.*s",
+          (int)key.len,(const char *)key.x,
+          (int)val.len,(const char *)val.x);
+
         if(strbuf_equals_cstr(&key,"metadata_block_picture")) {
             /* base64-decode the picture block */
             if( (r = membuf_ready(&userdata->scratch,val.len) != 0)) {
-                LOG0("failed to allocate image buffer");
+                logs_fatal("failed to allocate image buffer");
                 return r;
             }
             userdata->scratch.len = val.len;
             if( (r = base64decode(val.x,val.len,userdata->scratch.x,&userdata->scratch.len)) != 0) {
-                LOG1("base64 decode failed: %d",r);
+                log_error("base64 decode failed: %d",r);
                 return r;
             }
             val.x = userdata->scratch.x;
@@ -653,7 +655,7 @@ static int plugin_run_opus(plugin_userdata* userdata, const tag_handler* thandle
                         case 1: userdata->me.channel_layout = LAYOUT_MONO; break;
                         case 2: userdata->me.channel_layout = LAYOUT_STEREO; break;
                         default: {
-                            LOG1("invalid channel count %u for mapping family 0", channels);
+                            log_error("invalid channel count %u for mapping family 0", channels);
                             return -1;
                         }
                     }
@@ -670,14 +672,14 @@ static int plugin_run_opus(plugin_userdata* userdata, const tag_handler* thandle
                         case 7: userdata->me.channel_layout = LAYOUT_6_1; break;
                         case 8: userdata->me.channel_layout = LAYOUT_7_1; break;
                         default: {
-                            LOG1("invalid channel count %u for mapping family 1", channels);
+                            log_error("invalid channel count %u for mapping family 1", channels);
                             return -1;
                         }
                     }
                     break;
                 }
                 default: {
-                    LOG1("unhandled channel mapping %u", channel_mapping);
+                    log_error("unhandled channel mapping %u", channel_mapping);
                     return -1;
                 }
             }
@@ -704,7 +706,7 @@ static int plugin_run_opus(plugin_userdata* userdata, const tag_handler* thandle
 
     duration = opus_get_duration(userdata->packet.data.x, userdata->packet.data.len);
     if(duration == 0 || duration > 5760) {
-        LOG1("invalid packet duration: %u", duration);
+        log_error("invalid packet duration: %u", duration);
         return -1;
     }
     userdata->packet.duration = duration;
@@ -751,9 +753,11 @@ static int plugin_run_unknown(plugin_userdata* userdata, const tag_handler* than
          * the actual plugin_run_(codec) will use iter packet to consume */
         packet = miniogg_get_packet(&userdata->ogg, 0, &packetlen, &granulepos, &cont);
         if(memcmp(packet,"OpusHead",8) == 0) {
+            logs_debug("detected opus stream");
             userdata->oggtype = OGG_TYPE_OPUS;
             return plugin_run_opus(userdata,thandler,receiver);
         } else if(memcmp(packet,"\x7F""FLAC""\x01""\x00",7) == 0) {
+            logs_debug("detected flac stream");
             userdata->oggtype = OGG_TYPE_FLAC;
             return plugin_run_flac(userdata,thandler,receiver);
         }

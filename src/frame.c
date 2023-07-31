@@ -333,6 +333,24 @@ int frame_trim(frame* f, unsigned int len) {
     return 0;
 }
 
+static void frame_source_reset(frame_source* f) {
+    f->handle = NULL;
+    f->format = SAMPLEFMT_UNKNOWN;
+    f->channel_layout = 0;
+    f->duration = 0;
+    f->sample_rate = 0;
+}
+
+void frame_source_init(frame_source* f) {
+    packet_source_init(&f->packet_source);
+    frame_source_reset(f);
+}
+
+void frame_source_free(frame_source *f) {
+    packet_source_free(&f->packet_source);
+    frame_source_reset(f);
+}
+
 int frame_source_copy(frame_source* dest, const frame_source* source) {
     dest->handle = source->handle;
     dest->format = source->format;

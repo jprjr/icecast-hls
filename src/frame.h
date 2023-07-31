@@ -118,13 +118,16 @@ int frame_trim(frame*, unsigned int len);
 int frame_fill(frame*, unsigned int duration);
 
 
+void frame_source_init(frame_source* f);
 int frame_source_copy(frame_source* dest, const frame_source* src);
+void frame_source_free(frame_source* f);
 
 int frame_receiver_open_null(void* handle, const frame_source* source);
 int frame_receiver_submit_frame_null(void* handle, const frame* frame);
 int frame_receiver_flush_null(void* handle);
 int frame_receiver_reset_null(void* handle);
 int frame_receiver_close_null(void* handle);
+
 
 extern const frame_receiver frame_receiver_zero;
 extern const frame_source frame_source_zero;

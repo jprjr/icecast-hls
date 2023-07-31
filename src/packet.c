@@ -41,12 +41,15 @@ void packet_source_reset(packet_source* s) {
     s->priv_copy = NULL;
 }
 
+void packet_source_init(packet_source* s) {
+    membuf_init(&s->dsi);
+    s->priv = NULL;
+    packet_source_reset(s);
+}
+
 void packet_source_free(packet_source *s) {
     packet_source_reset(s);
     membuf_free(&s->dsi);
-    if(s->priv != NULL) {
-        s->priv_free(s->priv);
-    }
 }
 
 int packet_set_data(packet* p, const void* src, size_t len) {

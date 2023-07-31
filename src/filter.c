@@ -5,17 +5,22 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define LOG_PREFIX "[filter]"
+#include "logger.h"
+
 void filter_init(filter* f) {
     f->userdata = NULL;
     f->plugin = NULL;
     f->frame_receiver = frame_receiver_zero;
     frame_init(&f->frame);
     f->frame_source = frame_source_zero;
+    f->frame_source.packet_source = packet_source_zero;
     f->pts = 0;
 }
 
 void filter_free(filter* f) {
     if(f->userdata != NULL) {
+        logs_debug("closing");
         f->plugin->close(f->userdata);
         free(f->userdata);
     }
@@ -28,17 +33,19 @@ int filter_create(filter* f, const strbuf* name) {
     const filter_plugin* plug;
     void* userdata;
 
+    log_debug("loading %.*s plugin",
+      (int)name->len,(const char *)name->x);
+
     plug = filter_plugin_get(name);
     if(plug == NULL) {
-        fprintf(stderr,"[filter:create] unable to find plugin %.*s\n",
+        log_error("unable to find plugin %.*s",
           (int)name->len,(char *)name->x);
         return -1;
     }
 
     userdata = malloc(plug->size());
     if(userdata == NULL) {
-        fprintf(stderr,"[filter:create] unable to create instance of plugin %.*s\n",
-          (int)name->len,(char *)name->x);
+        logs_fatal("unable to allocate plugin");
         return -1;
     }
 
@@ -62,9 +69,19 @@ static int filter_open_wrapper(void* ud, const frame_source* source) {
              * we don't need to reset + reopen the receiver */
             if(f->frame_source.channel_layout == source->channel_layout &&
                f->frame_source.sample_rate == source->sample_rate) return 0;
+
+            if(f->frame_source.channel_layout != source->channel_layout) {
+                log_debug("channel layout change, prev=0x%lx, new=0x%lx",
+                  f->frame_source.channel_layout, source->channel_layout);
+            }
+            if(f->frame_source.sample_rate != source->sample_rate) {
+                log_debug("sample rate change, prev=%u, new=%u",
+                  f->frame_source.sample_rate, source->sample_rate);
+            }
         }
         /* fall-through */
         case SAMPLEFMT_BINARY: {
+            logs_info("change detected, flushing and resetting frame receiver");
             if( (r = f->frame_receiver.flush(f->frame_receiver.handle)) != 0) return r;
             if( (r = f->frame_receiver.reset(f->frame_receiver.handle)) != 0) return r;
             f->pts = 0;
@@ -101,7 +118,7 @@ int filter_open(filter* f, const frame_source* source) {
     frame_receiver receiver = FRAME_RECEIVER_ZERO;
 
     if(f->plugin == NULL || f->userdata == NULL) {
-        fprintf(stderr,"[filter] unable to open: plugin not selected\n");
+        logs_error("plugin not selected");
         return -1;
     }
     ich_time_now(&f->ts);
@@ -109,6 +126,10 @@ int filter_open(filter* f, const frame_source* source) {
 
     receiver.handle = f;
     receiver.open = filter_open_wrapper;
+
+    log_debug("opening %.*s plugin",
+      (int)f->plugin->name.len,
+      (const char *)f->plugin->name.x);
 
     return f->plugin->open(f->userdata,source, &receiver);
 }
@@ -152,7 +173,7 @@ void filter_dump_counters(const filter* f, const strbuf* prefix) {
     ich_tm tm;
     ich_time_to_tm(&tm,&f->ts);
 
-    fprintf(stderr,"%.*s filter: filters=%zu last_filter=%4u-%02u-%02u %02u:%02u:%02u\n",
+    log_info("%.*s filter: filters=%zu last_filter=%4u-%02u-%02u %02u:%02u:%02u",
       (int)prefix->len,(const char*)prefix->x,
       f->counter,
       tm.year,tm.month,tm.day,

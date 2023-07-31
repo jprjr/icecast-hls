@@ -9,6 +9,7 @@
 
 static enum LOG_LEVEL default_log_level = LOG_WARN;
 static int use_color = 1;
+static int show_fileinfo = 0;
 
 static const char *level_strings[] = {
     "TRACE",
@@ -51,13 +52,14 @@ static const char *level_colors[] = {
 struct logger_config {
     char *prefix;
     enum LOG_LEVEL level;
+    int show_fileinfo;
 };
 typedef struct logger_config logger_config;
 
 static thread_mutex_t stderr_mutex;
 static thread_tls_t thread_config = NULL;
 
-static void logger_stderr(enum LOG_LEVEL level, const char *file, int line, const char *prefix, const char *fmt, va_list ap) {
+static void logger_stderr(enum LOG_LEVEL level, int use_fileinfo, const char *file, int line, const char *prefix, const char *fmt, va_list ap) {
     const char *color = "";
     const char *color_reset = "";
     if(use_color) {
@@ -69,9 +71,15 @@ static void logger_stderr(enum LOG_LEVEL level, const char *file, int line, cons
     }
 
     thread_mutex_lock(&stderr_mutex);
-    fprintf(stderr, "%s%-5s%s %s:%d: [%s] ",
-      color, level_strings[level], color_reset,
-      file, line, prefix);
+    if(use_fileinfo) {
+        fprintf(stderr, "%s%-5s%s %s:%d: [%s] ",
+          color, level_strings[level], color_reset,
+          file, line, prefix);
+    } else {
+        fprintf(stderr, "%s%-5s%s [%s] ",
+          color, level_strings[level], color_reset,
+          prefix);
+    }
     vfprintf(stderr,fmt,ap);
     fprintf(stderr,"\n");
     fflush(stderr);
@@ -85,6 +93,7 @@ static int logger_init_config(void) {
     if(c == NULL) return -1;
     c->prefix = NULL;
     c->level  = default_log_level;
+    c->show_fileinfo = show_fileinfo;
 
     thread_tls_set(thread_config, c);
     return 0;
@@ -187,18 +196,18 @@ void logger_log(enum LOG_LEVEL level, const char *file, int line, const char *fm
     va_start(args_list, fmt);
 
     if(thread_config == NULL) { /* we haven't initialized or it failed */
-        logger_stderr(level, file,line, NULL, fmt,args_list);
+        logger_stderr(level, 1, file,line, NULL, fmt,args_list);
         goto cleanup;
     }
 
     config = (logger_config *)thread_tls_get(thread_config);
     if(config == NULL) {
-        logger_stderr(level,file,line, NULL, fmt,args_list);
+        logger_stderr(level, 1, file,line, NULL, fmt,args_list);
         goto cleanup;
     }
 
     if(level >= config->level) {
-        logger_stderr(level,file,line,config->prefix, fmt,args_list);
+        logger_stderr(level, config->show_fileinfo, file,line,config->prefix, fmt,args_list);
         goto cleanup;
     }
 

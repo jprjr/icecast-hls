@@ -5,13 +5,12 @@
 #include "strbuf.h"
 
 #include <stdlib.h>
+#include <inttypes.h>
 
 #define MAX_FLAC_CHANNELS 8
 
-#define LOG0(fmt) fprintf(stderr, "[decoder:miniflac] " fmt "\n")
-#define LOG1(fmt,a) fprintf(stderr, "[decoder:miniflac] " fmt "\n", (a))
-#define LOG2(fmt,a,b) fprintf(stderr, "[decoder:miniflac] " fmt "\n", (a), (b))
-#define LOG4(fmt,a,b,c,d) fprintf(stderr, "[decoder:miniflac] " fmt "\n", (a), (b), (c), (d))
+#define LOG_PREFIX "[decoder:miniflac]"
+#include "logger.h"
 
 static STRBUF_CONST(plugin_name, "miniflac");
 
@@ -46,6 +45,17 @@ static int plugin_open(void* ud, const packet_source* src, const frame_receiver*
     plugin_userdata* userdata = (plugin_userdata*)ud;
     frame_source me = FRAME_SOURCE_ZERO;
     bitreader br;
+    unsigned int i;
+
+    unsigned int min_block_size;
+    unsigned int max_block_size;
+    unsigned int min_frame_size;
+    unsigned int max_frame_size;
+    unsigned int sample_rate;
+    unsigned int channels;
+    unsigned int bps;
+    uint64_t totalsamples;
+    uint8_t md5[16];
 
     bitreader_init(&br);
     br.buffer = src->dsi.x;
@@ -57,13 +67,38 @@ static int plugin_open(void* ud, const packet_source* src, const frame_receiver*
     /* manually fill in data we've gotten from the STREAMINFO block */
     userdata->m.metadata.streaminfo.sample_rate = src->sample_rate;
 
-    bitreader_discard(&br,16); /* minimum block size */
-    bitreader_discard(&br,16); /* maximum block size */
-    bitreader_discard(&br,24); /* minimum frame size */
-    bitreader_discard(&br,24); /* maximum frame size */
-    bitreader_discard(&br,20); /* sample rate */
-    bitreader_discard(&br,3); /* chnanels */
-    userdata->m.metadata.streaminfo.bps = bitreader_read(&br,5) + 1;
+    min_block_size = bitreader_read(&br,16);
+    max_block_size = bitreader_read(&br,16);
+    min_frame_size = bitreader_read(&br,24);
+    max_frame_size = bitreader_read(&br,24);
+    sample_rate    = bitreader_read(&br,20);
+    channels       = bitreader_read(&br,3) + 1;
+    bps            = bitreader_read(&br,5) + 1;
+    totalsamples   = bitreader_read(&br,36);
+    for(i=0;i<16;i++) {
+        md5[i] = bitreader_read(&br,8);
+    }
+
+    logs_debug("open:");
+    log_debug("  STREAMINFO min_block_size=%u",min_block_size);
+    log_debug("  STREAMINFO max_block_size=%u",max_block_size);
+    log_debug("  STREAMINFO min_frame_size=%u",min_frame_size);
+    log_debug("  STREAMINFO max_frame_size=%u",max_frame_size);
+    log_debug("  STREAMINFO sample_rate=%u",sample_rate);
+    log_debug("  STREAMINFO channels=%u",channels);
+    log_debug("  STREAMINFO bps=%u",bps);
+    log_debug("  STREAMINFO totalsamples=%" PRIu64,totalsamples);
+    log_debug("  STREAMINFO md5=0x%02x%02x%02x%02x"
+                                 "%02x%02x%02x%02x"
+                                 "%02x%02x%02x%02x"
+                                 "%02x%02x%02x%02x",
+                               md5[0],  md5[1] , md5[2]  , md5[3],
+                               md5[4],  md5[5] , md5[6]  , md5[7],
+                               md5[8],  md5[9] , md5[10] , md5[11],
+                               md5[12],  md5[13] , md5[14] , md5[15]);
+    log_debug("  channel_layout=0x%" PRIx64, src->channel_layout);
+
+    userdata->m.metadata.streaminfo.bps = bps;
 
     me.handle = userdata;
     me.format = SAMPLEFMT_S32P;
@@ -71,13 +106,13 @@ static int plugin_open(void* ud, const packet_source* src, const frame_receiver*
     me.duration = src->frame_len;
     me.sample_rate = src->sample_rate;
 
-    userdata->frame.channels = channel_count(src->channel_layout);
+    userdata->frame.channels = channels;
     userdata->frame.format = SAMPLEFMT_S32P;
     userdata->frame.sample_rate = src->sample_rate;
     userdata->frame.pts = 0;
 
     if(frame_ready(&userdata->frame) != 0) {
-        LOG0("unable to prepare frame");
+        logs_fatal("unable to prepare frame");
         return -1;
     }
 
@@ -116,7 +151,7 @@ static int plugin_decode(void* ud, const packet* src, const frame_receiver* dest
         }
 
         if( (res = miniflac_decode(&userdata->m, &src->data.x[pos], len, &used, ptrs)) != MINIFLAC_OK) {
-            LOG1("error decoding: %d",res);
+            log_error("error decoding: %d",res);
             return -1;
         }
         len -= used;
@@ -138,7 +173,7 @@ static int plugin_decode(void* ud, const packet* src, const frame_receiver* dest
 
     if(res == MINIFLAC_CONTINUE) return 0;
 
-    LOG1("miniflac_sync returned an error: %d",res);
+    log_error("miniflac_sync returned an error: %d",res);
     return -1;
 }
 

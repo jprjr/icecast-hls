@@ -7,12 +7,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 
-#define LOG0(fmt) fprintf(stderr, "[demuxer:flac] " fmt "\n")
-#define LOG1(fmt,a) fprintf(stderr, "[demuxer:flac] " fmt "\n", (a))
-#define LOG2(fmt,a,b) fprintf(stderr, "[demuxer:flac] " fmt "\n", (a),(b))
-#define LOG3(fmt,a,b,c) fprintf(stderr, "[demuxer:flac] " fmt "\n", (a),(b),(c))
-#define LOG4(fmt,a,b,c,d) fprintf(stderr, "[demuxer:flac] " fmt "\n", (a),(b),(c),(d))
+#define LOG_PREFIX "[demuxer:auto]"
+#include "logger.h"
 
 static STRBUF_CONST(plugin_name, "flac");
 
@@ -104,7 +102,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
             userdata->empty_tags = 0;
             return 0;
         }
-        LOG4("unknown value for key %.*s: %.*s",
+        log_error("unknown value for key %.*s: %.*s",
           (int)key->len,(char *)key->x,(int)value->len,(char *)value->x);
 
         return -1;
@@ -119,12 +117,12 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
             userdata->ignore_tags = 0;
             return 0;
         }
-        LOG4("unknown value for key %.*s: %.*s",
+        log_error("unknown value for key %.*s: %.*s",
           (int)key->len,(char *)key->x,(int)value->len,(char *)value->x);
         return -1;
     }
 
-    LOG2("unknown key %.*s",
+    log_error("unknown key %.*s",
       (int)key->len,(char *)key->x);
     return -1;
 }
@@ -191,21 +189,26 @@ static int handle_comment_block(plugin_userdata* userdata, uint32_t len) {
         if(val.len == 0 && !userdata->empty_tags) continue;
         strbuf_lower(&key);
 
+        log_debug("comment: %.*s=%.*s",
+          (int)key.len,(const char *)key.x,
+          (int)val.len,(const char *)val.x);
+
         if(strbuf_equals_cstr(&key,"metadata_block_picture")) {
             /* base64-decode the picture block */
             if( (r = membuf_ready(&userdata->scratch,val.len) != 0)) {
-                LOG0("failed to allocate image buffer");
+                logs_fatal("failed to allocate image buffer");
                 return r;
             }
             userdata->scratch.len = val.len;
             if( (r = base64decode(val.x,val.len,userdata->scratch.x,&userdata->scratch.len)) != 0) {
-                LOG1("base64 decode failed: %d",r);
+                log_error("base64 decode failed: %d",r);
                 return r;
             }
             val.x = userdata->scratch.x;
             val.len = userdata->scratch.len;
         } else if(strbuf_equals_cstr(&key,"waveformatextensible_channel_mask")) {
             userdata->me.channel_layout = strbuf_strtoull(&val, 16);
+            log_debug("setting channel mask to 0x%" PRIx64, userdata->me.channel_layout);
             continue;
         }
 
@@ -230,9 +233,10 @@ static int plugin_open(void* ud, input* in) {
        userdata->buffer.x[1] != 'L' ||
        userdata->buffer.x[2] != 'a' ||
        userdata->buffer.x[3] != 'C') {
-        LOG0("missing fLaC stream marker");
+        logs_error("missing fLaC stream marker");
         return -1;
     }
+
     membuf_trim(&userdata->buffer,4);
     return 0;
 }
@@ -268,7 +272,7 @@ static int plugin_run(void* ud, const tag_handler* thandler, const packet_receiv
 
             type &= 0x7F;
             if(type == 0x7F) {
-                LOG0("invalid block header type");
+                log_error("invalid block header type 0x%02x",type);
                 return -1;
             }
 
@@ -280,7 +284,7 @@ static int plugin_run(void* ud, const tag_handler* thandler, const packet_receiv
                 rem -= got;
             }
             if(rem != 0) {
-                LOG0("error filling buffer");
+                logs_error("error filling buffer");
                 return -1;
             }
 
@@ -304,7 +308,7 @@ static int plugin_run(void* ud, const tag_handler* thandler, const packet_receiv
         } while(userdata->header_fixed == 0);
 
         if(userdata->me.dsi.len == 0) {
-            LOG0("didn't get STREAMINFO block");
+            logs_error("didn't get STREAMINFO block");
             return -1;
         }
 
@@ -348,7 +352,7 @@ static int plugin_run(void* ud, const tag_handler* thandler, const packet_receiv
 
     t = unpack_u32be(&userdata->buffer.x[0])  & HEADER_MASK;
     if(t != userdata->header_fixed) {
-        LOG0("had some kind of sync issue");
+        logs_error("had some kind of sync issue");
         return -1;
     }
 

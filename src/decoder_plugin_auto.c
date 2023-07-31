@@ -4,10 +4,8 @@
 
 #include <stdlib.h>
 
-#define LOG0(fmt) fprintf(stderr, "[decoder:auto] " fmt "\n")
-#define LOG1(fmt,a) fprintf(stderr, "[decoder:auto] " fmt "\n", (a))
-#define LOG2(fmt,a,b) fprintf(stderr, "[decoder:auto] " fmt "\n", (a), (b))
-#define LOG4(fmt,a,b,c,d) fprintf(stderr, "[decoder:auto] " fmt "\n", (a), (b), (c), (d))
+#define LOG_PREFIX "[decoder:auto]"
+#include "logger.h"
 
 static STRBUF_CONST(plugin_name, "auto");
 
@@ -54,6 +52,8 @@ static int plugin_open(void* ud, const packet_source* src, const frame_receiver*
     size_t i;
     size_t len;
 
+    log_debug("open, codec=%s",codec_name(src->codec));
+
     switch(src->codec) {
         case CODEC_TYPE_FLAC: {
             userdata->plugin = decoder_plugin_get(&plugin_name_miniflac); break;
@@ -62,7 +62,7 @@ static int plugin_open(void* ud, const packet_source* src, const frame_receiver*
     }
 
     if(userdata->plugin == NULL) {
-        LOG1("unable to find plugin to decode %s",
+        log_error("unable to find plugin to decode %s",
           codec_name(src->codec));
         return -1;
     }
@@ -70,7 +70,7 @@ static int plugin_open(void* ud, const packet_source* src, const frame_receiver*
     userdata->handle = malloc(userdata->plugin->size());
     if(userdata->handle == NULL) {
         userdata->plugin = NULL;
-        LOG0("error creating plugin userdata");
+        logs_fatal("error creating plugin userdata");
         return -1;
     }
     if( (r = userdata->plugin->create(userdata->handle)) != 0) {
@@ -99,6 +99,7 @@ static int plugin_flush(void* ud, const frame_receiver* dest) {
 
 static int plugin_reset(void* ud) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
+    logs_info("resetting");
 
     userdata->plugin->close(userdata->handle);
     userdata->handle = NULL;
@@ -110,6 +111,11 @@ static int plugin_reset(void* ud) {
 static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
     /* store the config for later, when we instantiate a plugin */
     plugin_userdata* userdata = (plugin_userdata*)ud;
+    log_debug("configuring %.*s=%.*s",
+      (int)key->len,
+      (const char *)key->x,
+      (int)value->len,
+      (const char *)value->x);
     return taglist_add(&userdata->config,key,value);
 }
 

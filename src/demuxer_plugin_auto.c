@@ -9,9 +9,8 @@
 
 #define BUFFER_SIZE 8192
 
-#define LOG0(fmt) fprintf(stderr, "[demuxer:auto] " fmt "\n")
-#define LOG1(fmt,a) fprintf(stderr, "[demuxer:auto] " fmt "\n", (a))
-#define LOG2(fmt,a,b) fprintf(stderr, "[demuxer:auto] " fmt "\n", (a),(b))
+#define LOG_PREFIX "[demuxer:auto]"
+#include "logger.h"
 
 static STRBUF_CONST(input_plugin_name, "wrapper");
 static STRBUF_CONST(plugin_name, "auto");
@@ -93,30 +92,39 @@ static int plugin_open(void* ud, input* in) {
     userdata->input_wrapper.counter = 0;
     userdata->input_wrapper.ts = in->ts;
 
-    if(membuf_ready(&userdata->buffer, BUFFER_SIZE) != 0) return -1;
+    if(membuf_ready(&userdata->buffer, BUFFER_SIZE) != 0) {
+        logs_fatal("out of memory");
+        return -1;
+    }
 
     while(userdata->buffer.len < 4) {
-        if( (len = input_read(userdata->input, userdata->buffer.x, BUFFER_SIZE)) == 0) return -1;
+        if( (len = input_read(userdata->input, userdata->buffer.x, BUFFER_SIZE)) == 0) {
+            logs_error("unable to read minimum probe bytes (4)");
+            return -1;
+        }
         userdata->buffer.len += len;
     }
 
     if(userdata->buffer.len >= 4) {
         if(memcmp(&userdata->buffer.x[0],"OggS",4) == 0) {
+            logs_debug("detected format ogg");
             plugin_name = &plugin_name_ogg;
         } else if(memcmp(&userdata->buffer.x[0],"fLaC",4) ==0) {
+            logs_debug("detected format FLAC");
             plugin_name = &plugin_name_flac;
         } else {
+            logs_debug("unknown format, fallbing back to avformat");
             plugin_name = &plugin_name_avformat;
         }
     }
 
     if(plugin_name == NULL) {
-        LOG0("unable to determine format");
+        logs_error("unable to determine format");
         return -1;
     }
 
     if( (userdata->plugin = demuxer_plugin_get(plugin_name)) == NULL) {
-        LOG2("unable to load plugin %.*s",
+        log_error("unable to load plugin %.*s",
           (int)plugin_name->len,(const char *)plugin_name->x);
         return -1;
     }
@@ -124,6 +132,7 @@ static int plugin_open(void* ud, input* in) {
     userdata->plugin_handle = malloc(userdata->plugin->size());
     if(userdata->plugin_handle == NULL) {
         userdata->plugin = NULL;
+        logs_fatal("unable to allocate plugin");
         return -1;
     }
 
@@ -176,6 +185,11 @@ static void plugin_close(void* ud) {
 static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
     /* store the config for later, when we instantiate a plugin */
     plugin_userdata* userdata = (plugin_userdata*)ud;
+    log_debug("configuring %.*s=%.*s",
+      (int)key->len,
+      (const char *)key->x,
+      (int)value->len,
+      (const char *)value->x);
     return taglist_add(&userdata->config,key,value);
 }
 

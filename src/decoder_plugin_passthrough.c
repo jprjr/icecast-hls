@@ -21,8 +21,7 @@ static int plugin_create(void* ud) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
     frame_init(&userdata->f);
-    userdata->me = frame_source_zero;
-    membuf_init(&userdata->me.packet_source.dsi);
+    frame_source_init(&userdata->me);
 
     return 0;
 }

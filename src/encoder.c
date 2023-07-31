@@ -4,17 +4,22 @@
 
 #include "muxer_caps.h"
 
+#define LOG_PREFIX "[encoder]"
+#include "logger.h"
+
 void encoder_init(encoder* e) {
     e->userdata = NULL;
     e->plugin = NULL;
     e->codec = CODEC_TYPE_UNKNOWN;
     e->packet_receiver = packet_receiver_zero;
     e->frame_source = frame_source_zero;
+    e->frame_source.packet_source = packet_source_zero;
     e->prev_frame_source = frame_source_zero;
 }
 
 void encoder_free(encoder* e) {
     if(e->userdata != NULL) {
+        logs_debug("closing");
         e->plugin->close(e->userdata);
         free(e->userdata);
     }
@@ -26,17 +31,19 @@ int encoder_create(encoder* e, const strbuf* name) {
     const encoder_plugin* plug;
     void* userdata;
 
+    log_debug("loading %.*s plugin",
+      (int)name->len,(const char *)name->x);
+
     plug = encoder_plugin_get(name);
     if(plug == NULL) {
-        fprintf(stderr,"[encoder] plugin \"%.*s\" not found\n",
+        log_error("unable to find plugin %.*s",
           (int)name->len,(char *)name->x);
         return -1;
     }
 
     userdata = malloc(plug->size());
     if(userdata == NULL) {
-        fprintf(stderr,"[encoder] error creating instance of \"%.*s\"\n",
-          (int)name->len,(char *)name->x);
+        logs_fatal("unable to allocate plugin");
         return -1;
     }
 
@@ -63,6 +70,7 @@ static int encoder_open_wrapper(void* ud, const packet_source* source) {
     /* whenever we-re re-opening an encoder we need to call flush + reset */
     switch(e->codec) {
         default: /* re-open */ {
+            logs_info("change detected, flushing and resetting packet receiver");
             if( (r = e->packet_receiver.flush(e->packet_receiver.handle)) != 0) return r;
             if( (r = e->packet_receiver.reset(e->packet_receiver.handle)) != 0) return r;
         }
@@ -81,7 +89,7 @@ int encoder_open(encoder* e, const frame_source* source) {
     packet_receiver receiver = PACKET_RECEIVER_ZERO;
 
     if(e->plugin == NULL || e->userdata == NULL) {
-        fprintf(stderr,"[encoder] unable to open: plugin not selected\n");
+        logs_error("plugin not selected");
         return -1;
     }
     ich_time_now(&e->ts);
@@ -93,6 +101,10 @@ int encoder_open(encoder* e, const frame_source* source) {
     receiver.open = encoder_open_wrapper;
     receiver.get_caps = encoder_get_caps_wrapper;
     receiver.get_segment_info = encoder_get_segment_info_wrapper;
+
+    log_debug("opening %.*s plugin",
+      (int)e->plugin->name.len,
+      (const char *)e->plugin->name.x);
 
     return e->plugin->open(e->userdata, source, &receiver);
 }
@@ -146,7 +158,7 @@ void encoder_dump_counters(const encoder* in, const strbuf* prefix) {
     ich_tm tm;
     ich_time_to_tm(&tm,&in->ts);
 
-    fprintf(stderr,"%.*s encoder: encodes=%zu last_encode=%4u-%02u-%02u %02u:%02u:%02u\n",
+    log_info("%.*s encoder: encodes=%zu last_encode=%4u-%02u-%02u %02u:%02u:%02u",
       (int)prefix->len,(const char*)prefix->x,
       in->counter,
       tm.year,tm.month,tm.day,

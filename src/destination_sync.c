@@ -35,7 +35,7 @@ int destination_sync_run(destination_sync *sync) {
     taglist_init(&tags);
     taglist_init(&id3_tags);
     frame_init(&f);
-    membuf_init(&src.packet_source.dsi);
+    frame_source_init(&src);
 
     for(;;) {
         thread_signal_wait(&sync->ready, THREAD_SIGNAL_WAIT_INFINITE);

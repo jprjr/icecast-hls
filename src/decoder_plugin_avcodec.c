@@ -12,10 +12,8 @@
 
 #include "ffmpeg-versions.h"
 
-#define LOG0(fmt) fprintf(stderr, "[decoder:avcodec] " fmt "\n")
-#define LOG1(fmt,a) fprintf(stderr, "[decoder:avcodec] " fmt "\n", (a))
-#define LOG2(fmt,a,b) fprintf(stderr, "[decoder:avcodec] " fmt "\n", (a), (b))
-#define LOG4(fmt,a,b,c,d) fprintf(stderr, "[decoder:avcodec] " fmt "\n", (a), (b), (c), (d))
+#define LOG_PREFIX "[decoder:avcodec]"
+#include "logger.h"
 
 #if !(ICH_AVCODEC_PACKETALLOC)
 static AVPacket* av_packet_alloc(void) {
@@ -323,19 +321,19 @@ static int decoder_plugin_avcodec_open(void* ud, const packet_source* src, const
     }
 
     if(av_id == AV_CODEC_ID_NONE) {
-        LOG0("failed to find appropriate codec id");
+        logs_error("failed to find appropriate codec id");
         return -1;
     }
 
     userdata->codec = avcodec_find_decoder(av_id);
     if(userdata->codec == NULL) {
-        LOG0("failed to find decoder for codec");
+        logs_error("failed to find decoder for codec");
         return -1;
     }
 
     userdata->codec_ctx = avcodec_alloc_context3(userdata->codec);
     if(userdata->codec_ctx == NULL) {
-        LOG0("error allocating AVCodecContext");
+        logs_fatal("error allocating AVCodecContext");
         return -1;
     }
 
@@ -347,19 +345,19 @@ static int decoder_plugin_avcodec_open(void* ud, const packet_source* src, const
 
     if( (av_err = avcodec_open2(userdata->codec_ctx, userdata->codec, NULL)) < 0) {
         av_strerror(av_err, av_errbuf, sizeof(av_errbuf));
-        LOG1("error with avcodec_open2: %s", av_errbuf);
+        log_error("error with avcodec_open2: %s", av_errbuf);
         return -1;
     }
 
     userdata->avframe = av_frame_alloc();
     if(userdata->avframe == NULL) {
-        LOG0("failed to allocate avframe");
+        logs_fatal("failed to allocate avframe");
         return -1;
     }
 
     userdata->packet = av_packet_alloc();
     if(userdata->packet == NULL) {
-        LOG0("failed to allocate avpacket");
+        logs_fatal("failed to allocate avpacket");
         return -1;
     }
 
@@ -367,12 +365,12 @@ static int decoder_plugin_avcodec_open(void* ud, const packet_source* src, const
     userdata->frame.format = avsampleformat_to_samplefmt(get_ctx_sample_fmt(userdata->codec_ctx));
 
     if(userdata->frame.format == SAMPLEFMT_UNKNOWN) {
-        LOG0("unknown sample format");
+        logs_error("unknown sample format");
         return -1;
     }
 
     if(frame_ready(&userdata->frame) != 0) {
-        LOG0("error allocating output frame");
+        logs_fatal("error allocating output frame");
         return -1;
     }
 
@@ -399,13 +397,13 @@ static int decoder_plugin_avcodec_decode(void* ud, const packet* p, const frame_
     char av_errbuf[128];
 
     if( (r = packet_to_avpacket(userdata->packet, p)) != 0) {
-        LOG0("error converting packet to avpacket");
+        logs_fatal("error converting packet to avpacket");
         return -1;
     }
 
     if( (av_err = avcodec_send_packet(userdata->codec_ctx, userdata->packet)) != 0) {
         av_strerror(av_err, av_errbuf, sizeof(av_errbuf));
-        LOG1("error with avcodec_send_packet: %s", av_errbuf);
+        log_error("error with avcodec_send_packet: %s", av_errbuf);
         return -1;
     }
     av_packet_unref(userdata->packet);
@@ -414,14 +412,14 @@ static int decoder_plugin_avcodec_decode(void* ud, const packet* p, const frame_
     if(av_err != 0) {
         if(av_err == AVERROR(EAGAIN)) return 0;
         av_strerror(av_err, av_errbuf, sizeof(av_errbuf));
-        LOG1("error with avcodec_receive_frame: %s", av_errbuf);
+        log_error("error with avcodec_receive_frame: %s", av_errbuf);
         return -1;
     }
 
     av_err = avframe_to_frame(&userdata->frame, userdata->avframe);
     av_frame_unref(userdata->avframe);
     if(av_err != 0) {
-        LOG0("error converting avframe to frame");
+        logs_fatal("error converting avframe to frame");
         return -1;
     }
     return frame_dest->submit_frame(frame_dest->handle,&userdata->frame);
@@ -435,7 +433,7 @@ static int decoder_plugin_avcodec_flush(void* ud, const frame_receiver* dest) {
 
     if( (av_err = avcodec_send_packet(userdata->codec_ctx, NULL)) != 0) {
         av_strerror(av_err, av_errbuf, sizeof(av_errbuf));
-        LOG1("error with avcodec_send_packet: %s", av_errbuf);
+        log_error("error with avcodec_send_packet: %s", av_errbuf);
         return -1;
     }
 
@@ -444,14 +442,14 @@ static int decoder_plugin_avcodec_flush(void* ud, const frame_receiver* dest) {
         if(av_err == AVERROR(EAGAIN)) goto destflush;
         if(av_err == AVERROR_EOF) goto destflush;
         av_strerror(av_err, av_errbuf, sizeof(av_errbuf));
-        LOG1("error with avcodec_receive_frame: %s", av_errbuf);
+        log_error("error with avcodec_receive_frame: %s", av_errbuf);
         return -1;
     }
 
     av_err = avframe_to_frame(&userdata->frame, userdata->avframe);
     av_frame_unref(userdata->avframe);
     if(av_err != 0) {
-        LOG0("error converting avframe to frame");
+        logs_fatal("error converting avframe to frame");
         return -1;
     }
     if( (r = dest->submit_frame(dest->handle,&userdata->frame)) != 0) return r;

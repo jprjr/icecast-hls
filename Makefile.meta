@@ -11,7 +11,9 @@ release: scripts/dump-version
 	rsync -av Makefile dist/icecast-hls-$(VERSION)/Makefile
 	rsync -av LICENSE dist/icecast-hls-$(VERSION)/LICENSE
 	rsync -av README.md dist/icecast-hls-$(VERSION)/README.md
-	rsync -av docs/ dist/icecast-hls-$(VERSION)/docs/
+	rsync -av docs/ dist/icecast-hls-$(VERSION)/doc/
+	mkdir -p dist/icecast-hls-$(VERSION)/doc/wiki
+	rsync -av --exclude='.git' wiki/ dist/icecast-hls-$(VERSION)/doc/wiki/
 
 scripts/dump-version: scripts/dump-version.o
 	$(CC) -o $@ $^

@@ -66,6 +66,7 @@ static int plugin_create(void* ud) {
     userdata->out_pts = 0;
 
     userdata->src_config = frame_source_zero;
+    userdata->src_config.packet_source = packet_source_zero;
     userdata->dest_format = SAMPLEFMT_UNKNOWN;
 
     strbuf_init(&userdata->filter_string);

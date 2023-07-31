@@ -14,10 +14,8 @@
 
 #include <stdio.h>
 
-#define LOG0(fmt) fprintf(stderr, "[demuxer:avformat] " fmt "\n")
-#define LOG1(fmt,a) fprintf(stderr, "[demuxer:avformat] " fmt "\n", (a))
-#define LOG2(fmt,a,b) fprintf(stderr, "[demuxer:avformat] " fmt "\n", (a), (b))
-#define LOG4(fmt,a,b,c,d) fprintf(stderr, "[demuxer:avformat] " fmt "\n", (a), (b), (c), (d))
+#define LOG_PREFIX "[demuxer:avformat]"
+#include "logger.h"
 
 #define BUFFER_SIZE 4096
 
@@ -429,17 +427,17 @@ static int load_packet_source_codecpar(demuxer_plugin_avformat_userdata* userdat
         case AV_CHANNEL_ORDER_UNSPEC: {
             switch(codecpar->ch_layout.nb_channels) {
                 case 1: {
-                    LOG0("warning, guessing mono for channel layout");
+                    logs_warn("guessing mono for channel layout");
                     userdata->me.channel_layout = LAYOUT_MONO;
                     break;
                 }
                 case 2: {
-                    LOG0("warning, guessing stereo for channel layout");
+                    logs_warn("guessing stereo for channel layout");
                     userdata->me.channel_layout = LAYOUT_STEREO;
                     break;
                 }
                 default: {
-                    LOG1("unspecified channel layout, channels=%d",codecpar->ch_layout.nb_channels);
+                    log_error("unspecified channel layout, channels=%d",codecpar->ch_layout.nb_channels);
                     return -1;
                 }
             }
@@ -449,7 +447,7 @@ static int load_packet_source_codecpar(demuxer_plugin_avformat_userdata* userdat
         }
         /* fall-through */
         default: {
-            LOG0("unknown channel layout");
+            logs_error("unknown channel layout");
             return -1;
         }
     }
@@ -459,13 +457,13 @@ static int load_packet_source_codecpar(demuxer_plugin_avformat_userdata* userdat
 
     switch(userdata->codec->id) {
         case AV_CODEC_ID_NONE: {
-            LOG0("unknown codec");
+            logs_error("unknown codec");
             return -1;
         }
         case AV_CODEC_ID_AAC: {
             if(codecpar->profile < 0) {
                 /* TODO seekable input for files */
-                LOG0("Unable to detect AAC profile, is this file streamable?");
+                logs_error("Unable to detect AAC profile, is this file streamable?");
                 return -1;
             }
             userdata->me.profile = codecpar->profile + 1;
@@ -476,7 +474,7 @@ static int load_packet_source_codecpar(demuxer_plugin_avformat_userdata* userdat
                 case CODEC_PROFILE_AAC_HE2: /* fall-through */
                 case CODEC_PROFILE_AAC_LAYER3: break;
                 default: {
-                    LOG1("Unsupported AAC profile %u", userdata->me.profile);
+                    log_error("unsupported AAC profile %u", userdata->me.profile);
                     return -1;
                 }
             }
@@ -500,7 +498,7 @@ static int load_packet_source(demuxer_plugin_avformat_userdata* userdata, const 
     userdata->tb_src = stream->time_base;
     userdata->me.codec = avcodec_to_codec(userdata->codec->id);
     if(userdata->me.codec == CODEC_TYPE_UNKNOWN) {
-        LOG1("Unknown avcodec id: %u", userdata->codec->id);
+        log_error("unknown avcodec id: %u", userdata->codec->id);
         return -1;
     }
 
@@ -538,21 +536,21 @@ static int demuxer_plugin_avformat_config(void* ud, const strbuf* key, const str
        strbuf_equals_cstr(key,"bitstream-filters") ||
        strbuf_equals_cstr(key,"bitstream- ilters")) {
         if(userdata->bsf_filters.len > 0) {
-            LOG0("only 1 filter string is supported");
+            logs_error("only 1 filter string is supported");
             return -1;
         }
         if( (r = strbuf_copy(&userdata->bsf_filters,val)) != 0) {
-            LOG0("out of memory");
+            logs_fatal("out of memory");
             return r;
         }
         if( (r = strbuf_term(&userdata->bsf_filters)) != 0) {
-            LOG0("out of memory");
+            logs_fatal("out of memory");
             return r;
         }
         return 0;
     }
 
-    LOG2("unknown config key %.*s",
+    log_error("unknown config key %.*s",
      (int)key->len,(char *)key->x);
     return -1;
 }
@@ -624,7 +622,7 @@ static int demuxer_plugin_avformat_open(void* ud, input* in) {
 
     userdata->buffer = av_malloc(BUFFER_SIZE + AVPROBE_PADDING_SIZE);
     if(userdata->buffer == NULL) {
-        LOG0("failed to allocate buffer");
+        logs_fatal("failed to allocate buffer");
         return -1;
     }
     userdata->io_ctx = avio_alloc_context(userdata->buffer, BUFFER_SIZE,
@@ -635,18 +633,18 @@ static int demuxer_plugin_avformat_open(void* ud, input* in) {
       NULL);
 
     if(userdata->io_ctx == NULL) {
-        LOG0("failed to allocate io context");
+        logs_fatal("failed to allocate io context");
         return -1;
     }
 
     if(av_probe_input_buffer(userdata->io_ctx, &fmt, "", NULL, 0, 1024 * 32) != 0) {
-        LOG0("failed to probe input");
+        logs_fatal("failed to probe input");
         return -1;
     }
 
     userdata->fmt_ctx = avformat_alloc_context();
     if(userdata->fmt_ctx == NULL) {
-        LOG0("failed to allocate format context");
+        logs_fatal("failed to allocate format context");
         return -1;
     }
 
@@ -655,7 +653,7 @@ static int demuxer_plugin_avformat_open(void* ud, input* in) {
 
     if( (av_err = avformat_open_input(&userdata->fmt_ctx, "", fmt, NULL)) < 0) {
         av_strerror(av_err, av_errbuf, sizeof(av_errbuf));
-        LOG1("error with avformat_open_input: %s", av_errbuf);
+        log_error("error with avformat_open_input: %s", av_errbuf);
         return -1;
     }
 
@@ -667,7 +665,7 @@ static int demuxer_plugin_avformat_submit_packet(demuxer_plugin_avformat_userdat
     av_packet_rescale_ts(userdata->av_packet, userdata->tb_src, userdata->tb_dest);
 
     if(avpacket_to_packet(&userdata->packet,userdata->av_packet) != 0) {
-      LOG0("unable to convert packet");
+      logs_fatal("unable to convert packet");
       return -1;
     }
 
@@ -696,7 +694,7 @@ static int demuxer_plugin_avformat_run(void* ud, const tag_handler* thandler, co
     if(userdata->codec == NULL) {
         if( (av_err = avformat_find_stream_info(userdata->fmt_ctx, NULL)) < 0) {
             av_strerror(av_err, av_errbuf, sizeof(av_errbuf));
-            LOG1("error with avformat_find_stream_info: %s", av_errbuf);
+            log_error("error with avformat_find_stream_info: %s", av_errbuf);
             return -1;
         }
 
@@ -706,7 +704,7 @@ static int demuxer_plugin_avformat_run(void* ud, const tag_handler* thandler, co
 
         if( (userdata->audioStreamIndex = av_find_best_stream(userdata->fmt_ctx, AVMEDIA_TYPE_AUDIO, -1, -1, &userdata->codec, 0)) < 0) {
             av_strerror(av_err, av_errbuf, sizeof(av_errbuf));
-            LOG1("error with avformat_find_best_stream: %s", av_errbuf);
+            log_error("error with avformat_find_best_stream: %s", av_errbuf);
             return -1;
         }
 
@@ -722,25 +720,25 @@ static int demuxer_plugin_avformat_run(void* ud, const tag_handler* thandler, co
 #if ICH_AVCODEC_AVBSFLIST
             if( (av_err = av_bsf_list_parse_str((const char *)userdata->bsf_filters.x,&userdata->bsf)) < 0) {
                 av_strerror(av_err, av_errbuf, sizeof(av_errbuf));
-                LOG1("error parsing bsf list: %s", av_errbuf);
+                log_error("error parsing bsf list: %s", av_errbuf);
                 return -1;
             }
 #else /* fallback for older ffmpeg */
             bsf = av_bsf_get_by_name((const char *)userdata->bsf_filters.x);
             if(bsf == NULL) {
-                LOG1("unable to find bitstream filter %s",(const char *)userdata->bsf_filters.x);
+                log_error("unable to find bitstream filter %s",(const char *)userdata->bsf_filters.x);
                 return -1;
             }
             if( (av_err = av_bsf_alloc(bsf,&userdata->bsf)) < 0) {
                 av_strerror(av_err,av_errbuf,sizeof(av_errbuf));
-                LOG1("error allocating bitstream filter: %s", av_errbuf);
+                log_error("error allocating bitstream filter: %s", av_errbuf);
                 return -1;
             }
 #endif
         } else {
             if( (av_err = av_bsf_get_null_filter(&userdata->bsf)) < 0) {
                 av_strerror(av_err, av_errbuf, sizeof(av_errbuf));
-                LOG1("error getting bsf null filter: %s", av_errbuf);
+                log_error("error getting bsf null filter: %s", av_errbuf);
                 return -1;
             }
         }
@@ -754,7 +752,7 @@ static int demuxer_plugin_avformat_run(void* ud, const tag_handler* thandler, co
 
         if( (av_err = av_bsf_init(userdata->bsf)) < 0) {
             av_strerror(av_err,av_errbuf,sizeof(av_errbuf));
-            LOG1("error initializing bsf filters: %s", av_errbuf);
+            log_error("error initializing bsf filters: %s", av_errbuf);
             return -1;
         }
 
@@ -767,7 +765,7 @@ static int demuxer_plugin_avformat_run(void* ud, const tag_handler* thandler, co
         if(userdata->av_packet->stream_index != userdata->audioStreamIndex) return 0;
         if(( av_err = av_bsf_send_packet(userdata->bsf,userdata->av_packet)) != 0) {
             av_strerror(av_err,av_errbuf,sizeof(av_errbuf));
-            LOG1("error sending packet to bsf: %s", av_errbuf);
+            log_error("error sending packet to bsf: %s", av_errbuf);
             return -1;
         }
 
@@ -778,7 +776,7 @@ static int demuxer_plugin_avformat_run(void* ud, const tag_handler* thandler, co
         if(av_err == AVERROR(EAGAIN)) return 0;
         if(av_err == AVERROR_EOF) return 1;
         av_strerror(av_err,av_errbuf,sizeof(av_errbuf));
-        LOG1("error receiving packet from bsf: %s", av_errbuf);
+        log_error("error receiving packet from bsf: %s", av_errbuf);
         return -1;
     }
 
@@ -786,13 +784,13 @@ static int demuxer_plugin_avformat_run(void* ud, const tag_handler* thandler, co
         av_bsf_flush(userdata->bsf);
         while( (av_err = av_bsf_receive_packet(userdata->bsf, userdata->av_packet)) == 0) {
             if(avpacket_to_packet(&userdata->packet,userdata->av_packet) != 0) {
-              LOG0("unable to convert packet");
+              logs_fatal("unable to convert packet");
               return -1;
             }
 
             if( (r = receiver->submit_packet(receiver->handle, &userdata->packet)) != 0) {
                 av_strerror(av_err,av_errbuf,sizeof(av_errbuf));
-                LOG1("error submitting packet to packet_receiver: %s", av_errbuf);
+                log_error("error submitting packet to packet_receiver: %s", av_errbuf);
                 return r;
             }
             av_packet_unref(userdata->av_packet);
@@ -801,10 +799,8 @@ static int demuxer_plugin_avformat_run(void* ud, const tag_handler* thandler, co
     }
 
     av_strerror(av_err,av_errbuf,sizeof(av_errbuf));
-    LOG1("error reading packet from demuxer: %s", av_errbuf);
+    log_error("error reading packet from demuxer: %s", av_errbuf);
 
-    LOG1("av_err: %d", av_err);
-    LOG1("AVERROR(EAGAIN): %d", AVERROR(EAGAIN));
     return -1;
 }
 

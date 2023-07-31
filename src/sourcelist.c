@@ -3,6 +3,8 @@
 
 #include "destination.h"
 
+#include "logger.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -323,6 +325,9 @@ static int sourcelist_entry_run(void *userdata) {
     int r = 0;
     sourcelist_entry* entry = (sourcelist_entry *)userdata;
 
+    logger_set_prefix("thread: source.",15);
+    logger_append_prefix((const char *)entry->id.x,entry->id.len);
+
     /* this is where/how we forward tags, previously the source just cached them */
     tag_handler thdlr;
 
@@ -343,6 +348,7 @@ static int sourcelist_entry_run(void *userdata) {
     /* (maybe) make all other threads quit */
     entry->quit(entry->quit_userdata,r == 0 ? 1 : -1);
 
+    logger_thread_cleanup();
     thread_exit(r);
     return r;
 }

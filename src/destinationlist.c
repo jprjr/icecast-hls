@@ -1,6 +1,8 @@
 #include "destinationlist.h"
 #include <stdlib.h>
 
+#include "logger.h"
+
 size_t destinationlist_length(const destinationlist* dlist) {
     return dlist->len / sizeof(destinationlist_entry);
 }
@@ -110,6 +112,9 @@ static int destinationlist_entry_run(void *userdata) {
     int r;
     destinationlist_entry* entry = (destinationlist_entry*)userdata;
 
+    logger_set_prefix("thread: destination.",20);
+    logger_append_prefix((const char *)entry->id.x,entry->id.len);
+
     entry->sync.frame_receiver.open         = (frame_receiver_open_cb)destination_open;
     entry->sync.frame_receiver.submit_frame = (frame_receiver_submit_frame_cb)destination_submit_frame;
     entry->sync.frame_receiver.flush        = (frame_receiver_flush_cb)destination_flush;
@@ -123,6 +128,7 @@ static int destinationlist_entry_run(void *userdata) {
 
     r = destination_sync_run(&entry->sync);
 
+    logger_thread_cleanup();
     thread_exit(r);
     return r;
 }

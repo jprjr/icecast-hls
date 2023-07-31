@@ -129,6 +129,8 @@ typedef struct packet_receiver packet_receiver;
     .roll_distance = 0, \
     .roll_type = 0, \
     .priv = NULL, \
+    .priv_copy = NULL, \
+    .priv_free = NULL, \
     .dsi = MEMBUF_ZERO, \
 }
 
@@ -154,6 +156,7 @@ int packet_receiver_close_null(void* handle);
 uint32_t packet_receiver_get_caps_null(void* handle);
 int packet_receiver_get_segment_info_null(const void* userdata, const packet_source_info*, packet_source_params*);
 
+void packet_source_init(packet_source*);
 int packet_source_copy(packet_source* dest, const packet_source* source);
 
 extern const packet packet_zero;
