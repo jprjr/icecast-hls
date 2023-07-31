@@ -6,12 +6,26 @@
 #include "tagmap.h"
 #include "tagmap_default.h"
 #include "ich_time.h"
+#include "logger.h"
 
 #include "ini.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <signal.h>
+
+#if defined(_WIN32) || defined(_WIN64) || defined(_MSC_VER)
+
+#define ICH_WINDOWS
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN 1
+#endif
+
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 struct app_config {
     uint8_t shortflag;
@@ -183,20 +197,47 @@ void sig_handler(int sig) {
     }
 }
 
+static const char *progname;
+static int usage(int e) {
+    fprintf(stderr,"Usage: %s config.ini\n",progname);
+    return e;
+}
+
 int main(int argc, const char* argv[]) {
     int r;
     int ret = 1;
     app_config config;
 
-    signal(SIGUSR1,sig_handler);
-
     tagmap tagmap;
     ich_time now;
+
+    logger_init();
+    logger_set_default_level(LOG_DEBUG);
+
+#ifdef ICH_WINDOWS
+    logger_set_color(_isatty(_fileno(stderr)));
+#else
+    logger_set_color(isatty(fileno(stderr)));
+#endif
+
+    progname = argv[0];
+
+    if(argc < 2) {
+        return usage(1);
+    }
+
+    signal(SIGUSR1,sig_handler);
 
     config.slist = &slist;
     config.dlist = &dlist;
     config.tagmap = &tagmap;
     config.now = &now;
+
+    if( (r = logger_tls_init()) != 0) {
+        return 1;
+    }
+
+    logger_set_prefix("thread: main",12);
 
     ich_time_now(&now);
 
@@ -250,5 +291,9 @@ int main(int argc, const char* argv[]) {
     source_global_deinit();
     destination_global_deinit();
     default_tagmap_deinit();
+
+    logger_thread_cleanup();
+    logger_tls_deinit();
+    logger_deinit();
     return ret;
 }
