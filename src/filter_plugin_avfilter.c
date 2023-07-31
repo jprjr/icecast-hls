@@ -12,6 +12,9 @@
 
 #include <errno.h>
 
+#define LOG_PREFIX "[filter:avfilter]"
+#include "logger.h"
+
 static STRBUF_CONST(plugin_name,"avfilter");
 
 struct plugin_userdata {
@@ -81,19 +84,21 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* val) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     if(strbuf_equals_cstr(key,"string")) {
         if(userdata->filter_string.len > 0) {
-            fprintf(stderr,"[filter:avfilter] only 1 filter string is supported\n");
+            logs_error("only 1 filter string is supported");
             return -1;
         }
         if( (r = strbuf_copy(&userdata->filter_string,val)) != 0) {
-            fprintf(stderr,"[filter:avfilter] out of memory\n");
+            logs_fatal("out of memory");
+            return -1;
         }
         if( (r = strbuf_term(&userdata->filter_string)) != 0) {
-            fprintf(stderr,"[filter:avfilter] out of memory\n");
+            logs_fatal("out of memory");
+            return -1;
         }
         return 0;
     }
 
-    fprintf(stderr,"[filter:avfilter] unknown config key %.*s\n",
+    log_error("unknown config key %.*s",
      (int)key->len,(char *)key->x);
     return -1;
 
@@ -115,13 +120,13 @@ static int plugin_graph_open(plugin_userdata* userdata) {
     enum AVSampleFormat fmt;
 
     if(buffer_filter == NULL || buffersink_filter == NULL) {
-        fprintf(stderr,"[filter:avfilter] unable to find abuffer and abuffersink filters\n");
+        logs_fatal("unable to find abuffer and abuffersink filters");
         return -1;
     }
 
     userdata->graph = avfilter_graph_alloc();
     if(userdata->graph == NULL) {
-        fprintf(stderr,"[filter:avfilter] out of memory\n");
+        logs_fatal("out of memory");
         return -1;
     }
 
@@ -137,12 +142,11 @@ static int plugin_graph_open(plugin_userdata* userdata) {
       "time_base=%u/%u:sample_rate=%u:sample_fmt=%s:channel_layout=%s",
         1, userdata->src_config.sample_rate, userdata->src_config.sample_rate,
         av_get_sample_fmt_name(samplefmt_to_avsampleformat(userdata->src_config.format)), layout);
-    fprintf(stderr,"args: %s\n",args);
 
     if(userdata->filter_string.len > 0) {
         if(avfilter_graph_parse_ptr(userdata->graph,(const char *)userdata->filter_string.x,
             &userdata->inputs, &userdata->outputs, NULL) < 0) {
-            fprintf(stderr,"[filter:avfilter] unable to parse filter string\n");
+            log_error("unable to parse filter string %s",(const char *)userdata->filter_string.x);
             return -1;
         }
         in_name = userdata->inputs->name;
@@ -153,30 +157,31 @@ static int plugin_graph_open(plugin_userdata* userdata) {
         out_name = default_out_name;
     }
 
+    log_debug("buffersrc args: %s", args);
     if(avfilter_graph_create_filter(&userdata->buffersrc, buffer_filter,
         in_name,args,NULL,userdata->graph) < 0) {
-        fprintf(stderr,"[filter:avfilter] unable to create buffersrc\n");
+        logs_error("unable to create buffersrc");
         return -1;
     }
 
     if(avfilter_graph_create_filter(&userdata->buffersink, buffersink_filter,
         out_name,NULL,NULL,userdata->graph) < 0) {
-        fprintf(stderr,"[filter:avfilter] unable to create buffersink\n");
+        logs_error("unable to create buffersink");
         return -1;
     }
 
     if(userdata->inputs != NULL) {
         if(avfilter_link(userdata->buffersrc, 0, userdata->inputs->filter_ctx, 0) < 0) {
-            fprintf(stderr,"[filter:avfilter] unable to link buffersrc to graph filter\n");
+            logs_error("unable to link buffersrc to graph filter");
             return -1;
         }
         if(avfilter_link(userdata->outputs->filter_ctx, 0, userdata->buffersink, 0) < 0) {
-            fprintf(stderr,"[filter:avfilter] unable to link graph filter to buffersink\n");
+            logs_error("unable to link graph filter to buffersink");
             return -1;
         }
     } else {
         if(avfilter_link(userdata->buffersrc, 0, userdata->buffersink, 0) < 0) {
-            fprintf(stderr,"[filter:avfilter] unable to link buffersrc to buffersink\n");
+            logs_error("unable to link buffersrc to buffersink");
             return -1;
         }
     }
@@ -186,14 +191,14 @@ static int plugin_graph_open(plugin_userdata* userdata) {
 
         if(av_opt_set_bin(userdata->buffersink, "sample_fmts",
             (uint8_t*)&fmt,sizeof(fmt), AV_OPT_SEARCH_CHILDREN) < 0) {
-            fprintf(stderr,"[filter:avfilter] error setting buffersink format\n");
+            logs_error("error setting buffersink format");
             return -1;
         }
     }
 
 
     if(avfilter_graph_config(userdata->graph,NULL) < 0) {
-        fprintf(stderr,"[filter:avfilter] unable to configure graph\n");
+        logs_error("unable to configure filter graph");
         return -1;
     }
 
@@ -231,12 +236,12 @@ static int plugin_open(void* ud, const frame_source* source, const frame_receive
 
     userdata->av_frame = av_frame_alloc();
     if(userdata->av_frame == NULL) {
-        fprintf(stderr,"[filter:avfilter] out of memory\n");
+        logs_fatal("out of memory");
         return -1;
     }
 
     if(plugin_graph_open(userdata) != 0) {
-        fprintf(stderr,"[filter:avfilter] error opening graph\n");
+        logs_error("error opening graph");
         return -1;
     }
 
@@ -326,6 +331,7 @@ static int plugin_submit_frame(void* ud, const frame* frame, const frame_receive
      * change we need to deal with that */
 
     if(frame->format != userdata->src_config.format) {
+        logs_info("resetting due to new incoming frame format");
         userdata->src_config.format = frame->format;
         plugin_reset(userdata);
         if( (r = plugin_graph_open(userdata)) != 0) return r;
