@@ -135,6 +135,13 @@ int filter_open(filter* f, const frame_source* source) {
 }
 
 int filter_config(const filter* f, const strbuf* name, const strbuf* value) {
+    log_debug("configuring plugin %.*s %.*s=%.*s",
+      (int)f->plugin->name.len,
+      (const char *)f->plugin->name.x,
+      (int)name->len,
+      (const char *)name->x,
+      (int)value->len,
+      (const char *)value->x);
     return f->plugin->config(f->userdata, name,value);
 }
 

@@ -6,11 +6,14 @@
 #include <string.h>
 #include <stdlib.h>
 
+#define LOG_PREFIX "[muxer]"
+#include "logger.h"
+
 static int muxer_default_picture_handler(void* userdata, const picture* src, picture* out) {
     (void)userdata;
     (void)src;
     (void)out;
-    fprintf(stderr,"[muxer] picture handler not set\n");
+    logs_fatal("picture handler not set");
     return -1;
 }
 
@@ -26,6 +29,7 @@ void muxer_init(muxer* m) {
 
 void muxer_free(muxer* m) {
     if(m->userdata != NULL) {
+        logs_debug("closing");
         m->plugin->close(m->userdata);
         free(m->userdata);
     }
@@ -37,11 +41,21 @@ int muxer_create(muxer* m, const strbuf* name) {
     const muxer_plugin* plug;
     void* userdata;
 
+    log_debug("loading %.*s plugin",
+      (int)name->len,(const char *)name->x);
+
     plug = muxer_plugin_get(name);
-    if(plug == NULL) return -1;
+    if(plug == NULL) {
+        log_error("unable to find plugin %.*s",
+          (int)name->len,(char *)name->x);
+        return -1;
+    }
 
     userdata = malloc(plug->size());
-    if(userdata == NULL) return -1;
+    if(userdata == NULL) {
+        logs_fatal("uable to allocate plugin");
+        return -1;
+    }
 
     m->userdata = userdata;
     m->plugin = plug;
@@ -93,7 +107,7 @@ int muxer_open(muxer* m, const packet_source* source) {
     segment_receiver receiver = SEGMENT_RECEIVER_ZERO;
 
     if(m->plugin == NULL || m->userdata == NULL) {
-        fprintf(stderr,"[muxer] unable to open: plugin not selected\n");
+        logs_error("plugin not selected");
         return -1;
     }
     ich_time_now(&m->ts);
@@ -106,10 +120,21 @@ int muxer_open(muxer* m, const packet_source* source) {
     receiver.submit_tags = muxer_submit_tags_wrapper;
     receiver.flush = muxer_flush_wrapper;
 
+    log_debug("opening %.*s plugin",
+      (int)m->plugin->name.len,
+      (const char *)m->plugin->name.x);
+
     return m->plugin->open(m->userdata, source, &receiver);
 }
 
 int muxer_config(const muxer* m, const strbuf* name, const strbuf* value) {
+    log_debug("configuring plugin %.*s %.*s=%.*s",
+      (int)m->plugin->name.len,
+      (const char *)m->plugin->name.x,
+      (int)name->len,
+      (const char *)name->x,
+      (int)value->len,
+      (const char *)value->x);
     return m->plugin->config(m->userdata,name,value);
 }
 
@@ -252,7 +277,7 @@ void muxer_dump_counters(const muxer* in, const strbuf* prefix) {
     ich_tm tm;
     ich_time_to_tm(&tm,&in->ts);
 
-    fprintf(stderr,"%.*s muxer: muxes=%zu last_mux=%4u-%02u-%02u %02u:%02u:%02u\n",
+    log_info("%.*s muxer: muxes=%zu last_mux=%4u-%02u-%02u %02u:%02u:%02u",
       (int)prefix->len,(const char*)prefix->x,
       in->counter,
       tm.year,tm.month,tm.day,

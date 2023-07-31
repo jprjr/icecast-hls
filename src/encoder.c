@@ -110,6 +110,13 @@ int encoder_open(encoder* e, const frame_source* source) {
 }
 
 int encoder_config(const encoder* e, const strbuf* name, const strbuf* value) {
+    log_debug("configuring plugin %.*s %.*s=%.*s",
+      (int)e->plugin->name.len,
+      (const char *)e->plugin->name.x,
+      (int)name->len,
+      (const char *)name->x,
+      (int)value->len,
+      (const char *)value->x);
     return e->plugin->config(e->userdata,name,value);
 }
 

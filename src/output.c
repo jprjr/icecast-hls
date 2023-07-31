@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define LOG_PREFIX "[output]"
+#include "logger.h"
+
 void output_init(output* out) {
     out->userdata = NULL;
     out->plugin = NULL;
@@ -12,6 +15,7 @@ void output_init(output* out) {
 
 void output_free(output* out) {
     if(out->userdata != NULL) {
+        logs_debug("closing");
         out->plugin->close(out->userdata);
         free(out->userdata);
     }
@@ -23,17 +27,19 @@ int output_create(output* out, const strbuf* name) {
     const output_plugin* plug;
     void* userdata;
 
+    log_debug("loading %.*s plugin",
+      (int)name->len,(const char *)name->x);
+
     plug = output_plugin_get(name);
     if(plug == NULL) {
-        fprintf(stderr,"[output] plugin \"%.*s\" not found\n",
+        log_error("unable to find plugin %.*s",
           (int)name->len,(char *)name->x);
         return -1;
     }
 
     userdata = malloc(plug->size());
     if(userdata == NULL) {
-        fprintf(stderr,"[output] error creating instance of \"%.*s\"\n",
-          (int)name->len,(char *)name->x);
+        logs_fatal("uable to allocate plugin");
         return -1;
     }
 
@@ -47,7 +53,7 @@ int output_get_segment_info(const output* out, const segment_source_info* info, 
     int r = -1;
     uint64_t t;
     if(out->plugin == NULL || out->userdata == NULL) {
-        fprintf(stderr,"[output] plugin not selected\n");
+        logs_error("plugin not selected");
         return r;
     }
     if( (r = out->plugin->get_segment_info(out->userdata,info,params)) != 0) return r;
@@ -74,20 +80,32 @@ int output_get_segment_info(const output* out, const segment_source_info* info, 
 
 int output_open(output* out, const segment_source* source) {
     if(out->plugin == NULL || out->userdata == NULL) {
-        fprintf(stderr,"[output] plugin not selected\n");
+        logs_error("plugin not selected");
         return -1;
     }
     if(out->opened != 0) {
-        fprintf(stderr,"[output] tried to re-open\n");
+        logs_fatal("tried to re-open");
         return -1;
     }
     ich_time_now(&out->ts);
     out->counter = 0;
     out->opened = 1;
+
+    log_debug("opening %.*s plugin",
+      (int)out->plugin->name.len,
+      (const char *)out->plugin->name.x);
+
     return out->plugin->open(out->userdata, source);
 }
 
 int output_config(const output* out, const strbuf* name, const strbuf* value) {
+    log_debug("configuring plugin %.*s %.*s=%.*s",
+      (int)out->plugin->name.len,
+      (const char *)out->plugin->name.x,
+      (int)name->len,
+      (const char *)name->x,
+      (int)value->len,
+      (const char *)value->x);
     return out->plugin->config(out->userdata,name,value);
 }
 
@@ -132,7 +150,7 @@ void output_dump_counters(const output* in, const strbuf* prefix) {
     ich_tm tm;
     ich_time_to_tm(&tm,&in->ts);
 
-    fprintf(stderr,"%.*s output: outputs=%zu last_output=%4u-%02u-%02u %02u:%02u:%02u\n",
+    log_info("%.*s output: outputs=%zu last_output=%4u-%02u-%02u %02u:%02u:%02u",
       (int)prefix->len,(const char*)prefix->x,
       in->counter,
       tm.year,tm.month,tm.day,

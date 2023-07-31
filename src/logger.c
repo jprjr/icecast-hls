@@ -6,9 +6,14 @@
 
 #include "logger.h"
 #include "thread.h"
+#include "ich_time.h"
 
-static enum LOG_LEVEL default_log_level = LOG_WARN;
+/* these are global and can't be set on a per-thread level */
 static int use_color = 1;
+static int show_time = 0;
+
+/* these can be set on a per-thread level */
+static enum LOG_LEVEL default_log_level = LOG_WARN;
 static int show_fileinfo = 0;
 
 static const char *level_strings[] = {
@@ -59,25 +64,40 @@ typedef struct logger_config logger_config;
 static thread_mutex_t stderr_mutex;
 static thread_tls_t thread_config = NULL;
 
-static void logger_stderr(enum LOG_LEVEL level, int use_fileinfo, const char *file, int line, const char *prefix, const char *fmt, va_list ap) {
+static void logger_stderr(enum LOG_LEVEL level, int show_time, int use_fileinfo, const char *file, int line, const char *prefix, const char *fmt, va_list ap) {
     const char *color = "";
+    const char *color_time = "";
     const char *color_reset = "";
+    ich_time now;
+    ich_tm tm;
+    char tmbuf[40] = { 0 };
+
     if(use_color) {
         color = level_colors[level];
+        color_time = COLOR_BRIGHT_BLUE;
         color_reset = COLOR_RESET;
     }
     if(prefix == NULL) {
         prefix = "";
     }
 
+    if(show_time) {
+        ich_time_now(&now);
+        ich_time_to_tm(&tm,&now);
+        snprintf(tmbuf,sizeof(tmbuf),"%s%02d:%02d:%02d%s ",
+          color_time,
+          tm.hour,tm.min,tm.sec,
+          color_reset);
+    }
+
     thread_mutex_lock(&stderr_mutex);
     if(use_fileinfo) {
-        fprintf(stderr, "%s%-5s%s %s:%d: [%s] ",
-          color, level_strings[level], color_reset,
+        fprintf(stderr, "%s%s%-5s%s %s:%d: [%s] ",
+          tmbuf, color, level_strings[level], color_reset,
           file, line, prefix);
     } else {
-        fprintf(stderr, "%s%-5s%s [%s] ",
-          color, level_strings[level], color_reset,
+        fprintf(stderr, "%s%s%-5s%s [%s] ",
+          tmbuf, color, level_strings[level], color_reset,
           prefix);
     }
     vfprintf(stderr,fmt,ap);
@@ -133,6 +153,21 @@ int logger_set_level(enum LOG_LEVEL level) {
     }
 
     config->level = level;
+    return 0;
+}
+
+int logger_set_fileinfo(int enable) {
+    logger_config *config = NULL;
+    int r;
+
+    config = (logger_config *) thread_tls_get(thread_config);
+    if(config == NULL) {
+        r = logger_init_config();
+        if(r != 0) return r;
+        config = (logger_config *) thread_tls_get(thread_config);
+    }
+
+    config->show_fileinfo = enable;
     return 0;
 }
 
@@ -196,18 +231,18 @@ void logger_log(enum LOG_LEVEL level, const char *file, int line, const char *fm
     va_start(args_list, fmt);
 
     if(thread_config == NULL) { /* we haven't initialized or it failed */
-        logger_stderr(level, 1, file,line, NULL, fmt,args_list);
+        logger_stderr(level, show_time, 1, file,line, NULL, fmt,args_list);
         goto cleanup;
     }
 
     config = (logger_config *)thread_tls_get(thread_config);
     if(config == NULL) {
-        logger_stderr(level, 1, file,line, NULL, fmt,args_list);
+        logger_stderr(level, show_time, 1, file,line, NULL, fmt,args_list);
         goto cleanup;
     }
 
     if(level >= config->level) {
-        logger_stderr(level, config->show_fileinfo, file,line,config->prefix, fmt,args_list);
+        logger_stderr(level, show_time, config->show_fileinfo, file,line,config->prefix, fmt,args_list);
         goto cleanup;
     }
 
@@ -219,3 +254,12 @@ void logger_log(enum LOG_LEVEL level, const char *file, int line, const char *fm
 void logger_set_color(int enable) {
     use_color = enable;
 }
+
+void logger_set_time(int enable) {
+    show_time = enable;
+}
+
+void logger_set_default_fileinfo(int enable) {
+    show_fileinfo = enable;
+}
+

@@ -20,11 +20,17 @@ void logger_init(void);
 /* destroys the global lock around stderr */
 void logger_deinit(void);
 
-/* set the default log level */
-void logger_set_default_level(enum LOG_LEVEL level);
-
 /* enable/disable the use of color */
 void logger_set_color(int enable);
+
+/* enable/disable show per-message timestamps */
+void logger_set_time(int enable);
+
+/* enable/disable showing the source code info */
+void logger_set_default_fileinfo(int enable);
+
+/* set the default log level */
+void logger_set_default_level(enum LOG_LEVEL level);
 
 /* initializes thread-local storage, needs to be called in main */
 int logger_tls_init(void);
@@ -38,6 +44,9 @@ int logger_append_prefix(const char *prefix, size_t len);
 
 /* sets the per-thread log level */
 int logger_set_level(enum LOG_LEVEL level);
+
+/* sets the per-thread log fileinfo */
+int logger_set_fileinfo(int enable);
 
 /* clears data allocated by the thread */
 void logger_thread_cleanup(void);
