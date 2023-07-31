@@ -5,15 +5,17 @@ VERSION = $(shell ./scripts/dump-version)
 release: scripts/dump-version
 	perl scripts/docs.pl
 	mkdir -p dist
-	rm -rf dist/icecast-hls-$(VERSION)
-	mkdir -p dist/icecast-hls-$(VERSION)/scripts
+	rm -rf dist/icecast-hls-$(VERSION) dist/icecast-hls-$(VERSION).tar dist/icecast-hls-$(VERSION).tar.gz dist/icecast-hls-$(VERSION).tar.xz
+	mkdir -p dist/icecast-hls-$(VERSION)/doc/wiki
 	rsync -av --exclude='*.o' src/ dist/icecast-hls-$(VERSION)/src/
 	rsync -av Makefile dist/icecast-hls-$(VERSION)/Makefile
 	rsync -av LICENSE dist/icecast-hls-$(VERSION)/LICENSE
 	rsync -av README.md dist/icecast-hls-$(VERSION)/README.md
 	rsync -av docs/ dist/icecast-hls-$(VERSION)/doc/
-	mkdir -p dist/icecast-hls-$(VERSION)/doc/wiki
 	rsync -av --exclude='.git' wiki/ dist/icecast-hls-$(VERSION)/doc/wiki/
+	tar cf dist/icecast-hls-$(VERSION).tar -C dist --owner=root:0 --group=root:0 icecast-hls-$(VERSION)
+	cd dist && gzip -k icecast-hls-$(VERSION).tar
+	cd dist && xz -k icecast-hls-$(VERSION).tar
 
 scripts/dump-version: scripts/dump-version.o
 	$(CC) -o $@ $^
