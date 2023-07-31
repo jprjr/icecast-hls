@@ -1,6 +1,7 @@
-.PHONY: all clean scripts
+.PHONY: all clean
 
-CFLAGS = -Wall -Wextra -g -O0 -fPIC
+PKGCONFIG=pkg-config
+CFLAGS = -Wall -Wextra -g -O2 -fPIC
 LDFLAGS =
 
 SOURCES = \
@@ -49,6 +50,7 @@ SOURCES = \
 	src/input_plugin_curl.c \
 	src/input_plugin_file.c \
 	src/input_plugin_stdin.c \
+	src/logger.c \
 	src/muxer.c \
 	src/muxer_plugin.c \
 	src/muxer_plugin_adts.c \
@@ -117,6 +119,7 @@ REQUIRED_OBJS = \
 	src/input_plugin.o \
 	src/input_plugin_file.o \
 	src/input_plugin_stdin.o \
+	src/logger.o \
 	src/muxer.o \
 	src/muxer_plugin.o \
 	src/muxer_plugin_adts.o \
@@ -146,8 +149,6 @@ REQUIRED_OBJS = \
 	src/tagmap_default.o \
 	src/thread.o \
 	src/version.o
-
-PKGCONFIG=pkg-config
 
 PKGCONFIG_LIBS =
 # libcurl fdk-aac opus libavformat libavfilter libavutil libavcodec
@@ -267,8 +268,6 @@ all: icecast-hls
 
 clean:
 	rm -f $(OBJS) icecast-hls
-	rm -f scripts/codec-verify scripts/codec-verify.exe scripts/codec-verify.o
-	rm -f scripts/list-bsfs scripts/list-bsfs.exe scripts/list-bsfs.o
 
 icecast-hls: $(REQUIRED_OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS) $(shell $(PKGCONFIG) --libs $(PKGCONFIG_LIBS))
@@ -338,7 +337,3 @@ src/thread.o: src/thread.c src/thread.h
 
 src/miniflac.o: src/miniflac.c src/miniflac.h
 	$(CC) $(CFLAGS) -c -o $@ $<
-
-dump:
-	echo $(OBJS)
-
