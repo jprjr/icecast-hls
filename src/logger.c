@@ -127,6 +127,10 @@ void logger_deinit(void) {
     thread_mutex_term(&stderr_mutex);
 }
 
+enum LOG_LEVEL logger_get_default_level(void) {
+    return default_log_level;
+}
+
 void logger_set_default_level(enum LOG_LEVEL level) {
     default_log_level = level;
 }
@@ -250,6 +254,30 @@ void logger_log(enum LOG_LEVEL level, const char *file, int line, const char *fm
     va_end(args_list);
     return;
 }
+
+void vlogger_log(enum LOG_LEVEL level, const char *file, int line, const char *fmt, va_list args_list) {
+    logger_config *config = NULL;
+
+    if(thread_config == NULL) { /* we haven't initialized or it failed */
+        logger_stderr(level, show_time, 1, file,line, NULL, fmt,args_list);
+        goto cleanup;
+    }
+
+    config = (logger_config *)thread_tls_get(thread_config);
+    if(config == NULL) {
+        logger_stderr(level, show_time, 1, file,line, NULL, fmt,args_list);
+        goto cleanup;
+    }
+
+    if(level >= config->level) {
+        logger_stderr(level, show_time, config->show_fileinfo, file,line, config->prefix, fmt,args_list);
+        goto cleanup;
+    }
+
+    cleanup:
+    return;
+}
+
 
 void logger_set_color(int enable) {
     use_color = enable;

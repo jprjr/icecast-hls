@@ -49,6 +49,7 @@ void app_config_free(app_config* config) {
     destinationlist_free(config->dlist);
 
     logger_set_prefix("main",4);
+    logger_set_level(logger_get_default_level());
     tagmap_free(config->tagmap);
 }
 
@@ -72,6 +73,7 @@ static int config_handler(void* user, const char* section, const char* name, con
     value_buf.a   = 0;
 
     logger_set_prefix("main",4);
+    logger_set_level(logger_get_default_level());
 
     if(strbuf_begins_cstr(&section_buf,"source.")) {
         if(section_buf.len < strlen("source.") + 1) {
@@ -115,6 +117,45 @@ static int config_handler(void* user, const char* section, const char* name, con
             }
             fprintf(stderr,"[config] section %s: unknown value %s for option %s\n",section, value,name);
             return 0;
+        }
+
+        if(strbuf_equals_cstr(&name_buf,"loglevel") ||
+           strbuf_equals_cstr(&name_buf,"log-level") ||
+           strbuf_equals_cstr(&name_buf,"log level")) {
+            if(strbuf_caseequals_cstr(&value_buf,"trace")) {
+                logger_set_default_level(LOG_TRACE);
+                logger_set_level(LOG_TRACE);
+                return 1;
+            }
+            if(strbuf_caseequals_cstr(&value_buf,"debug")) {
+                logger_set_default_level(LOG_DEBUG);
+                logger_set_level(LOG_DEBUG);
+                return 1;
+            }
+            if(strbuf_caseequals_cstr(&value_buf,"info")) {
+                logger_set_default_level(LOG_INFO);
+                logger_set_level(LOG_INFO);
+                return 1;
+            }
+            if(strbuf_caseequals_cstr(&value_buf,"warn")) {
+                logger_set_default_level(LOG_WARN);
+                logger_set_level(LOG_WARN);
+                return 1;
+            }
+            if(strbuf_caseequals_cstr(&value_buf,"error")) {
+                logger_set_default_level(LOG_ERROR);
+                logger_set_level(LOG_ERROR);
+                return 1;
+            }
+            if(strbuf_caseequals_cstr(&value_buf,"fatal")) {
+                logger_set_default_level(LOG_FATAL);
+                logger_set_level(LOG_FATAL);
+                return 1;
+            }
+
+            fprintf(stderr,"[config] section %s: unknown value %s for option %s\n",section, value,name);
+            return 0;
+
         }
         fprintf(stderr,"[config] section %s: unknown option %s\n",section,name);
         return 0;
@@ -216,7 +257,7 @@ int main(int argc, const char* argv[]) {
     ich_time now;
 
     logger_init();
-    logger_set_default_level(LOG_DEBUG);
+    logger_set_default_level(LOG_INFO);
 
 #ifdef ICH_WINDOWS
     logger_set_color(_isatty(_fileno(stderr)));
@@ -224,11 +265,8 @@ int main(int argc, const char* argv[]) {
     logger_set_color(isatty(fileno(stderr)));
 #endif
 
-    progname = argv[0];
-
-    if(argc < 2) {
-        return usage(1);
-    }
+    progname = *argv++;
+    argc--;
 
     signal(SIGUSR1,sig_handler);
 
@@ -241,7 +279,23 @@ int main(int argc, const char* argv[]) {
         return 1;
     }
 
+    while(argc) {
+        /* TODO actually add cli options */
+        if(strcmp(*argv,"--") == 0) {
+            argc--;
+            argv++;
+            break;
+        } else {
+            break;
+        }
+    }
+
+    if(argc < 1) {
+        return usage(1);
+    }
+
     logger_set_prefix("main",4);
+    logger_set_level(logger_get_default_level());
 
     ich_time_now(&now);
 
@@ -262,13 +316,15 @@ int main(int argc, const char* argv[]) {
         return r;
     }
 
-    r = ini_parse(argv[1],config_handler,&config);
+    r = ini_parse(argv[0],config_handler,&config);
     if(r != 0) {
         printf("Parsing INI experienced error on line %d\n", r);
         goto cleanup;
     }
 
     logger_set_prefix("main",4);
+    logger_set_level(logger_get_default_level());
+
     prep_tagmaps(&tagmap);
 
     r = link_destinations(&slist,&dlist,&tagmap);
@@ -287,6 +343,7 @@ int main(int argc, const char* argv[]) {
     }
 
     logger_set_prefix("main",4);
+    logger_set_level(logger_get_default_level());
 
     destinationlist_start(&dlist);
     sourcelist_start(&slist);

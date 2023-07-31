@@ -21,6 +21,8 @@ void destinationlist_free(destinationlist* dlist) {
     for(i=0;i<len;i++) {
         logger_set_prefix("destination.",12);
         logger_append_prefix((const char *)entry[i].id.x, entry[i].id.len);
+        logger_set_level((enum LOG_LEVEL) (entry[i].loglevel == -1 ? 
+          logger_get_default_level() : (enum LOG_LEVEL)entry[i].loglevel));
         destinationlist_entry_free(&entry[i]);
     }
 
@@ -31,6 +33,7 @@ void destinationlist_entry_init(destinationlist_entry* entry) {
     strbuf_init(&entry->id);
     destination_sync_init(&entry->sync);
     destination_init(&entry->destination);
+    entry->loglevel = -1;
 }
 
 void destinationlist_entry_free(destinationlist_entry* entry) {
@@ -91,6 +94,42 @@ int destinationlist_configure(const strbuf* id, const strbuf* key, const strbuf*
     logger_set_prefix("destination.",12);
     logger_append_prefix((const char *)entry->id.x, entry->id.len);
 
+    if(strbuf_equals_cstr(key,"loglevel") ||
+       strbuf_equals_cstr(key,"log-level") ||
+       strbuf_equals_cstr(key,"log level")) {
+        if(strbuf_caseequals_cstr(value,"trace")) {
+            entry->loglevel = LOG_TRACE;
+            return 0;
+        }
+        if(strbuf_caseequals_cstr(value,"debug")) {
+            entry->loglevel = LOG_DEBUG;
+            return 0;
+        }
+        if(strbuf_caseequals_cstr(value,"info")) {
+            entry->loglevel = LOG_INFO;
+            return 0;
+        }
+        if(strbuf_caseequals_cstr(value,"warn")) {
+            entry->loglevel = LOG_WARN;
+            return 0;
+        }
+        if(strbuf_caseequals_cstr(value,"error")) {
+            entry->loglevel = LOG_ERROR;
+            return 0;
+        }
+        if(strbuf_caseequals_cstr(value,"fatal")) {
+            entry->loglevel = LOG_FATAL;
+            return 0;
+        }
+
+        fprintf(stderr,"unknown value %.*s for option %.*s\n",(int)value->len,value->x,
+          (int)key->len,key->x);
+        return 1;
+    }
+
+    logger_set_level((enum LOG_LEVEL) (entry->loglevel == -1 ? 
+      logger_get_default_level() : (enum LOG_LEVEL)entry->loglevel));
+
     return destination_config(&entry->destination,key,value);
 }
 
@@ -105,6 +144,9 @@ int destinationlist_open(const destinationlist* list, const ich_time* now) {
     for(i=0;i<len;i++) {
         logger_set_prefix("destination.",12);
         logger_append_prefix((const char *)entry[i].id.x, entry[i].id.len);
+        logger_set_level((enum LOG_LEVEL) (entry[i].loglevel == -1 ? 
+          logger_get_default_level() : (enum LOG_LEVEL)entry[i].loglevel));
+
         if( (r = destination_create(&entry[i].destination,now)) != 0) {
             fprintf(stderr,"[destinationlist] error prepping destination %.*s\n",
               (int)entry[i].id.len, (char *)entry[i].id.x);
@@ -121,6 +163,8 @@ static int destinationlist_entry_run(void *userdata) {
 
     logger_set_prefix("destination.",12);
     logger_append_prefix((const char *)entry->id.x,entry->id.len);
+    logger_set_level((enum LOG_LEVEL) (entry->loglevel == -1 ?
+      logger_get_default_level() : (enum LOG_LEVEL)entry->loglevel));
 
     entry->sync.frame_receiver.open         = (frame_receiver_open_cb)destination_open;
     entry->sync.frame_receiver.submit_frame = (frame_receiver_submit_frame_cb)destination_submit_frame;

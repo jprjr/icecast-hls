@@ -42,6 +42,7 @@ void sourcelist_entry_init(sourcelist_entry* entry) {
     entry->quit = NULL;
     entry->quit_userdata = NULL;
     entry->samplecount = 0;
+    entry->loglevel = -1;
 }
 
 void sourcelist_entry_dump_counters(const sourcelist_entry* entry) {
@@ -69,6 +70,8 @@ void sourcelist_free(sourcelist* slist) {
     for(i=0;i<len;i++) {
         logger_set_prefix("source.",7);
         logger_append_prefix((const char *)entry[i].id.x, entry[i].id.len);
+        logger_set_level((enum LOG_LEVEL) (entry[i].loglevel == -1 ? 
+          logger_get_default_level() : (enum LOG_LEVEL)entry[i].loglevel));
         sourcelist_entry_free(&entry[i]);
     }
 
@@ -114,6 +117,42 @@ int sourcelist_configure(const strbuf* id, const strbuf* key, const strbuf* valu
     logger_set_prefix("source.",7);
     logger_append_prefix((const char *)entry->id.x, entry->id.len);
 
+    if(strbuf_equals_cstr(key,"loglevel") ||
+       strbuf_equals_cstr(key,"log-level") ||
+       strbuf_equals_cstr(key,"log level")) {
+        if(strbuf_caseequals_cstr(value,"trace")) {
+            entry->loglevel = LOG_TRACE;
+            return 0;
+        }
+        if(strbuf_caseequals_cstr(value,"debug")) {
+            entry->loglevel = LOG_DEBUG;
+            return 0;
+        }
+        if(strbuf_caseequals_cstr(value,"info")) {
+            entry->loglevel = LOG_INFO;
+            return 0;
+        }
+        if(strbuf_caseequals_cstr(value,"warn")) {
+            entry->loglevel = LOG_WARN;
+            return 0;
+        }
+        if(strbuf_caseequals_cstr(value,"error")) {
+            entry->loglevel = LOG_ERROR;
+            return 0;
+        }
+        if(strbuf_caseequals_cstr(value,"fatal")) {
+            entry->loglevel = LOG_FATAL;
+            return 0;
+        }
+
+        fprintf(stderr,"unknown value %.*s for option %.*s\n",(int)value->len,value->x,
+          (int)key->len,key->x);
+        return 1;
+    }
+
+    logger_set_level((enum LOG_LEVEL) (entry->loglevel == -1 ? 
+      logger_get_default_level() : (enum LOG_LEVEL)entry->loglevel));
+
     return source_config(&entry->source,key,value);
 }
 
@@ -128,6 +167,8 @@ int sourcelist_open(const sourcelist* list, uint8_t shortflag) {
     for(i=0;i<len;i++) {
         logger_set_prefix("source.",7);
         logger_append_prefix((const char *)entry[i].id.x, entry[i].id.len);
+        logger_set_level((enum LOG_LEVEL) (entry[i].loglevel == -1 ? 
+          logger_get_default_level() : (enum LOG_LEVEL)entry[i].loglevel));
 
         if( (r = source_open(&entry[i].source)) != 0) {
             fprintf(stderr,"[sourcelist] error opening source %.*s\n",
@@ -335,6 +376,8 @@ static int sourcelist_entry_run(void *userdata) {
 
     logger_set_prefix("source.",7);
     logger_append_prefix((const char *)entry->id.x,entry->id.len);
+    logger_set_level((enum LOG_LEVEL) (entry->loglevel == -1 ? 
+      logger_get_default_level() : (enum LOG_LEVEL)entry->loglevel));
 
     /* this is where/how we forward tags, previously the source just cached them */
     tag_handler thdlr;
