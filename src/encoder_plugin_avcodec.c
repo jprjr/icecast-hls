@@ -8,14 +8,15 @@
 #include <libavutil/frame.h>
 #include <libavutil/channel_layout.h>
 #include <libavutil/dict.h>
+#include <libavutil/log.h>
 
 #include "ffmpeg-versions.h"
 
 #include <stdlib.h>
+#include <inttypes.h>
 
-#define LOG0(fmt) fprintf(stderr, "[encoder:avcodec] " fmt "\n")
-#define LOG1(fmt,a) fprintf(stderr, "[encoder:avcodec] " fmt "\n", (a))
-#define LOG2(fmt,a,b) fprintf(stderr, "[encoder:avcodec] " fmt "\n", (a), (b))
+#define LOG_PREFIX "[encoder:avcodec]"
+#include "logger.h"
 
 #define TRY0(exp, act) if( (r = (exp)) != 0 ) { act; goto cleanup; }
 #define TRY(exp, act) if(!(exp)) { act; r = -1; goto cleanup; }
@@ -286,7 +287,7 @@ static int drain_packets(plugin_userdata* userdata, const packet_receiver* dest,
     while( (av = avcodec_receive_packet(userdata->ctx, userdata->avpacket)) >= 0) {
         if(userdata->avpacket->duration == 0) {
             if(!flushing) {
-                LOG0("error, received a packet with zero duration");
+                logs_fatal("received a packet with zero duration");
                 av = AVERROR_EXTERNAL;
                 goto complete;
             }
@@ -295,14 +296,14 @@ static int drain_packets(plugin_userdata* userdata, const packet_receiver* dest,
         }
 
         if(avpacket_to_packet(&userdata->packet,userdata->avpacket) != 0) {
-          LOG0("unable to convert packet");
+          logs_fatal("unable to convert packet");
           av = AVERROR_EXTERNAL;
           goto complete;
         }
         userdata->packet.sample_rate = userdata->sample_rate;
 
         if(dest->submit_packet(dest->handle, &userdata->packet) != 0) {
-          LOG0("unable to send packet");
+          logs_error("unable to send packet");
           av = AVERROR_EXTERNAL;
           goto complete;
         }
@@ -319,7 +320,7 @@ static int open_encoder(plugin_userdata* userdata) {
     AVRational time_base;
 
     TRY( (userdata->ctx = avcodec_alloc_context3(userdata->codec)) != NULL,
-        LOG0("out of memory"));
+        logs_fatal("out of memory"));
 
     time_base.num = 1;
     time_base.den = userdata->sample_rate;
@@ -332,7 +333,7 @@ static int open_encoder(plugin_userdata* userdata) {
     if(userdata->codec_config != NULL) {
 #if ICH_AVUTIL_DICT_COPY_INT
         TRY(av_dict_copy(&opts,userdata->codec_config,0) == 0,
-            LOG0("error copying codec_config"));
+            logs_fatal("error copying codec_config"));
 #else
         av_dict_copy(&opts,userdata->codec_config,0);
 #endif
@@ -343,11 +344,11 @@ static int open_encoder(plugin_userdata* userdata) {
     }
 
     TRY(avcodec_open2(userdata->ctx, userdata->codec, &opts) >= 0,
-        LOG0("unable to open codec context"));
+        logs_fatal("unable to open codec context"));
 
     if(opts != NULL) {
         while( (t = av_dict_get(opts, "", t, AV_DICT_IGNORE_SUFFIX)) != NULL) {
-            LOG2("warning: unused option %s=%s",
+            log_error("warning: unused option %s=%s",
               t->key, t->value);
         }
     }
@@ -359,10 +360,28 @@ static int open_encoder(plugin_userdata* userdata) {
     return r;
 }
 
+static void plugin_avlog(void* ud, int level, const char* fmt, va_list ap) {
+    (void)ud;
+    enum LOG_LEVEL l;
+    switch(level) {
+        case AV_LOG_ERROR: l = LOG_ERROR; break;
+        case AV_LOG_WARNING: l = LOG_WARN; break;
+        case AV_LOG_INFO: l = LOG_INFO; break;
+        case AV_LOG_VERBOSE: l = LOG_DEBUG; break;
+        case AV_LOG_DEBUG: l = LOG_DEBUG; break;
+        case AV_LOG_TRACE: l = LOG_TRACE; break;
+        default: l = LOG_FATAL; break;
+    }
+    vlogger_log(l, __FILE__, __LINE__, fmt, ap);
+}
+
 static int plugin_init(void) {
 #if ICH_AVCODEC_REGISTER_ALL
     avcodec_register_all();
 #endif
+    /* this might conflict with the avformat demuxer
+     * or avcodec decoder but it really doesn't matter */
+    av_log_set_callback(plugin_avlog);
     return 0;
 }
 
@@ -415,18 +434,18 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
     strbuf_init(&tmp2);
 
     if(strbuf_equals_cstr(key,"c") || strbuf_equals_cstr(key,"codec")) {
-        TRY0(strbuf_copy(&tmp1,value),LOG0("out of memory"));
-        TRY0(strbuf_term(&tmp1),LOG0("out of memory"));
+        TRY0(strbuf_copy(&tmp1,value),logs_fatal("out of memory"));
+        TRY0(strbuf_term(&tmp1),logs_fatal("out of memory"));
 
         TRY( (userdata->codec = avcodec_find_encoder_by_name((char *)tmp1.x)) != NULL,
-          LOG1("unable to find codec %s",(char*)tmp1.x));
+          log_error("unable to find codec %s",(char*)tmp1.x));
         goto cleanup;
     }
 
-    TRY0(strbuf_copy(&tmp1,key),LOG0("out of memory"));
-    TRY0(strbuf_term(&tmp1),LOG0("out of memory"));
-    TRY0(strbuf_copy(&tmp2,value),LOG0("out of memory"));
-    TRY0(strbuf_term(&tmp2),LOG0("out of memory"));
+    TRY0(strbuf_copy(&tmp1,key),logs_fatal("out of memory"));
+    TRY0(strbuf_term(&tmp1),logs_fatal("out of memory"));
+    TRY0(strbuf_copy(&tmp2,value),logs_fatal("out of memory"));
+    TRY0(strbuf_term(&tmp2),logs_fatal("out of memory"));
 
     av_dict_set(&userdata->codec_config,(char *)tmp1.x,(char*)tmp2.x,0);
 
@@ -453,19 +472,19 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
 
     if(userdata->codec == NULL) {
         TRY( (userdata->codec = avcodec_find_encoder_by_name("aac")) != NULL,
-            LOG0("no encoder specified and unable to find a default"));
+            logs_error("no encoder specified and unable to find a default"));
     }
 
     userdata->sample_rate    = source->sample_rate;
     userdata->channel_layout = source->channel_layout;
     TRY( (userdata->sample_fmt = find_best_format(userdata->codec,samplefmt_to_avsampleformat(source->format))) != AV_SAMPLE_FMT_NONE,
-        LOG0("unable to find a suitable sample format"));
+        logs_error("unable to find a suitable sample format"));
 
-    TRY(open_encoder(userdata) == 0, LOG0("error opening encoder"));
+    TRY(open_encoder(userdata) == 0, logs_error("error opening encoder"));
 
     if( ctx_extradata_size(userdata->ctx) > 0) {
         TRY0(membuf_append(&userdata->me.dsi, ctx_extradata(userdata->ctx), ctx_extradata_size(userdata->ctx)),
-        LOG0("out of memory"));
+        logs_fatal("out of memory"));
     }
 
     switch(userdata->codec->id) {
@@ -510,7 +529,7 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
         }
 
         default: {
-            TRY(0, LOG0("unsupported codec type"));
+            TRY(0, logs_error("unsupported codec type"));
         }
     }
 
@@ -530,10 +549,10 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
 
     if(userdata->me.frame_len == 0) userdata->me.frame_len = 1024;
 
-    TRY( (userdata->avframe = av_frame_alloc()) != NULL, LOG0("out of memory"));
-    TRY( (userdata->avpacket = av_packet_alloc()) != NULL, LOG0("out of memory"));
+    TRY( (userdata->avframe = av_frame_alloc()) != NULL,   logs_fatal("out of memory"));
+    TRY( (userdata->avpacket = av_packet_alloc()) != NULL, logs_fatal("out of memory"));
 
-    TRY0(dest->open(dest->handle, &userdata->me), LOG0("error configuring muxer"));
+    TRY0(dest->open(dest->handle, &userdata->me), logs_error("error configuring muxer"));
 
     cleanup:
     return r;
@@ -548,16 +567,16 @@ static int plugin_drain(plugin_userdata* userdata, const packet_receiver* dest, 
     r = 0;
     while(userdata->buffer.duration >= (unsigned int)duration) {
         TRY0(frame_to_avframe(userdata->avframe,&userdata->buffer,duration,userdata->channel_layout),
-          LOG0("unable to convert frame"));
+          logs_fatal("unable to convert frame"));
         frame_trim(&userdata->buffer,duration);
 
         TRY( (av = avcodec_send_frame(userdata->ctx,userdata->avframe)) >= 0,
           av_strerror(av, averrbuf, sizeof(averrbuf));
-          LOG1("unable to send frame: %s",averrbuf));
+          log_error("unable to send frame: %s",averrbuf));
 
         TRY( (av = drain_packets(userdata,dest, 0)) == AVERROR(EAGAIN),
           av_strerror(av, averrbuf, sizeof(averrbuf));
-          LOG1("frame: error receiving packet: %s",averrbuf));
+          log_error("frame: error receiving packet: %s",averrbuf));
         r = 0;
     }
 
@@ -571,7 +590,7 @@ static int plugin_submit_frame(void* ud, const frame* frame, const packet_receiv
     plugin_userdata* userdata = (plugin_userdata*)ud;
 
     if( (r = frame_append(&userdata->buffer,frame)) != 0) {
-        LOG1("error appending frame to internal buffer: %d",r);
+        log_error("error appending frame to internal buffer: %d",r);
         return r;
     }
 
@@ -598,11 +617,11 @@ static int plugin_flush(void* ud, const packet_receiver* dest) {
 
     TRY( (av = avcodec_send_frame(userdata->ctx,NULL)) >= 0,
       av_strerror(av, averrbuf, sizeof(averrbuf));
-      LOG1("unable to flush encoder: %s",averrbuf));
+      log_error("unable to flush encoder: %s",averrbuf));
 
     TRY( (av = drain_packets(userdata,dest,1)) == AVERROR_EOF,
       av_strerror(av, averrbuf, sizeof(averrbuf));
-      LOG1("flush: error receiving packet: %s",averrbuf));
+      log_error("flush: error receiving packet: %s",averrbuf));
     r = 0;
 
     cleanup:

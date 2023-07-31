@@ -512,10 +512,26 @@ static int load_packet_source(demuxer_plugin_avformat_userdata* userdata, const 
 
 }
 
+static void plugin_avlog(void* ud, int level, const char* fmt, va_list ap) {
+    (void)ud;
+    enum LOG_LEVEL l;
+    switch(level) {
+        case AV_LOG_ERROR: l = LOG_ERROR; break;
+        case AV_LOG_WARNING: l = LOG_WARN; break;
+        case AV_LOG_INFO: l = LOG_INFO; break;
+        case AV_LOG_VERBOSE: l = LOG_DEBUG; break;
+        case AV_LOG_DEBUG: l = LOG_DEBUG; break;
+        case AV_LOG_TRACE: l = LOG_TRACE; break;
+        default: l = LOG_FATAL; break;
+    }
+    vlogger_log(l, __FILE__, __LINE__, fmt, ap);
+}
+
 static int demuxer_plugin_avformat_init(void) {
 #if ICH_AVFORMAT_REGISTER_ALL
     av_register_all();
 #endif
+    av_log_set_callback(plugin_avlog);
     return 0;
 }
 
