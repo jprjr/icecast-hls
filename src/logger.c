@@ -147,7 +147,7 @@ int logger_set_prefix(const char *prefix, size_t len) {
         config = (logger_config *) thread_tls_get(thread_config);
     }
 
-    config->prefix = (char *)malloc(len + 1);
+    config->prefix = (char *)realloc(config->prefix, len + 1);
     if(config->prefix == NULL) return -1;
     memcpy(&config->prefix[0],prefix,len);
     config->prefix[len] = '\0';
