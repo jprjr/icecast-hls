@@ -578,7 +578,9 @@ int hls_submit_picture(hls* h, const picture* src, picture* out) {
 
     TRYS(strbuf_append(&out->mime,"-->",3));
     if(src->desc.len > 0) TRYS(strbuf_copy(&out->desc,&src->desc));
-    TRYS(strbuf_copy(&out->data,&dest_filename));
+    strbuf_reset(&out->data);
+    if(h->entry_prefix.len != 0) TRYS(strbuf_cat(&out->data,&h->entry_prefix));
+    TRYS(strbuf_cat(&out->data,&dest_filename));
     r = 0;
 
     cleanup:
