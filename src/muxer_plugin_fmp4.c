@@ -347,7 +347,7 @@ static int plugin_submit_tags(void* ud, const taglist* tags, const segment_recei
 
     id3_reset(&userdata->id3);
     if(id3_add_taglist(&userdata->id3,tags) < 0) {
-        fprintf(stderr,"had some kind of error on making a taglist!");
+        logs_error("had some kind of error on making a taglist!");
         return -1;
     }
 

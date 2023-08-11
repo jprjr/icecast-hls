@@ -24,6 +24,9 @@
 #include <unistd.h>
 #endif
 
+#define LOG_PREFIX "[output:folder]"
+#include "logger.h"
+
 static STRBUF_CONST(plugin_name,"folder");
 
 struct plugin_userdata {
@@ -59,6 +62,11 @@ static int directory_create(const strbuf* foldername) {
         if(errno == EEXIST) {
             r = 0;
             errno = 0;
+        }
+        else {
+            log_error("unable to create folder %s: %s",
+              (const char *)foldername->x,
+              strerror(errno));
         }
     }
     return r;
@@ -133,7 +141,7 @@ static int plugin_open(void* ud, const segment_source* source) {
 
     if( (r = strbuf_append(&tmp,(char *)userdata->foldername.x,userdata->foldername.len-1)) != 0) return -1;
     if( (r = strbuf_term(&tmp)) != 0) return -1;
-    if(directory_create(&tmp) != 0) return r;
+    if( (r = directory_create(&tmp)) != 0) return r;
     strbuf_free(&tmp);
 
     return hls_open(&userdata->hls, source);
