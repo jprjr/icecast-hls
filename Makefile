@@ -54,6 +54,7 @@ SOURCES = \
 	src/muxer.c \
 	src/muxer_plugin.c \
 	src/muxer_plugin_adts.c \
+	src/muxer_plugin_flac.c \
 	src/muxer_plugin_fmp4.c \
 	src/muxer_plugin_ogg.c \
 	src/muxer_plugin_ogg_flac.c \
@@ -123,6 +124,7 @@ REQUIRED_OBJS = \
 	src/muxer.o \
 	src/muxer_plugin.o \
 	src/muxer_plugin_adts.o \
+	src/muxer_plugin_flac.o \
 	src/muxer_plugin_fmp4.o \
 	src/muxer_plugin_ogg.o \
 	src/muxer_plugin_ogg_flac.o \
