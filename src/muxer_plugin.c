@@ -1,17 +1,19 @@
 #include "muxer_plugin_flac.h"
 #include "muxer_plugin_fmp4.h"
+#include "muxer_plugin_ts.h"
 #include "muxer_plugin_adts.h"
 #include "muxer_plugin_packedaudio.h"
 #include "muxer_plugin_passthrough.h"
 #include "muxer_plugin_ogg.h"
 
 const muxer_plugin* muxer_plugin_list[] = {
-    &muxer_plugin_flac,
     &muxer_plugin_fmp4,
+    &muxer_plugin_ts,
     &muxer_plugin_packed_audio,
     &muxer_plugin_adts,
     &muxer_plugin_passthrough,
     &muxer_plugin_ogg,
+    &muxer_plugin_flac,
     NULL,
 };
 

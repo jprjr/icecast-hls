@@ -7,16 +7,20 @@
 struct bitreader {
     uint64_t val;
     uint8_t  bits;
-    uint32_t pos;
-    uint32_t len;
+    size_t   pos;
+    size_t   len;
     const uint8_t* buffer;
 };
 
 typedef struct bitreader bitreader;
 
+#define BITREADER_ZERO { .val = 0, .bits = 0, .pos = 0, .len = 0, .buffer = NULL }
+static const bitreader bitreader_zero = BITREADER_ZERO;
 
 static inline void
-bitreader_init(bitreader* br);
+bitreader_init(bitreader* br) {
+    *br = bitreader_zero;
+}
 
 static inline int
 bitreader_fill(bitreader* br, uint8_t bits);
@@ -32,15 +36,6 @@ bitreader_peek(bitreader* br, uint8_t bits);
 
 static inline void
 bitreader_align(bitreader* br);
-
-static inline void
-bitreader_init(bitreader* br) {
-    br->val = 0;
-    br->bits = 0;
-    br->pos = 0;
-    br->len = 0;
-    br->buffer = NULL;
-}
 
 static inline int
 bitreader_fill(bitreader* br, uint8_t bits) {

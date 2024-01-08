@@ -7,6 +7,7 @@
 #include <inttypes.h>
 
 #include "id3.h"
+#include "adts_mux.h"
 #include "pack_u64be.h"
 
 #define LOG_PREFIX "[muxer:packed-audio]"
@@ -33,9 +34,7 @@ struct plugin_userdata {
     uint64_t samples_per_segment;
     membuf samples;
     membuf segment;
-    uint8_t profile;
-    uint8_t freq;
-    uint8_t ch_index;
+    adts_mux adts_muxer;
     uint64_t ts; /* represents the 33-bit MPEG timestamp */
     id3 id3;
     taglist taglist;
@@ -52,32 +51,18 @@ static int append_packet_passthrough(struct plugin_userdata* userdata, const pac
 }
 
 static int append_packet_adts(struct plugin_userdata* userdata, const packet* p) {
-    int r;
-    uint8_t adts_header[7];
-    adts_header[0] = 0xFF;
-    adts_header[1] = 0xF1;
-    adts_header[2] = 0x00;
-    adts_header[2] |= (userdata->profile & 0x03) << 6;
-    adts_header[2] |= (userdata->freq & 0x0F) << 2;
-    adts_header[2] |= (userdata->ch_index & 0x04) >> 2;
-    adts_header[3] = 0x00;
-    adts_header[3] |= (userdata->ch_index & 0x03) << 6;
-    adts_header[3] |= ( (7 + p->data.len) & 0x1800) >> 11;
-    adts_header[4] = 0x00;
-    adts_header[4] |= ( (7 + p->data.len) & 0x07F8) >> 3;
-    adts_header[5] = 0x00;
-    adts_header[5] |= ( (7 + p->data.len) & 0x0007) << 5;
-    adts_header[5] |= 0x1F;
-    adts_header[6] = 0xFC;
+    packet tmp = PACKET_ZERO;
+    adts_mux_encode_packet(&userdata->adts_muxer, p->data.x, p->data.len);
+    tmp.duration     = p->duration;
+    tmp.sample_rate  = p->sample_rate;
+    tmp.sample_group = p->sample_group;
+    tmp.pts          = p->pts;
+    tmp.sync         = p->sync;
 
-    if( (r = membuf_append(&userdata->samples,adts_header,7)) != 0) {
-        LOGERRNO("error appending packet");
-    }
+    tmp.data.x       = userdata->adts_muxer.buffer;
+    tmp.data.len     = userdata->adts_muxer.len;
 
-    if( (r = membuf_cat(&userdata->samples,&p->data)) != 0) {
-        LOGERRNO("error appending packet");
-    }
-    return r;
+    return append_packet_passthrough(userdata, &tmp);
 }
 
 static size_t plugin_size(void) {
@@ -91,11 +76,9 @@ static int plugin_reset(void* ud) {
     membuf_reset(&userdata->segment);
     id3_reset(&userdata->id3);
     taglist_reset(&userdata->taglist);
+    adts_mux_init(&userdata->adts_muxer);
 
     userdata->append_packet = NULL;
-    userdata->profile = 0;
-    userdata->freq = 0;
-    userdata->ch_index = 0;
     userdata->samples_per_segment = 0;
     userdata->ts = 0;
     userdata->samplecount = 0;
@@ -121,7 +104,6 @@ static void plugin_close(void* ud) {
     membuf_free(&userdata->segment);
     id3_free(&userdata->id3);
     taglist_free(&userdata->taglist);
-
 }
 
 static int plugin_open(void* ud, const packet_source* source, const segment_receiver* dest) {
@@ -154,6 +136,8 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 
     switch(source->codec) {
         case CODEC_TYPE_AAC: {
+            adts_mux_init(&userdata->adts_muxer);
+
             switch(profile) {
                 case CODEC_PROFILE_AAC_LC: break;
                 case CODEC_PROFILE_AAC_HE2: {
@@ -173,41 +157,18 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
                 }
             }
 
-            switch(sample_rate) {
-                case 96000: userdata->freq = 0x00; break;
-                case 88200: userdata->freq = 0x01; break;
-                case 64000: userdata->freq = 0x02; break;
-                case 48000: userdata->freq = 0x03; break;
-                case 44100: userdata->freq = 0x04; break;
-                case 32000: userdata->freq = 0x05; break;
-                case 24000: userdata->freq = 0x06; break;
-                case 22050: userdata->freq = 0x07; break;
-                case 16000: userdata->freq = 0x08; break;
-                case 12000: userdata->freq = 0x09; break;
-                case 11025: userdata->freq = 0x0A; break;
-                case  8000: userdata->freq = 0x0B; break;
-                case  7350: userdata->freq = 0x0C; break;
-                default: {
-                    log_error("unsupported sample rate %u",sample_rate);
-                    return -1;
-                }
+            if(adts_mux_set_sample_rate(&userdata->adts_muxer, sample_rate) != 0) {
+                log_error("unsupported sample rate %u", sample_rate);
+                return -1;
             }
 
-            switch(channel_layout) {
-                case LAYOUT_MONO: userdata->ch_index = 1; break;
-                case LAYOUT_STEREO: userdata->ch_index = 2; break;
-                case LAYOUT_STEREO | CHANNEL_FRONT_CENTER: userdata->ch_index = 3; break;
-                case LAYOUT_STEREO | CHANNEL_FRONT_CENTER | CHANNEL_BACK_CENTER: userdata->ch_index = 4; break;
-                case LAYOUT_5_0: userdata->ch_index = 5; break;
-                case LAYOUT_5_1: userdata->ch_index = 6; break;
-                case LAYOUT_7_1: userdata->ch_index = 7; break;
-                default: {
-                    log_error("unsupported channel layout 0x%" PRIx64, channel_layout);
-                    return -1;
-                }
+            if(adts_mux_set_channel_layout(&userdata->adts_muxer, channel_layout) != 0) {
+                log_error("unsupported channel layout 0x%" PRIx64, channel_layout);
+                return -1;
             }
+            adts_mux_set_profile(&userdata->adts_muxer, profile);
+
             userdata->append_packet = append_packet_adts;
-            userdata->profile = profile - 1;
             me.media_ext = &ext_aac;
             me.media_mimetype = &mime_aac;
             break;
