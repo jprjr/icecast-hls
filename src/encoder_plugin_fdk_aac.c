@@ -545,7 +545,7 @@ static void plugin_deinit(void) {
 }
 
 const encoder_plugin encoder_plugin_fdk_aac = {
-    plugin_name,
+    &plugin_name,
     plugin_size,
     plugin_init,
     plugin_deinit,

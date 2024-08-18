@@ -121,7 +121,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
 
 
 const decoder_plugin decoder_plugin_auto = {
-    plugin_name,
+    &plugin_name,
     plugin_size,
     plugin_init,
     plugin_deinit,

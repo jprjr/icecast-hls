@@ -266,7 +266,7 @@ static int plugin_reset(void* userdata) {
 }
 
 const output_plugin output_plugin_file = {
-    plugin_name,
+    &plugin_name,
     plugin_size,
     plugin_init,
     plugin_deinit,

@@ -29,7 +29,7 @@ typedef void (*input_plugin_close)(void* userdata);
 typedef size_t (*input_plugin_read)(void* userdata, void* dest, size_t len, const tag_handler*);
 
 struct input_plugin {
-    const strbuf name;
+    const strbuf* name;
     input_plugin_size size;
     input_plugin_init init;
     input_plugin_deinit deinit;

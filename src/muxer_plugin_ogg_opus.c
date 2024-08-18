@@ -380,7 +380,7 @@ static int plugin_get_segment_info(const void* ud, const packet_source_info* s, 
 }
 
 const muxer_plugin muxer_plugin_ogg_opus = {
-    plugin_name,
+    &plugin_name,
     plugin_size,
     plugin_init,
     plugin_deinit,

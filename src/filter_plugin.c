@@ -21,7 +21,7 @@ const filter_plugin* filter_plugin_list[] = {
 const filter_plugin* filter_plugin_get(const strbuf* name) {
     const filter_plugin** plug = filter_plugin_list;
     while(*plug != NULL) {
-        if( strbuf_equals(name, &((*plug)->name)) ) return *plug;
+        if( strbuf_equals(name, (*plug)->name) ) return *plug;
         plug++;
     }
     return NULL;

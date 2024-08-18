@@ -64,7 +64,7 @@ static int plugin_reset(void* ud) {
 }
 
 const encoder_plugin encoder_plugin_passthrough = {
-    plugin_name,
+    &plugin_name,
     plugin_size,
     plugin_init,
     plugin_deinit,

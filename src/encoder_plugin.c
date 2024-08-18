@@ -54,7 +54,7 @@ const encoder_plugin* encoder_plugin_list[] = {
 const encoder_plugin* encoder_plugin_get(const strbuf* name) {
     const encoder_plugin** plug = encoder_plugin_list;
     while(*plug != NULL) {
-        if( strbuf_equals(name, &((*plug)->name)) ) return *plug;
+        if( strbuf_equals(name, (*plug)->name) ) return *plug;
         plug++;
     }
     return NULL;

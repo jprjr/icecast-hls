@@ -783,7 +783,7 @@ static int plugin_run(void* ud, const tag_handler* thandler, const packet_receiv
 }
 
 const demuxer_plugin demuxer_plugin_ogg = {
-    plugin_name,
+    &plugin_name,
     plugin_size,
     plugin_init,
     plugin_deinit,

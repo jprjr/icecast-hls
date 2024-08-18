@@ -17,6 +17,7 @@
 #define LOGINT(s, i) log_error(s": %d", i)
 #define LOGS(s,a) log_error(s, (int)(a).len, (char *)(a).x)
 
+static STRBUF_CONST(plugin_name,"curl");
 static STRBUF_CONST(ICY_TITLE,"icy_title");
 static STRBUF_CONST(ICY_NAME,"icy_name");
 static STRBUF_CONST(ICY_GENRE,"icy_genre");
@@ -82,7 +83,11 @@ static size_t input_plugin_curl_buffer(input_plugin_curl_userdata* userdata, siz
         if(!still_running) break;
 
         do {
+#if CURL_AT_LEAST_VERSION(7,66,0)
             mc = curl_multi_poll(userdata->mhandle, NULL, 0, timeout, &numfds);
+#else
+            mc = curl_multi_wait(userdata->mhandle, NULL, 0, timeout, &numfds);
+#endif
             if(mc != 0) {
                 LOGINT("error calling curl_multi_poll",mc);
                 return 0;
@@ -121,7 +126,11 @@ static size_t input_plugin_curl_read_dummy(input_plugin_curl_userdata* userdata,
         if(!still_running) return 0;
 
         do {
+#if CURL_AT_LEAST_VERSION(7,66,0)
             mc = curl_multi_poll(userdata->mhandle, NULL, 0, userdata->connect_timeout, &numfds);
+#else
+            mc = curl_multi_wait(userdata->mhandle, NULL, 0, userdata->connect_timeout, &numfds);
+#endif
 
             if(mc != 0) {
                 LOGINT("error calling curl_multi_poll",mc);
@@ -636,7 +645,7 @@ static size_t input_plugin_curl_read(void* ud, void* dest, size_t len, const tag
 
 
 const input_plugin input_plugin_curl = {
-    { .a = 0, .len = 4, .x = (uint8_t*)"curl" },
+    &plugin_name,
     input_plugin_curl_size,
     input_plugin_curl_init,
     input_plugin_curl_deinit,

@@ -31,7 +31,7 @@ typedef int (*demuxer_plugin_run)(void* userdata, const tag_handler* thandler, c
 typedef void (*demuxer_plugin_close)(void* userdata);
 
 struct demuxer_plugin {
-    const strbuf name;
+    const strbuf* name;
     demuxer_plugin_size size;
     demuxer_plugin_init init;
     demuxer_plugin_deinit deinit;

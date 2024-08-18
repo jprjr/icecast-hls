@@ -821,7 +821,7 @@ static int demuxer_plugin_avformat_run(void* ud, const tag_handler* thandler, co
 }
 
 const demuxer_plugin demuxer_plugin_avformat = {
-    plugin_name,
+    &plugin_name,
     demuxer_plugin_avformat_size,
     demuxer_plugin_avformat_init,
     demuxer_plugin_avformat_deinit,

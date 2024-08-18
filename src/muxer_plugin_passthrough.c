@@ -140,7 +140,7 @@ static int muxer_plugin_passthrough_get_segment_info(const void* ud, const packe
 }
 
 const muxer_plugin muxer_plugin_passthrough = {
-    plugin_name,
+    &plugin_name,
     muxer_plugin_passthrough_size,
     muxer_plugin_passthrough_init,
     muxer_plugin_passthrough_deinit,

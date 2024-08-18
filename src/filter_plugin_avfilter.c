@@ -380,7 +380,7 @@ static void plugin_close(void* ud) {
 
 
 const filter_plugin filter_plugin_avfilter = {
-    plugin_name,
+    &plugin_name,
     plugin_size,
     plugin_init,
     plugin_deinit,

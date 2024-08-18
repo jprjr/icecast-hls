@@ -25,7 +25,7 @@ typedef int (*filter_plugin_flush)(void* userdata, const frame_receiver* handler
 typedef int (*filter_plugin_reset)(void* userdata);
 
 struct filter_plugin {
-    const strbuf name;
+    const strbuf* name;
     filter_plugin_size size;
     filter_plugin_init init;
     filter_plugin_deinit deinit;

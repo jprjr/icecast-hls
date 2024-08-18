@@ -20,7 +20,7 @@ const muxer_plugin* muxer_plugin_list[] = {
 const muxer_plugin* muxer_plugin_get(const strbuf* name) {
     const muxer_plugin** plug = muxer_plugin_list;
     while(*plug != NULL) {
-        if( strbuf_equals(name, &((*plug)->name)) ) return *plug;
+        if( strbuf_equals(name, (*plug)->name) ) return *plug;
         plug++;
     }
     return NULL;

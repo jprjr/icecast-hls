@@ -103,16 +103,16 @@ int encoder_open(encoder* e, const frame_source* source) {
     receiver.get_segment_info = encoder_get_segment_info_wrapper;
 
     log_debug("opening %.*s plugin",
-      (int)e->plugin->name.len,
-      (const char *)e->plugin->name.x);
+      (int)e->plugin->name->len,
+      (const char *)e->plugin->name->x);
 
     return e->plugin->open(e->userdata, source, &receiver);
 }
 
 int encoder_config(const encoder* e, const strbuf* name, const strbuf* value) {
     log_debug("configuring plugin %.*s %.*s=%.*s",
-      (int)e->plugin->name.len,
-      (const char *)e->plugin->name.x,
+      (int)e->plugin->name->len,
+      (const char *)e->plugin->name->x,
       (int)name->len,
       (const char *)name->x,
       (int)value->len,

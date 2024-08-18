@@ -124,10 +124,15 @@ static int output_plugin_curl_hls_write(void* ud, const strbuf* filename, const 
     TRYS(strbuf_term(&userdata->tmp));
 
     if(userdata->aws_param.len > 0) {
+#if CURL_AT_LEAST_VERSION(7,75,0)
         if( (c = curl_easy_setopt(userdata->handle, CURLOPT_AWS_SIGV4, userdata->aws_param.x)) != 0) {
             LOGCURLE("error setting aws sigv4", c);
             return -1;
         }
+#else
+        LOG0("error: this version of libcurl does not support computing an AWS V4 signature");
+        return -1;
+#endif
     }
 
     if(userdata->http_userpwd.len > 0) {
@@ -228,10 +233,15 @@ static int output_plugin_curl_hls_delete(void* ud, const strbuf* filename) {
     TRYS(strbuf_term(&userdata->tmp));
 
     if(userdata->aws_param.len > 0) {
+#if CURL_AT_LEAST_VERSION(7,75,0)
         if( (c = curl_easy_setopt(userdata->handle, CURLOPT_AWS_SIGV4, userdata->aws_param.x)) != 0) {
             LOGCURLE("error setting aws sigv4", c);
             return -1;
         }
+#else
+        LOG0("error: this version of libcurl does not support computing an AWS V4 signature");
+        return -1;
+#endif
     }
 
     if(userdata->http_userpwd.len > 0) {
@@ -589,6 +599,7 @@ static int output_plugin_curl_open(void* ud, const segment_source* source) {
             LOG0("error appending aws provider info");
             return -1;
         }
+
         if(userdata->aws_region.len > 0) {
             if(strbuf_append_cstr(&userdata->aws_param,":") != 0) {
                 LOG0("error appending aws colon");
@@ -697,7 +708,7 @@ static int output_plugin_curl_submit_tags(void* ud, const taglist* tags) {
 }
 
 const output_plugin output_plugin_curl = {
-    plugin_name,
+    &plugin_name,
     output_plugin_curl_size,
     output_plugin_curl_init,
     output_plugin_curl_deinit,

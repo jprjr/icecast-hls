@@ -1,8 +1,8 @@
 .PHONY: all clean
 
 PKGCONFIG=pkg-config
-CFLAGS = -Wall -Wextra -g -O2 -fPIC
-LDFLAGS =
+CFLAGS = -Wall -Wextra -g -O2 -fPIC -pthread
+LDFLAGS = -pthread
 
 SOURCES = \
 	src/avcodec_utils.c \
@@ -14,6 +14,8 @@ SOURCES = \
 	src/main.c \
 	src/miniflac.c \
 	src/minifmp4.c \
+	src/ts.c \
+	src/adts_mux.c \
 	src/codecs.c \
 	src/decoder.c \
 	src/decoder_plugin.c \
@@ -61,6 +63,8 @@ SOURCES = \
 	src/muxer_plugin_ogg_opus.c \
 	src/muxer_plugin_packedaudio.c \
 	src/muxer_plugin_passthrough.c \
+	src/muxer_plugin_passthrough.c \
+	src/muxer_plugin_ts.c \
 	src/output.c \
 	src/output_plugin.c \
 	src/output_plugin_curl.c \
@@ -92,7 +96,9 @@ REQUIRED_OBJS = \
 	src/membuf.o \
 	src/miniflac.o \
 	src/minifmp4.o \
-	src/codecs.c \
+	src/codecs.o \
+	src/adts_mux.o \
+	src/ts.o \
 	src/decoder.o \
 	src/decoder_plugin.o \
 	src/decoder_plugin_auto.o \
@@ -131,6 +137,7 @@ REQUIRED_OBJS = \
 	src/muxer_plugin_ogg_opus.o \
 	src/muxer_plugin_packedaudio.o \
 	src/muxer_plugin_passthrough.o \
+	src/muxer_plugin_ts.o \
 	src/output.o \
 	src/output_plugin.o \
 	src/output_plugin_file.o \
@@ -339,3 +346,4 @@ src/thread.o: src/thread.c src/thread.h
 
 src/miniflac.o: src/miniflac.c src/miniflac.h
 	$(CC) $(CFLAGS) -c -o $@ $<
+

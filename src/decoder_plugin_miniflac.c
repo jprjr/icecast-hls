@@ -197,7 +197,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* val) {
 
 
 const decoder_plugin decoder_plugin_miniflac = {
-    plugin_name,
+    &plugin_name,
     plugin_size,
     plugin_init,
     plugin_deinit,

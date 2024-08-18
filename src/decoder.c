@@ -131,16 +131,16 @@ int decoder_open(decoder* dec, const packet_source *src) {
     receiver.open = decoder_open_wrapper;
 
     log_debug("opening %.*s plugin",
-      (int)dec->plugin->name.len,
-      (const char *)dec->plugin->name.x);
+      (int)dec->plugin->name->len,
+      (const char *)dec->plugin->name->x);
 
     return dec->plugin->open(dec->userdata, src, &receiver);
 }
 
 int decoder_config(const decoder* dec, const strbuf* name, const strbuf* value) {
     log_debug("configuring plugin %.*s %.*s=%.*s",
-      (int)dec->plugin->name.len,
-      (const char *)dec->plugin->name.x,
+      (int)dec->plugin->name->len,
+      (const char *)dec->plugin->name->x,
       (int)name->len,
       (const char *)name->x,
       (int)value->len,

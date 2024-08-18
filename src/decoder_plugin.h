@@ -30,7 +30,7 @@ typedef int (*decoder_plugin_reset)(void* userdata);
 typedef void (*decoder_plugin_close)(void* userdata);
 
 struct decoder_plugin {
-    const strbuf name;
+    const strbuf* name;
     decoder_plugin_size size;
     decoder_plugin_init init;
     decoder_plugin_deinit deinit;

@@ -630,7 +630,7 @@ static int plugin_flush(void* ud, const packet_receiver* dest) {
 }
 
 const encoder_plugin encoder_plugin_avcodec = {
-    plugin_name,
+    &plugin_name,
     plugin_size,
     plugin_init,
     plugin_deinit,

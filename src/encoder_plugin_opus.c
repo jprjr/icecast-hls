@@ -448,7 +448,7 @@ static void encoder_plugin_opus_deinit(void) {
 }
 
 const encoder_plugin encoder_plugin_opus = {
-    plugin_name,
+    &plugin_name,
     encoder_plugin_opus_size,
     encoder_plugin_opus_init,
     encoder_plugin_opus_deinit,

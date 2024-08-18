@@ -7,6 +7,15 @@
 #include "tagmap_default.h"
 #include "ich_time.h"
 #include "logger.h"
+#include "version.h"
+
+#include "input_plugin.h"
+#include "demuxer_plugin.h"
+#include "decoder_plugin.h"
+#include "filter_plugin.h"
+#include "encoder_plugin.h"
+#include "muxer_plugin.h"
+#include "output_plugin.h"
 
 #include "ini.h"
 
@@ -248,6 +257,61 @@ static int usage(int e) {
     return e;
 }
 
+static int dump_version_info(int e) {
+    const input_plugin** input_plug = input_plugin_list;
+    const demuxer_plugin** demuxer_plug = demuxer_plugin_list;
+    const decoder_plugin** decoder_plug = decoder_plugin_list;
+    const filter_plugin** filter_plug = filter_plugin_list;
+    const encoder_plugin** encoder_plug = encoder_plugin_list;
+    const muxer_plugin** muxer_plug = muxer_plugin_list;
+    const output_plugin** output_plug = output_plugin_list;
+
+    fprintf(stderr,"%s %s\n", progname, icecast_hls_version_string());
+    fprintf(stderr,"\ninput plugins:\n");
+    while(*input_plug != NULL) {
+        fprintf(stderr,"  %.*s\n", (int)(*input_plug)->name->len, (const char *)(*input_plug)->name->x);
+        input_plug++;
+    }
+
+    fprintf(stderr,"\ndemuxer plugins:\n");
+    while(*demuxer_plug != NULL) {
+        fprintf(stderr,"  %.*s\n", (int)(*demuxer_plug)->name->len, (const char *)(*demuxer_plug)->name->x);
+        demuxer_plug++;
+    }
+
+    fprintf(stderr,"\ndecoder plugins:\n");
+    while(*decoder_plug != NULL) {
+        fprintf(stderr,"  %.*s\n", (int)(*decoder_plug)->name->len, (const char *)(*decoder_plug)->name->x);
+        decoder_plug++;
+    }
+
+    fprintf(stderr,"\nfilter plugins:\n");
+    while(*filter_plug != NULL) {
+        fprintf(stderr,"  %.*s\n", (int)(*filter_plug)->name->len, (const char *)(*filter_plug)->name->x);
+        filter_plug++;
+    }
+
+    fprintf(stderr,"\nencoder plugins:\n");
+    while(*encoder_plug != NULL) {
+        fprintf(stderr,"  %.*s\n", (int)(*encoder_plug)->name->len, (const char *)(*encoder_plug)->name->x);
+        encoder_plug++;
+    }
+
+    fprintf(stderr,"\nmuxer plugins:\n");
+    while(*muxer_plug != NULL) {
+        fprintf(stderr,"  %.*s\n", (int)(*muxer_plug)->name->len, (const char *)(*muxer_plug)->name->x);
+        muxer_plug++;
+    }
+
+    fprintf(stderr,"\noutput plugins:\n");
+    while(*output_plug != NULL) {
+        fprintf(stderr,"  %.*s\n", (int)(*output_plug)->name->len, (const char *)(*output_plug)->name->x);
+        output_plug++;
+    }
+
+    return e;
+}
+
 int main(int argc, const char* argv[]) {
     int r;
     int ret = 1;
@@ -280,8 +344,10 @@ int main(int argc, const char* argv[]) {
     }
 
     while(argc) {
-        /* TODO actually add cli options */
-        if(strcmp(*argv,"--") == 0) {
+        if(strcmp(*argv,"-V") == 0) {
+            return dump_version_info(0);
+        }
+        else if(strcmp(*argv,"--") == 0) {
             argc--;
             argv++;
             break;

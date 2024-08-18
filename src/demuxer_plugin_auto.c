@@ -33,11 +33,13 @@ struct plugin_userdata {
 
 typedef struct plugin_userdata plugin_userdata;
 
-static size_t input_plugin_wrapper_read(void* ud, void* dest, size_t len, const tag_handler*) {
+static size_t input_plugin_wrapper_read(void* ud, void* dest, size_t len, const tag_handler* th) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     size_t i;
     size_t m;
     uint8_t* d = (uint8_t*)dest;
+
+    (void)th;
 
     i = 0;
     while(len) {
@@ -63,7 +65,7 @@ static size_t input_plugin_wrapper_read(void* ud, void* dest, size_t len, const 
 }
 
 static const input_plugin input_plugin_wrapper = {
-    input_plugin_name,
+    &input_plugin_name,
     NULL,
     NULL,
     NULL,
@@ -202,7 +204,7 @@ static void plugin_deinit(void) {
 }
 
 const demuxer_plugin demuxer_plugin_auto = {
-    plugin_name,
+    &plugin_name,
     plugin_size,
     plugin_init,
     plugin_deinit,

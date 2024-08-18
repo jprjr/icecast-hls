@@ -476,7 +476,7 @@ static int decoder_plugin_avcodec_flush(void* ud, const frame_receiver* dest) {
 }
 
 const decoder_plugin decoder_plugin_avcodec = {
-    plugin_name,
+    &plugin_name,
     decoder_plugin_avcodec_size,
     decoder_plugin_avcodec_init,
     decoder_plugin_avcodec_deinit,

@@ -25,7 +25,7 @@ const demuxer_plugin* demuxer_plugin_list[] = {
 const demuxer_plugin* demuxer_plugin_get(const strbuf* name) {
     const demuxer_plugin** plug = demuxer_plugin_list;
     while(*plug != NULL) {
-        if( strbuf_equals(name, &((*plug)->name)) ) return *plug;
+        if( strbuf_equals(name, (*plug)->name) ) return *plug;
         plug++;
     }
     return NULL;

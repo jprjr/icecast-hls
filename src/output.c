@@ -92,16 +92,16 @@ int output_open(output* out, const segment_source* source) {
     out->opened = 1;
 
     log_debug("opening %.*s plugin",
-      (int)out->plugin->name.len,
-      (const char *)out->plugin->name.x);
+      (int)out->plugin->name->len,
+      (const char *)out->plugin->name->x);
 
     return out->plugin->open(out->userdata, source);
 }
 
 int output_config(const output* out, const strbuf* name, const strbuf* value) {
     log_debug("configuring plugin %.*s %.*s=%.*s",
-      (int)out->plugin->name.len,
-      (const char *)out->plugin->name.x,
+      (int)out->plugin->name->len,
+      (const char *)out->plugin->name->x,
       (int)name->len,
       (const char *)name->x,
       (int)value->len,

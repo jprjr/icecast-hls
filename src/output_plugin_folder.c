@@ -290,7 +290,7 @@ static int plugin_submit_tags(void* ud, const taglist* tags) {
 }
 
 const output_plugin output_plugin_folder = {
-    plugin_name,
+    &plugin_name,
     plugin_size,
     plugin_init,
     plugin_deinit,

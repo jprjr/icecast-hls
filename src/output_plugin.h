@@ -29,7 +29,7 @@ typedef int (*output_plugin_set_time)(void* userdata, const ich_time* now);
 typedef int (*output_plugin_get_segment_info)(const void* userdata, const segment_source_info* info, segment_params* params);
 
 struct output_plugin {
-    const strbuf name;
+    const strbuf* name;
     output_plugin_size size;
     output_plugin_init init;
     output_plugin_deinit deinit;

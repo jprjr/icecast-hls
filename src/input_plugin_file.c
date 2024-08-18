@@ -21,6 +21,8 @@
 #define LOG_PREFIX "[input:file]"
 #include "logger.h"
 
+static STRBUF_CONST(plugin_name, "file");
+
 struct file_userdata {
     strbuf filename;
     FILE *f;
@@ -113,7 +115,7 @@ static size_t plugin_read(void *ud, void* dest, size_t len, const tag_handler* h
 }
 
 const input_plugin input_plugin_file = {
-    { .a = 0, .len = 4, .x = (uint8_t*)"file" },
+    &plugin_name,
     plugin_size,
     plugin_init,
     plugin_deinit,

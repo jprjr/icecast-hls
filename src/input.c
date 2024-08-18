@@ -69,8 +69,8 @@ int input_open(input* in) {
     ich_time_now(&in->ts);
 
     log_debug("opening %.*s plugin",
-      (int)in->plugin->name.len,
-      (const char *)in->plugin->name.x);
+      (int)in->plugin->name->len,
+      (const char *)in->plugin->name->x);
     return in->plugin->open(in->userdata);
 }
 
@@ -85,8 +85,8 @@ size_t input_read(input* in, void* dest, size_t len) {
 
 int input_config(const input* in, const strbuf* name, const strbuf* value) {
     log_debug("configuring plugin %.*s %.*s=%.*s",
-      (int)in->plugin->name.len,
-      (const char *)in->plugin->name.x,
+      (int)in->plugin->name->len,
+      (const char *)in->plugin->name->x,
       (int)name->len,
       (const char *)name->x,
       (int)value->len,

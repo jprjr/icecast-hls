@@ -25,7 +25,7 @@ const decoder_plugin* decoder_plugin_list[] = {
 const decoder_plugin* decoder_plugin_get(const strbuf* name) {
     const decoder_plugin** plug = decoder_plugin_list;
     while(*plug != NULL) {
-        if( strbuf_equals(name, &((*plug)->name)) ) return *plug;
+        if( strbuf_equals(name, (*plug)->name) ) return *plug;
         plug++;
     }
     return NULL;

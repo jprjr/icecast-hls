@@ -71,15 +71,15 @@ int demuxer_open(demuxer* dem, input* in) {
     dem->counter = 0;
 
     log_debug("opening %.*s plugin",
-      (int)dem->plugin->name.len,
-      (const char *)dem->plugin->name.x);
+      (int)dem->plugin->name->len,
+      (const char *)dem->plugin->name->x);
     return dem->plugin->open(dem->userdata, in);
 }
 
 int demuxer_config(const demuxer* dem, const strbuf* name, const strbuf* value) {
     log_debug("configuring plugin %.*s %.*s=%.*s",
-      (int)dem->plugin->name.len,
-      (const char *)dem->plugin->name.x,
+      (int)dem->plugin->name->len,
+      (const char *)dem->plugin->name->x,
       (int)name->len,
       (const char *)name->x,
       (int)value->len,

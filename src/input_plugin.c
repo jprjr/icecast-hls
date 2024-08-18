@@ -21,7 +21,7 @@ const input_plugin* input_plugin_list[] = {
 const input_plugin* input_plugin_get(const strbuf* name) {
     const input_plugin** plug = input_plugin_list;
     while(*plug != NULL) {
-        if( strbuf_equals(name, &((*plug)->name)) ) return *plug;
+        if( strbuf_equals(name, (*plug)->name) ) return *plug;
         plug++;
     }
     return NULL;

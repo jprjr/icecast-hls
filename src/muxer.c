@@ -121,16 +121,16 @@ int muxer_open(muxer* m, const packet_source* source) {
     receiver.flush = muxer_flush_wrapper;
 
     log_debug("opening %.*s plugin",
-      (int)m->plugin->name.len,
-      (const char *)m->plugin->name.x);
+      (int)m->plugin->name->len,
+      (const char *)m->plugin->name->x);
 
     return m->plugin->open(m->userdata, source, &receiver);
 }
 
 int muxer_config(const muxer* m, const strbuf* name, const strbuf* value) {
     log_debug("configuring plugin %.*s %.*s=%.*s",
-      (int)m->plugin->name.len,
-      (const char *)m->plugin->name.x,
+      (int)m->plugin->name->len,
+      (const char *)m->plugin->name->x,
       (int)name->len,
       (const char *)name->x,
       (int)value->len,

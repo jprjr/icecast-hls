@@ -266,7 +266,7 @@ static uint32_t plugin_get_caps(void *ud) {
 }
 
 const muxer_plugin muxer_plugin_flac = {
-    plugin_name,
+    &plugin_name,
     plugin_size,
     plugin_init,
     plugin_deinit,

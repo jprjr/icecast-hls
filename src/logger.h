@@ -10,6 +10,8 @@ enum LOG_LEVEL {
     LOG_FATAL
 };
 
+#include <stdarg.h>
+
 #ifdef __cpluspls
 extern "C" {
 #endif

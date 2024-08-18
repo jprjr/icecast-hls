@@ -214,7 +214,7 @@ static int muxer_plugin_ogg_get_segment_info(const void* ud, const packet_source
 }
 
 const muxer_plugin muxer_plugin_ogg = {
-    plugin_name,
+    &plugin_name,
     muxer_plugin_ogg_size,
     muxer_plugin_ogg_init,
     muxer_plugin_ogg_deinit,

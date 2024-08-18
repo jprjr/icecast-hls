@@ -172,7 +172,7 @@ static int muxer_plugin_adts_get_segment_info(const void* ud, const packet_sourc
 }
 
 const muxer_plugin muxer_plugin_adts = {
-    plugin_name,
+    &plugin_name,
     muxer_plugin_adts_size,
     muxer_plugin_adts_init,
     muxer_plugin_adts_deinit,

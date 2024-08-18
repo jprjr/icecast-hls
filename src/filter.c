@@ -128,16 +128,16 @@ int filter_open(filter* f, const frame_source* source) {
     receiver.open = filter_open_wrapper;
 
     log_debug("opening %.*s plugin",
-      (int)f->plugin->name.len,
-      (const char *)f->plugin->name.x);
+      (int)f->plugin->name->len,
+      (const char *)f->plugin->name->x);
 
     return f->plugin->open(f->userdata,source, &receiver);
 }
 
 int filter_config(const filter* f, const strbuf* name, const strbuf* value) {
     log_debug("configuring plugin %.*s %.*s=%.*s",
-      (int)f->plugin->name.len,
-      (const char *)f->plugin->name.x,
+      (int)f->plugin->name->len,
+      (const char *)f->plugin->name->x,
       (int)name->len,
       (const char *)name->x,
       (int)value->len,

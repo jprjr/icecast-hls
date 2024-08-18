@@ -28,7 +28,7 @@ typedef uint32_t (*muxer_plugin_get_caps)(void* userdata);
 typedef int (*muxer_plugin_get_segment_info)(const void* userdata, const packet_source_info*, const segment_receiver*, packet_source_params*);
 
 struct muxer_plugin {
-    const strbuf name;
+    const strbuf* name;
     muxer_plugin_size size;
     muxer_plugin_init init;
     muxer_plugin_deinit deinit;

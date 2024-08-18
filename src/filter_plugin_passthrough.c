@@ -68,7 +68,7 @@ static int plugin_reset(void* ud) {
 }
 
 const filter_plugin filter_plugin_passthrough = {
-    plugin_name,
+    &plugin_name,
     plugin_size,
     plugin_init,
     plugin_deinit,

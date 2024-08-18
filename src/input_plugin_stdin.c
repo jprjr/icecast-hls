@@ -15,6 +15,8 @@
 #define LOG_PREFIX "[input:stdin]"
 #include "logger.h"
 
+static STRBUF_CONST(plugin_name,"stdin");
+
 /* global flag to make sure we only have 1
  * stdin input configured */
 
@@ -71,7 +73,7 @@ static size_t plugin_read(void* userdata, void* dest, size_t len, const tag_hand
 }
 
 const input_plugin input_plugin_stdin = {
-    { .a = 0, .len = 5, .x = (uint8_t*)"stdin" },
+    &plugin_name,
     plugin_size,
     plugin_init,
     plugin_deinit,

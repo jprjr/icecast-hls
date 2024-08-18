@@ -27,7 +27,7 @@ typedef int (*encoder_plugin_flush)(void* userdata, const packet_receiver* dest)
 typedef int (*encoder_plugin_reset)(void* userdata);
 
 struct encoder_plugin {
-    const strbuf name;
+    const strbuf* name;
     encoder_plugin_size size;
     encoder_plugin_init init;
     encoder_plugin_deinit deinit;

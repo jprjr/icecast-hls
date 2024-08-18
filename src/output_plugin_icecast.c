@@ -547,7 +547,7 @@ static int output_plugin_icecast_submit_tags(void *ud, const taglist* tags) {
 }
 
 const output_plugin output_plugin_icecast = {
-    plugin_name,
+    &plugin_name,
     output_plugin_icecast_size,
     output_plugin_icecast_init,
     output_plugin_icecast_deinit,
