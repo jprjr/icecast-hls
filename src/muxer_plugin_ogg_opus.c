@@ -135,6 +135,8 @@ static int stream_add_strbuf(ogg_opus_plugin* userdata, const strbuf* data,uint6
     return r;
 }
 
+static int plugin_submit_tags(void* ud, const taglist* tags, const segment_receiver* dest);
+
 static size_t plugin_size(void) {
     return sizeof(ogg_opus_plugin);
 }
@@ -224,6 +226,10 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     userdata->tags.len += 4;
     pack_u32le(&userdata->tags.x[userdata->tagpos],0);
 
+    if(!userdata->chaining) {
+        TRY0(plugin_submit_tags(userdata, NULL, NULL),logs_error("error submitting tags"));
+    }
+
     userdata->padding = source->padding;
     userdata->pts     = 0 - source->padding;
 
@@ -256,7 +262,7 @@ static int plugin_submit_tags(void* ud, const taglist* tags, const segment_recei
     tagdata = &userdata->tags;
     tagdata->len = userdata->tagpos + 4;
 
-    if(!userdata->chaining) {
+    if(userdata->flag && !userdata->chaining) {
         return dest->submit_tags(dest->handle, tags);
     }
 
@@ -367,7 +373,7 @@ static void plugin_deinit(void) {
 static uint32_t plugin_get_caps(void* ud) {
     ogg_opus_plugin* userdata = (ogg_opus_plugin*)ud;
     uint32_t caps = MUXER_CAP_GLOBAL_HEADERS;
-    if(userdata->samples > 0) caps |= MUXER_CAP_TAGS_RESET;
+    if(userdata->samples > 0 && userdata->chaining) caps |= MUXER_CAP_TAGS_RESET;
     return caps;
 }
 

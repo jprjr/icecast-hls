@@ -43,7 +43,9 @@ struct output_plugin_icecast_userdata {
     strbuf ice_bitrate;
     strbuf ice_audio_info;
     strbuf ice_streamtitle;
+    unsigned int chunk_length;
     uint8_t ice_public;
+    uint8_t metadata;
 };
 
 typedef struct output_plugin_icecast_userdata output_plugin_icecast_userdata;
@@ -82,6 +84,8 @@ static int output_plugin_icecast_create(void* ud) {
     strbuf_init(&userdata->ice_audio_info);
     strbuf_init(&userdata->ice_streamtitle);
     userdata->ice_public = 2; /* 2 = unmapped / don't specify */
+    userdata->metadata = 1;
+    userdata->chunk_length = 250;
 
     return 0;
 }
@@ -141,6 +145,33 @@ static int output_plugin_icecast_config(void* ud, const strbuf* key, const strbu
 
     if(strbuf_equals_cstr(key,"password")) {
         TRYS(strbuf_copy(&userdata->password,val));
+        return 0;
+    }
+
+    if(strbuf_equals_cstr(key,"metadata")) {
+        if(strbuf_truthy(val)) {
+            userdata->metadata = 1;
+            return 0;
+        }
+        if(strbuf_falsey(val)) {
+            userdata->metadata = 0;
+            return 0;
+        }
+        LOGS("error parsing metadata value: %.*s",(*val));
+        return -1;
+    }
+
+    if(strbuf_equals_cstr(key,"chunk-length")) {
+        errno = 0;
+        userdata->chunk_length = strbuf_strtoul(val,10);
+        if(errno != 0) {
+            LOGS("error parsing chunk-length value %.*s",(*val));
+            return -1;
+        }
+        if(userdata->chunk_length == 0) {
+            LOGS("invalid chunk-length %.*s",(*val));
+            return -1;
+        }
         return 0;
     }
 
@@ -222,10 +253,10 @@ static int output_plugin_icecast_config(void* ud, const strbuf* key, const strbu
 }
 
 static int output_plugin_icecast_get_segment_info(const void* ud, const segment_source_info* info, segment_params* params) {
-    (void)ud;
+    output_plugin_icecast_userdata* userdata = (output_plugin_icecast_userdata*)ud;
     (void)info;
 
-    params->segment_length = 250;
+    params->segment_length = userdata->chunk_length;
     return 0;
 }
 
@@ -459,6 +490,8 @@ static int output_plugin_icecast_submit_tags(void *ud, const taglist* tags) {
     SOCKET s = INVALID_SOCKET;
     output_plugin_icecast_userdata* userdata = (output_plugin_icecast_userdata*)ud;
     size_t title_idx,artist_idx,album_idx,invalid_idx;
+
+    if(!userdata->metadata) return 0;
 
     invalid_idx = taglist_len(tags);
     title_idx   = taglist_find_cstr(tags,"TIT2",0);

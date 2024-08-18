@@ -146,6 +146,8 @@ static int stream_add_strbuf(ogg_flac_plugin* stream, const strbuf* data,uint64_
     return r;
 }
 
+static int plugin_submit_tags(void* ud, const taglist* tags, const segment_receiver* dest);
+
 static size_t plugin_size(void) {
     return sizeof(ogg_flac_plugin);
 }
@@ -268,8 +270,13 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
         }
     }
 
+    if(!userdata->chaining) {
+        TRY0(plugin_submit_tags(userdata, NULL, NULL),logs_error("error submitting tags"));
+    }
+
     pack_u32be(&userdata->tags.x[0],(0x84 << 24) | (userdata->tags.len - 4));
     pack_u32le(&userdata->tags.x[userdata->tagpos],userdata->tagtotal);
+
     userdata->padding = source->padding;
     userdata->pts = 0 - source->padding;
 
@@ -296,6 +303,10 @@ static int plugin_submit_tags(void* ud, const taglist* tags, const segment_recei
     size_t m = 0;
     size_t len = 0;
 
+    if(userdata->flag && !userdata->chaining) {
+        return dest->submit_tags(dest->handle, tags);
+    }
+
     tagdata = &userdata->tags;
     tagdata->len = userdata->tagpos + 4; /* we're going to rewrite all tags */
     userdata->tagtotal = 0;
@@ -310,10 +321,6 @@ static int plugin_submit_tags(void* ud, const taglist* tags, const segment_recei
         case LAYOUT_6_1: /* fall-through */
         case LAYOUT_7_1: break;
         default: {
-            if(!userdata->chaining) {
-                logs_error("ogg is set to non-chaining mode but audio channel layout requires chaining");
-                return -1;
-            }
             userdata->scratch.len = 0;
             TRYS(strbuf_sprintf(&userdata->scratch,"WAVEFORMATEXTENSIBLE_CHANNEL_MASK=0x%" PRIx64,
               userdata->channel_layout));
@@ -322,11 +329,6 @@ static int plugin_submit_tags(void* ud, const taglist* tags, const segment_recei
             break;
         }
     }
-
-    if(!userdata->chaining) {
-        return dest->submit_tags(dest->handle,tags);
-    }
-
 
     if(tags != NULL) m = taglist_len(tags);
     for(i=0;i<m;i++) {
@@ -436,7 +438,7 @@ static void plugin_deinit(void) {
 static uint32_t plugin_get_caps(void* ud) {
     ogg_flac_plugin* userdata = (ogg_flac_plugin*)ud;
     uint32_t caps = MUXER_CAP_GLOBAL_HEADERS;
-    if(userdata->samples > 0) caps |= MUXER_CAP_TAGS_RESET;
+    if(userdata->samples > 0 && userdata->chaining) caps |= MUXER_CAP_TAGS_RESET;
     return caps;
 }
 
