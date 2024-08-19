@@ -12,9 +12,9 @@ Everything is implemented as a plugin - decoding can be done
 via different plugins, encoding done via plugins, muxing done
 via plugins.
 
-The HLS streams can use either packed audio or fragmented MP4.
+The HLS streams can use either packed audio, fragmented MP4, or MPEG-%S.
 The main benefit to fragmented MP4 is having a wider range of codecs
-available, and the ability to encode loudness metadata. Both formats
+available, and the ability to encode loudness metadata. All formats
 allow adding timed ID3 metadata.
 
 ## Features
@@ -33,7 +33,7 @@ including [S3-compatible storage](https://github.com/jprjr/icecast-hls/wiki/Plug
     * [fdk-aac](https://github.com/mstorsjo/fdk-aac) (AAC, HE-AAC/V2)
     * [libavcodec](https://ffmpeg.org/ffmpeg-codecs.html) (AAC, MP3, (E)-AC-3, FLAC, ALAC, Opus)
     * [libopus](https://www.opus-codec.org/) (Opus audio)
-* Output to HLS using packed audio and/or fragmented MP4.
+* Output to HLS using packed audio, fragmented MP4, or MPEG-TS.
 * Output to Icecast using AAC, MP3, Opus, and FLAC.
 * Embed timed ID3 metadata.
 * Embed album art (either in-band or as a linked image).
