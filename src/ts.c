@@ -319,16 +319,16 @@ int mpegts_pat_encode(membuf* dest, uint16_t program_map_pid) {
     return 0;
 }
 
-int mpegts_pmt_encode(membuf* dest, codec_type codec, uint16_t audio_pid, uint16_t id3_pid) {
+int mpegts_pmt_encode(membuf* dest, const mpegts_pmt_params* params) {
     int r;
     uint32_t crc = 0xFFFFFFFF;;
     uint16_t section_length = 13;
     uint8_t stream_type = 0xff;
     bitwriter bw = BITWRITER_ZERO;
 
-    if(id3_pid) section_length += 37; /* 17 bytes for progrm info, 20 bytes for es info */
+    if(params->id3_pid) section_length += 37; /* 17 bytes for progrm info, 20 bytes for es info */
 
-    switch(codec) {
+    switch(params->codec) {
         case CODEC_TYPE_MP3: {
             stream_type = 0x03;
             section_length += 5;
@@ -347,6 +347,22 @@ int mpegts_pmt_encode(membuf* dest, codec_type codec, uint16_t audio_pid, uint16
         case CODEC_TYPE_EAC3: {
             stream_type = 0x87;
             section_length += 11;
+            break;
+        }
+        case CODEC_TYPE_OPUS: {
+            stream_type = 0x05;
+            section_length += 15;
+            switch(params->dsi->x[17]) {
+                case 0: break;
+                case 1: {
+                  if(params->dsi->x[9] > 2) break;
+                }
+                /* fall-through */
+                default: {
+                    /* TODO encode channel mapping */
+                    return -1;
+                }
+            }
             break;
         }
         default: return -1;
@@ -372,11 +388,11 @@ int mpegts_pmt_encode(membuf* dest, codec_type codec, uint16_t audio_pid, uint16
     bitwriter_add(&bw, 8, 0x00); /* last_section_number */
 
     bitwriter_add(&bw, 3, 0x07); /* reserved bits */
-    bitwriter_add(&bw, 13, audio_pid); /* PCR PID, we just assume the audio_pid is the main PCR */
+    bitwriter_add(&bw, 13, params->audio_pid); /* PCR PID, we just assume the audio_pid is the main PCR */
     bitwriter_add(&bw, 4, 0x0F); /* reserved bits */
-    bitwriter_add(&bw, 12, id3_pid ? 17 : 0); /* program_info_length */
+    bitwriter_add(&bw, 12, params->id3_pid ? 17 : 0); /* program_info_length */
 
-    if(id3_pid) {
+    if(params->id3_pid) {
         /* begin program_info for timed_id3 */
         bitwriter_add(&bw, 8, 0x25); /* descriptor tag */
         bitwriter_add(&bw, 8, 15); /* descriptor length */
@@ -395,10 +411,10 @@ int mpegts_pmt_encode(membuf* dest, codec_type codec, uint16_t audio_pid, uint16
     /* our audio stream */
     bitwriter_add(&bw, 8, stream_type);
     bitwriter_add(&bw, 3, 0x07);
-    bitwriter_add(&bw, 13, audio_pid);
+    bitwriter_add(&bw, 13, params->audio_pid);
     bitwriter_add(&bw, 4, 0x0f);
 
-    switch(codec) {
+    switch(params->codec) {
         case CODEC_TYPE_MP3: /* fall-through */
         case CODEC_TYPE_AAC: {
             bitwriter_add(&bw, 12, 0); /* elementary stream info length */
@@ -418,15 +434,30 @@ int mpegts_pmt_encode(membuf* dest, codec_type codec, uint16_t audio_pid, uint16
             bitwriter_add(&bw, 32, 0x45414333); /* text "EAC3" */
             break;
         }
+        case CODEC_TYPE_OPUS: {
+            bitwriter_add(&bw, 12, 10); /* elementary stream info length */
+
+            bitwriter_add(&bw, 8, 0x05); /* descriptor tag */
+            bitwriter_add(&bw, 8, 4); /* descriptor length */
+            bitwriter_add(&bw, 32, 0x4F707573); /* text "Opus" */
+
+            bitwriter_add(&bw, 8, 0x7f); /* descriptor tag */
+            bitwriter_add(&bw, 8, 2); /* descriptor length */
+
+            bitwriter_add(&bw, 8, 0x80);
+            /* TODO actually encode channel config if needed */
+            bitwriter_add(&bw, 8, params->dsi->x[9]);
+            break;
+        }
 
         default: break;
     }
 
-    if(id3_pid) {
+    if(params->id3_pid) {
         /* our ID3 stream */
         bitwriter_add(&bw, 8, 0x15); /* metadata in PES packets */
         bitwriter_add(&bw, 3, 0x07);
-        bitwriter_add(&bw, 13, id3_pid);
+        bitwriter_add(&bw, 13, params->id3_pid);
         bitwriter_add(&bw, 4, 0x0f);
         bitwriter_add(&bw, 12, 15); /* elementary stream info length */
         bitwriter_add(&bw, 8, 0x26); /* descriptor tag */

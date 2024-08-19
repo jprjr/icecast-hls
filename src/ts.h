@@ -10,6 +10,15 @@
 #include "membuf.h"
 #include "codecs.h"
 
+struct mpegts_pmt_params {
+    codec_type codec;
+    uint16_t audio_pid;
+    uint16_t id3_pid;
+    const membuf* dsi;
+};
+
+typedef struct mpegts_pmt_params mpegts_pmt_params;
+
 struct mpegts_header {
     uint8_t tei;
     uint8_t pusi;
@@ -85,7 +94,7 @@ int mpegts_pat_encode(membuf* dest, uint16_t program_map_pid);
 
 /* encodes a PMT, should be called directly after mpegts_header_encode, assumes 1 stream type + timed_id3,
  * setting id3_pid to 0 indicates no ID3 data */
-int mpegts_pmt_encode(membuf* dest, codec_type codec, uint16_t audio_pid, uint16_t id3_pid);
+int mpegts_pmt_encode(membuf* dest, const mpegts_pmt_params* params);
 
 int mpegts_packet_reset(membuf* packet, uint8_t fill);
 

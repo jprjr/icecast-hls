@@ -10,6 +10,7 @@
 #include "id3.h"
 #include "ts.h"
 #include "adts_mux.h"
+#include "pack_u16be.h"
 
 #define LOG_PREFIX "[muxer:ts]"
 #include "logger.h"
@@ -24,6 +25,8 @@ static STRBUF_CONST(ext_ts, ".ts");
 struct muxer_plugin_ts_userdata {
     membuf segment;
     membuf packet; /* contains the audio samples for the current logical packet */
+    membuf dsi;
+    membuf scratch;
     mpegts_stream audio_stream;
     mpegts_stream id3_stream;
     mpegts_header pat_header;
@@ -32,6 +35,7 @@ struct muxer_plugin_ts_userdata {
     codec_type codec;
 
     adts_mux adts_muxer;
+    unsigned int padding;
 
     uint64_t segment_samplecount;
     uint64_t packet_samplecount;
@@ -71,9 +75,15 @@ static int muxer_plugin_ts_segment_send(muxer_plugin_ts_userdata* userdata, cons
 static int muxer_plugin_ts_append_packet(muxer_plugin_ts_userdata* userdata) {
     int r;
     unsigned int newsegment = userdata->segment.len == 0;
+    mpegts_pmt_params pmt_params;
 
     if(userdata->packet.len == 0) return -1;
     if(userdata->packet_samplecount == 0) return -1;
+
+    pmt_params.codec = userdata->codec;
+    pmt_params.audio_pid = 0x0100;
+    pmt_params.id3_pid = 0x0101;
+    pmt_params.dsi = &userdata->dsi;
 
     /* always send PAT and PMT when starting a new packet */
     if( (r = mpegts_header_encode(&userdata->segment, &userdata->pat_header)) != 0) return r;
@@ -81,7 +91,7 @@ static int muxer_plugin_ts_append_packet(muxer_plugin_ts_userdata* userdata) {
     userdata->pat_header.cc = (userdata->pat_header.cc + 1) & 0x0f;
 
     if( (r = mpegts_header_encode(&userdata->segment, &userdata->pmt_header)) != 0) return r;
-    if( (r = mpegts_pmt_encode(&userdata->segment, userdata->codec, 0x0100, 0x0101)) != 0) return r;
+    if( (r = mpegts_pmt_encode(&userdata->segment, &pmt_params)) != 0) return r;
     userdata->pmt_header.cc = (userdata->pmt_header.cc + 1) & 0x0f;
 
     /* if this is a new, empty segment add any existing ID3 tags */
@@ -148,6 +158,59 @@ static int muxer_plugin_submit_packet_adts(muxer_plugin_ts_userdata *ud, const p
     return muxer_plugin_submit_packet_passthrough(ud, &tmp, dest);
 }
 
+static int muxer_plugin_submit_packet_opus_au(muxer_plugin_ts_userdata *ud, const packet* p, const segment_receiver *dest) {
+    int r;
+    packet tmp = PACKET_ZERO;
+    size_t len = p->data.len;
+    uint8_t u[2];
+
+    membuf_reset(&ud->scratch);
+
+    /* au header is 16 bits:
+     *   11 bits 0x3ff = 01111111111
+     *   1 bit start trim flag
+     *   1 bit end trim flag
+     *   1 bit control extension flag
+     *   2 bits reserved
+     */
+
+    u[0] = 0x7f;
+    u[1] = 0xe0;
+    if(ud->padding) {
+        u[1] |= 0x10;
+    }
+
+    if( (r = membuf_append(&ud->scratch, u, 2)) != 0) return r;
+
+    /* then we encode the payload size */
+    while(len >= 0xff) {
+        if( (r = membuf_append(&ud->scratch,"\xff", 1)) != 0) return r;
+        len -= 0xff;
+    }
+    u[0] = len;
+    if( (r = membuf_append(&ud->scratch, u, 1)) != 0) return r;
+
+    /* if we have padding info to encode do it on the first packet */
+    if(ud->padding) {
+        pack_u16be(u, (uint16_t) ud->padding);
+        if( (r = membuf_append(&ud->scratch, u, 2)) != 0) return r;
+        ud->padding = 0;
+    }
+
+    if( (r = membuf_cat(&ud->scratch, &p->data)) != 0) return r;
+
+    tmp.duration     = p->duration;
+    tmp.sample_rate  = p->sample_rate;
+    tmp.sample_group = p->sample_group;
+    tmp.pts          = p->pts;
+    tmp.sync         = p->sync;
+
+    tmp.data.x       = ud->scratch.x;
+    tmp.data.len     = ud->scratch.len;
+
+    return muxer_plugin_submit_packet_passthrough(ud, &tmp, dest);
+}
+
 static size_t muxer_plugin_ts_size(void) {
     return sizeof(muxer_plugin_ts_userdata);
 }
@@ -183,6 +246,7 @@ static int muxer_plugin_ts_reset(void* ud) {
     userdata->segment_samplecount = 0;
     userdata->packet_samplecount = 0;
     userdata->codec = CODEC_TYPE_UNKNOWN;
+    userdata->padding = 0;
 
     return 0;
 }
@@ -193,6 +257,8 @@ static int muxer_plugin_ts_create(void* ud) {
 
     membuf_init(&userdata->segment);
     membuf_init(&userdata->packet);
+    membuf_init(&userdata->dsi);
+    membuf_init(&userdata->scratch);
     id3_init(&userdata->id3);
     taglist_init(&userdata->taglist);
 
@@ -204,6 +270,8 @@ static void muxer_plugin_ts_close(void* ud) {
 
     membuf_free(&userdata->segment);
     membuf_free(&userdata->packet);
+    membuf_free(&userdata->dsi);
+    membuf_free(&userdata->scratch);
     id3_free(&userdata->id3);
     taglist_free(&userdata->taglist);
 }
@@ -301,7 +369,14 @@ static int muxer_plugin_ts_open(void* ud, const packet_source* source, const seg
             break;
         }
 
-        /* TODO maybe opus? */
+        case CODEC_TYPE_OPUS: {
+            userdata->audio_stream.stream_id = 0xBD;
+            userdata->submit_packet =  muxer_plugin_submit_packet_opus_au;
+            userdata->codec = source->codec;
+            userdata->padding = source->padding;
+            if( (r = membuf_copy(&userdata->dsi, &source->dsi)) != 0) return r;
+            break;
+        }
 
         default: {
             log_error("unsupported codec %s", codec_name(source->codec));

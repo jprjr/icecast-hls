@@ -279,7 +279,6 @@ static int opus_drain(encoder_plugin_opus_userdata* userdata, const packet_recei
 
 static int encoder_plugin_opus_open(void *ud, const frame_source* source, const packet_receiver* dest) {
     int r = -1;
-    uint32_t muxer_caps;
     opus_int32 lookahead;
     encoder_plugin_opus_userdata* userdata = (encoder_plugin_opus_userdata*)ud;
 
@@ -306,13 +305,6 @@ static int encoder_plugin_opus_open(void *ud, const frame_source* source, const 
     if(source->sample_rate != 48000) {
         log_error("unsupported sample rate %u", source->sample_rate);
         return r;
-    }
-
-    muxer_caps = dest->get_caps(dest->handle);
-
-    if(!(muxer_caps & MUXER_CAP_GLOBAL_HEADERS)) {
-        logs_error("selected muxer does not have global header, select a different muxer");
-        return -1;
     }
 
     if( (r = membuf_ready(&userdata->packet.data,sizeof(uint8_t) * MAX_PACKET)) != 0) {
