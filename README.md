@@ -23,7 +23,7 @@ allow adding timed ID3 metadata.
 * Parses Icecast/Shoutcast metadata.
 * Writes to standard output, files, folders, and URLs,
 including [S3-compatible storage](https://github.com/jprjr/icecast-hls/wiki/Plugins:-Output#aws-default-false)
-* Special support for chained [Ogg FLAC](https://github.com/jprjr/icecast-hls/wiki/Misc:-Ogg-Chaining-With-FLAC).
+* Special support for chained [Ogg FLAC](https://github.com/jprjr/icecast-hls/wiki/Misc:-Tips#ogg-chaining-with-flac).
     * this allows rich in-band metadata and images.
 * Apply filters with [libavfilter](https://ffmpeg.org/ffmpeg-filters.html)
 * Multi-threaded encoding.
