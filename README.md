@@ -12,7 +12,7 @@ Everything is implemented as a plugin - decoding can be done
 via different plugins, encoding done via plugins, muxing done
 via plugins.
 
-The HLS streams can use either packed audio, fragmented MP4, or MPEG-%S.
+The HLS streams can use either packed audio, fragmented MP4, or MPEG-TS.
 The main benefit to fragmented MP4 is having a wider range of codecs
 available, and the ability to encode loudness metadata. All formats
 allow adding timed ID3 metadata.
