@@ -7,4 +7,3 @@ extern const encoder_plugin encoder_plugin_fdk_aac;
 
 #endif
 
-

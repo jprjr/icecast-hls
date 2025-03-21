@@ -15,6 +15,7 @@ SOURCES = \
 	src/miniflac.c \
 	src/minifmp4.c \
 	src/ts.c \
+	src/tflac.c \
 	src/adts_mux.c \
 	src/codecs.c \
 	src/decoder.c \
@@ -98,6 +99,7 @@ REQUIRED_OBJS = \
 	src/minifmp4.o \
 	src/codecs.o \
 	src/adts_mux.o \
+	src/tflac.o \
 	src/ts.o \
 	src/decoder.o \
 	src/decoder_plugin.o \
@@ -114,6 +116,7 @@ REQUIRED_OBJS = \
 	src/destination_sync.o \
 	src/encoder.o \
 	src/encoder_plugin.o \
+	src/encoder_plugin_tflac.o \
 	src/encoder_plugin_passthrough.o \
 	src/filter.o \
 	src/filter_plugin.o \
@@ -333,6 +336,9 @@ src/output_plugin_curl.o: src/output_plugin_curl.c
 	$(CC) $(CFLAGS) $(CFLAGS_CURL) -c -o $@ $<
 
 src/decoder_plugin_miniflac.o: src/decoder_plugin_miniflac.c src/miniflac.h src/base64decode.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+src/encoder_plugin_tflac.o: src/encoder_plugin_tflac.c src/tflac.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 src/demuxer_plugin_avformat.o: src/demuxer_plugin_avformat.c src/ffmpeg-versions.h
