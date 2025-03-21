@@ -104,6 +104,7 @@ static int plugin_open(void *ud, const packet_source* source, const segment_rece
     /* VORBIS_COMMENT block */
     /* make room for header */
     if( (r = membuf_readyplus(&userdata->buffer,4)) != 0) return r;
+    pack_u32be(&userdata->buffer.x[userdata->buffer.len],0);
     userdata->buffer.len += 4;
 
     /* write out the vendor */
