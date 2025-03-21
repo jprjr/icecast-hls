@@ -259,7 +259,12 @@ static enum AVSampleFormat find_best_format(const AVCodec *codec, enum AVSampleF
     enum AVSampleFormat outFmt = AV_SAMPLE_FMT_NONE;
 
     /* find the appropriate output format for the codec */
+#if ICH_AVCODEC_SAMPLE_FMTS
     fmt = codec->sample_fmts;
+#else
+    if(avcodec_get_supported_config(NULL, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT,
+        0, (const void**)&fmt, NULL) < 0) return AV_SAMPLE_FMT_NONE;
+#endif
     while(fmt != NULL && *fmt != AV_SAMPLE_FMT_NONE) {
         if(*fmt == srcFmt) {
             outFmt = *fmt;
@@ -533,8 +538,8 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
         }
     }
 
-    userdata->buffer.format = avsampleformat_to_samplefmt(find_best_format(userdata->codec,samplefmt_to_avsampleformat(source->format)));
-    userdata->buffer.channels = channel_count(source->channel_layout);
+    userdata->buffer.format = avsampleformat_to_samplefmt(userdata->sample_fmt);
+    userdata->buffer.channels = channel_count(userdata->channel_layout);
     userdata->buffer.duration = 0;
     userdata->buffer.sample_rate = source->sample_rate;
 
