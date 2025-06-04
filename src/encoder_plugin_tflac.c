@@ -152,7 +152,7 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
         return -1;
     }
 
-    LOGS("unknown key: %.*s\n",*key);
+    LOGS("unknown key: %.*s",*key);
     return -1;
 }
 
