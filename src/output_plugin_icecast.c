@@ -404,7 +404,10 @@ static int output_plugin_icecast_reset(void* ud) {
     return 0;
 }
 
-static const char alphabet[16] = "0123456789ABCDEF";
+static const char alphabet[16] = {
+    '0','1','2','3','4','5','6','7',
+    '8','9','A','B','C','D','E','F'
+};
 static const char rfc3986[256] = {
   '\0','\0', '\0', '\0', '\0', '\0', '\0', '\0',
   '\0','\0', '\0', '\0', '\0', '\0', '\0', '\0',
