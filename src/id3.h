@@ -1,5 +1,5 @@
 #ifndef ID3_H
-#define ID3_h
+#define ID3_H
 
 #include "membuf.h"
 #include "tag.h"
