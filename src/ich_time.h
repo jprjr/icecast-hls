@@ -43,8 +43,11 @@ int ich_time_now(ich_time*);
 
 void ich_time_add(ich_time*, const ich_time*);
 
-/* add a second specified in another time base (basically samples / samplerate) */
+/* add time in another time base (basically samples / samplerate) */
 void ich_time_add_frac(ich_time*, const ich_frac*);
+
+/* subtract time in another time base */
+void ich_time_sub_frac(ich_time*, const ich_frac*);
 
 void ich_time_to_tm(ich_tm*, const ich_time*);
 

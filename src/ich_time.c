@@ -62,7 +62,6 @@ void ich_time_add(ich_time* t, const ich_time* a) {
     }
 }
 
-/* add a second specified in another time base (basically samples / samplerate) */
 void ich_time_add_frac(ich_time* t, const ich_frac* f) {
     /*
      * have: samples
@@ -80,6 +79,16 @@ void ich_time_add_frac(ich_time* t, const ich_frac* f) {
     while(t->nanoseconds >= NANOPERSEC) {
         t->seconds++;
         t->nanoseconds -= NANOPERSEC;
+    }
+}
+
+void ich_time_sub_frac(ich_time* t, const ich_frac* f) {
+    t->seconds -= (f->num / f->den);
+    t->nanoseconds -= (f->num % f->den) * NANOPERSEC / f->den;
+
+    while(t->nanoseconds < 0) {
+        t->seconds--;
+        t->nanoseconds += NANOPERSEC;
     }
 }
 

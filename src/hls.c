@@ -187,6 +187,7 @@ void hls_init(hls* h) {
     h->version = 7;
     h->now.seconds = 0;
     h->now.nanoseconds = 0;
+    h->program_time = 1; /* fixed program time */
 }
 
 void hls_free(hls* h) {
@@ -360,12 +361,23 @@ static int hls_flush_segment(hls* h) {
     t->disc    = h->segment.disc;
     t->init_id = h->segment.init_id;
 
+    f.num = h->segment.samples;
+    f.den = h->time_base;
+
     TRYS(strbuf_sprintf(&t->filename,(char*)h->segment_format.x,++(h->counter)));
 
-    ich_time_to_tm(&tm,&h->now);
-    TRYS(strbuf_sprintf(&t->tags,
-      "#EXT-X-PROGRAM-DATE-TIME:%04u-%02u-%02uT%02u:%02u:%02u.%03uZ\n",
-      tm.year,tm.month,tm.day,tm.hour,tm.min,tm.sec,tm.mill));
+    if(h->program_time) {
+        if(h->program_time == 2) {
+            /* we use current time and subtract the length
+             * of the segment to get program time */
+            ich_time_now(&h->now);
+            ich_time_sub_frac(&h->now, &f);
+        }
+        ich_time_to_tm(&tm,&h->now);
+        TRYS(strbuf_sprintf(&t->tags,
+          "#EXT-X-PROGRAM-DATE-TIME:%04u-%02u-%02uT%02u:%02u:%02u.%03uZ\n",
+          tm.year,tm.month,tm.day,tm.hour,tm.min,tm.sec,tm.mill));
+    }
 
     TRYS(strbuf_sprintf(&t->tags,
       "#EXTINF:%f,\n"
@@ -377,9 +389,9 @@ static int hls_flush_segment(hls* h) {
     TRY0(h->callbacks.write(h->callbacks.userdata, &t->filename, &h->segment.data, &h->segment_mimetype),
       LOGS("error writing file %.*s", t->filename));
 
-    f.num = h->segment.samples;
-    f.den = h->time_base;
-    ich_time_add_frac(&h->now,&f);
+    if(h->program_time == 1) {
+        ich_time_add_frac(&h->now,&f);
+    }
 
     hls_segment_reset(&h->segment);
 
@@ -531,6 +543,23 @@ int hls_configure(hls* h, const strbuf* key, const strbuf* value) {
     if(strbuf_ends_cstr(key,"segment-mimetype")) {
         TRYS(strbuf_copy(&h->segment_mimetype,value));
         return 0;
+    }
+
+    if(strbuf_ends_cstr(key,"program-date-time")) {
+        if(strbuf_equals_cstr(value,"disabled")) {
+            h->program_time = 0;
+            return 0;
+        }
+        if(strbuf_equals_cstr(value,"fixed")) {
+            h->program_time = 1;
+            return 0;
+        }
+        if(strbuf_begins_cstr(value,"real")) {
+            h->program_time = 2;
+            return 0;
+        }
+        LOGS("error parsing program-date-time value: %.*s",(*value));
+        return -1;
     }
 
     LOGS("unknown key %.*s", (*key));

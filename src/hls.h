@@ -97,6 +97,7 @@ struct hls {
     size_t counter;
     unsigned int version;         /* reported HLS playlist version */
     ich_time now;
+    uint8_t program_time;
 };
 
 typedef struct hls hls;
