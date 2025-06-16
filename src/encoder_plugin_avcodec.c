@@ -492,11 +492,29 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
         logs_fatal("out of memory"));
     }
 
+    userdata->buffer.format = avsampleformat_to_samplefmt(userdata->sample_fmt);
+    userdata->buffer.channels = channel_count(userdata->channel_layout);
+    userdata->buffer.duration = 0;
+    userdata->buffer.sample_rate = source->sample_rate;
+
+    if( (r = frame_ready(&userdata->buffer)) != 0) return r;
+
+    userdata->me.handle = userdata;
+    userdata->me.channel_layout = source->channel_layout;
+    userdata->me.sample_rate = source->sample_rate;
+    userdata->me.frame_len = ctx_frame_size(userdata->ctx);
+    userdata->me.sync_flag = ctx_codec_descriptor(userdata->ctx)->props & AV_CODEC_PROP_INTRA_ONLY;
+    userdata->me.padding = ctx_initial_padding(userdata->ctx);
+
     switch(userdata->codec->id) {
         case AV_CODEC_ID_AAC: {
             userdata->me.codec = CODEC_TYPE_AAC;
             userdata->me.profile = ctx_profile(userdata->ctx) + 1;
             userdata->me.roll_distance = -1;
+            /* TODO avcodec doesn't set the INTRA ONLY flag for aac,
+             * which may technically be true since you need a previous
+             * sample to decode? */
+            userdata->me.sync_flag = 1;
             break;
         }
 
@@ -537,20 +555,6 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
             TRY(0, logs_error("unsupported codec type"));
         }
     }
-
-    userdata->buffer.format = avsampleformat_to_samplefmt(userdata->sample_fmt);
-    userdata->buffer.channels = channel_count(userdata->channel_layout);
-    userdata->buffer.duration = 0;
-    userdata->buffer.sample_rate = source->sample_rate;
-
-    if( (r = frame_ready(&userdata->buffer)) != 0) return r;
-
-    userdata->me.handle = userdata;
-    userdata->me.channel_layout = source->channel_layout;
-    userdata->me.sample_rate = source->sample_rate;
-    userdata->me.frame_len = ctx_frame_size(userdata->ctx);
-    userdata->me.sync_flag = ctx_codec_descriptor(userdata->ctx)->props & AV_CODEC_PROP_INTRA_ONLY;
-    userdata->me.padding = ctx_initial_padding(userdata->ctx);
 
     if(userdata->me.frame_len == 0) userdata->me.frame_len = 1024;
 

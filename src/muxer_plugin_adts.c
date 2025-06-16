@@ -102,6 +102,7 @@ static int muxer_plugin_adts_open(void* ud, const packet_source* source, const s
     me.time_base = source->sample_rate;
     me.frame_len = source->frame_len;
     me.handle = userdata;
+    me.sync_flag = 1;
 
     return dest->open(dest->handle, &me);
 }
@@ -118,6 +119,7 @@ static int muxer_plugin_adts_submit_packet(void* ud, const packet* packet, const
     s.len  = userdata->adts_muxer.len;
     s.samples = packet->duration;
     s.pts = packet->pts;
+    s.independent = 1;
 
     return dest->submit_segment(dest->handle,&s);
 }

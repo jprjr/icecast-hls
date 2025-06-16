@@ -70,6 +70,7 @@ static int muxer_plugin_passthrough_open(void* ud, const packet_source* source, 
     me.time_base = source->sample_rate;
     me.frame_len = source->frame_len;
     me.handle = userdata;
+    me.sync_flag = 1;
 
     return dest->open(dest->handle, &me);
 }
@@ -84,6 +85,7 @@ static int muxer_plugin_passthrough_submit_packet(void* ud, const packet* packet
     s.len  = packet->data.len;
     s.samples = packet->duration;
     s.pts = packet->pts;
+    s.independent = 1;
     return dest->submit_segment(dest->handle,&s);
 }
 

@@ -90,6 +90,7 @@ static int stream_send(ogg_flac_plugin* stream, const segment_receiver* dest) {
     s.len     = stream->segment.len;
     s.samples = stream->samples;
     s.pts     = stream->pts;
+    s.independent = 1;
 
     TRY0(dest->submit_segment(dest->handle,&s),logs_error("error submitting segment"));
 
@@ -285,6 +286,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     me.time_base = source->sample_rate;
     me.frame_len = source->frame_len;
     me.handle = userdata;
+    me.sync_flag = 1;
 
     TRY0(dest->open(dest->handle,&me),logs_error("error opening destination"));
 

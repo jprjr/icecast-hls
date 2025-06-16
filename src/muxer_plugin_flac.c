@@ -88,6 +88,7 @@ static int plugin_open(void *ud, const packet_source* source, const segment_rece
     me.media_mimetype = &mime_flac;
     me.time_base = source->sample_rate;
     me.frame_len = source->frame_len;
+    me.sync_flag = 1;
 
     /* fLaC stream marker */
     if( (r = membuf_append(&userdata->buffer,"fLaC",4)) != 0) return r;
@@ -209,6 +210,7 @@ static int plugin_submit_packet(void* ud, const packet* packet, const segment_re
         s.len = userdata->buffer.len;
         s.samples = packet->duration;
         s.pts = packet->pts;
+        s.independent = 1;
 
         if( (r = dest->submit_segment(dest->handle, &s)) != 0) {
             return r;

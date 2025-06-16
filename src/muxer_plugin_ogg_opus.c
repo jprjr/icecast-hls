@@ -79,6 +79,7 @@ static int stream_send(ogg_opus_plugin* userdata, const segment_receiver* dest) 
     s.len     = userdata->segment.len;
     s.samples = userdata->samples;
     s.pts     = userdata->pts;
+    s.independent = 1;
 
     TRY0(dest->submit_segment(dest->handle,&s),logs_error("error submitting segment"));
 
@@ -237,6 +238,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     me.media_mimetype = &mime_ogg;
     me.time_base = source->sample_rate;
     me.frame_len = source->frame_len;
+    me.sync_flag = 1;
 
     me.handle = userdata;
 

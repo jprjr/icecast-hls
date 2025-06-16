@@ -20,6 +20,7 @@ struct segment {
     size_t len;
     unsigned int samples; /* will be 0 for init segments */
     uint64_t pts; /* pts of this segment, used to detect discontinuities */
+    uint8_t independent;
 };
 
 typedef struct segment segment;
@@ -32,7 +33,9 @@ typedef struct segment_source_info segment_source_info;
 
 struct segment_params {
     size_t segment_length; /* given in milliseconds */
+    size_t subsegment_length; /* given in milliseconds */
     size_t packets_per_segment;
+    size_t packets_per_subsegment;
 };
 typedef struct segment_params segment_params;
 
@@ -46,6 +49,7 @@ struct segment_source {
     const strbuf* media_mimetype;
     unsigned int time_base;
     unsigned int frame_len;
+    unsigned int sync_flag;
 };
 typedef struct segment_source segment_source;
 
@@ -81,11 +85,11 @@ typedef struct segment_receiver segment_receiver;
 
 #define SEGMENT_RECEIVER_ZERO { .handle = NULL, .get_segment_info = segment_receiver_get_segment_info_null, .open = segment_receiver_open_null, .submit_segment = segment_receiver_submit_segment_null, .submit_tags = segment_receiver_submit_tags_null, .flush = segment_receiver_flush_null, .reset = segment_receiver_reset_null }
 
-#define SEGMENT_SOURCE_ZERO { .handle = NULL, .init_ext = NULL, .init_mimetype = NULL, .media_ext = NULL, .media_mimetype = NULL }
+#define SEGMENT_SOURCE_ZERO { .handle = NULL, .init_ext = NULL, .init_mimetype = NULL, .media_ext = NULL, .media_mimetype = NULL, .time_base = 0, .frame_len = 0, .sync_flag = 0 }
 #define SEGMENT_SOURCE_INFO_ZERO { .time_base = 0, .frame_len = 0 }
-#define SEGMENT_PARAMS_ZERO { .segment_length = 0, .packets_per_segment = 0 }
+#define SEGMENT_PARAMS_ZERO { .segment_length = 0, .subsegment_length = 0, .packets_per_segment = 0, .packets_per_subsegment = 0 }
 
-#define SEGMENT_ZERO { .type = SEGMENT_TYPE_UNKNOWN, .data = NULL, .len = 0, .samples = 0 }
+#define SEGMENT_ZERO { .type = SEGMENT_TYPE_UNKNOWN, .data = NULL, .len = 0, .samples = 0, .independent = 0 }
 
 #ifdef __cplusplus
 extern "C" {

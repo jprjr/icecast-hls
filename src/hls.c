@@ -44,16 +44,19 @@ static int hls_write_default_callback(void* userdata, const strbuf* filename, co
 void hls_segment_meta_init(hls_segment_meta* m) {
     strbuf_init(&m->filename);
     strbuf_init(&m->tags);
+    strbuf_init(&m->subtags);
 }
 
 void hls_segment_meta_free(hls_segment_meta *m) {
     strbuf_free(&m->filename);
     strbuf_free(&m->tags);
+    strbuf_free(&m->subtags);
 }
 
 void hls_segment_meta_reset(hls_segment_meta *m) {
     strbuf_reset(&m->filename);
     strbuf_reset(&m->tags);
+    strbuf_reset(&m->subtags);
     m->disc = 0;
     m->init_id = 0;
 }
@@ -64,6 +67,7 @@ void hls_segment_init(hls_segment* s) {
     s->samples = 0;
     s->init_id = 0;
     s->disc = 0;
+    s->meta = NULL;
 }
 
 void hls_segment_free(hls_segment* s) {
@@ -76,6 +80,7 @@ void hls_segment_reset(hls_segment* s) {
     s->samples = 0;
     s->pts = 0;
     s->disc = 0;
+    s->meta = NULL;
 }
 
 void hls_playlist_init(hls_playlist* p) {
@@ -171,6 +176,7 @@ void hls_init(hls* h) {
     strbuf_init(&h->playlist_filename);
     strbuf_init(&h->playlist_mimetype);
     strbuf_init(&h->entry_prefix);
+    strbuf_init(&h->subsegment_format);
     hls_playlist_init(&h->playlist);
     hls_segment_init(&h->segment);
     h->callbacks.delete = hls_delete_default_callback;
@@ -188,6 +194,8 @@ void hls_init(hls* h) {
     h->now.seconds = 0;
     h->now.nanoseconds = 0;
     h->program_time = 1; /* fixed program time */
+    h->subsegment_duration = 0;
+    h->subsegment_samples = 0;
 }
 
 void hls_free(hls* h) {
@@ -203,13 +211,21 @@ void hls_free(hls* h) {
     strbuf_free(&h->segment_format);
     strbuf_free(&h->segment_mimetype);
     strbuf_free(&h->entry_prefix);
+    strbuf_free(&h->subsegment_format);
     hls_playlist_free(&h->playlist);
     hls_init(h);
 }
 
 int hls_get_segment_info(const hls* h, const segment_source_info* info, segment_params* params) {
     params->segment_length = h->target_duration;
-    if(info->frame_len != 0) params->packets_per_segment = (params->segment_length * info->time_base / info->frame_len / 1000);
+    /* if we don't have a subsegment duration set, request 100ms subsegments to reduce latency */
+    params->subsegment_length = h->subsegment_duration ? h->subsegment_duration : 100;
+
+    if(info->frame_len != 0) {
+        params->packets_per_segment = (params->segment_length * info->time_base / info->frame_len / 1000);
+        params->packets_per_subsegment = (params->subsegment_length * info->time_base / info->frame_len / 1000);
+    }
+
     return 0;
 }
 
@@ -247,12 +263,31 @@ int hls_open(hls* h, const segment_source* source) {
       TRYS(strbuf_term(&h->segment_format));
     }
 
+    if(h->subsegment_format.len == 0) {
+      TRYS(strbuf_sprintf(&h->subsegment_format,"%%08u_%%03u%.*s",
+        (int)source->media_ext->len,(char *)source->media_ext->x))
+      TRYS(strbuf_term(&h->subsegment_format));
+    }
+
     if(h->segment_mimetype.len == 0) {
         TRYS(strbuf_copy(&h->segment_mimetype,source->media_mimetype));
     }
 
     h->target_samples = (h->target_duration * source->time_base / 1000);
+    h->subsegment_samples = (h->subsegment_duration * source->time_base / 1000);
     h->time_base  = source->time_base;
+
+    if(h->subsegment_samples && (h->subsegment_samples % source->frame_len)) {
+        /* try to bump up if we can safely say most partials will be at least 85%
+         * of what we publish, otherwise bump down.
+         * This is for a future concept of having more flexible segments and partial segments,
+         * to allow for less clock drift over time. */
+        h->subsegment_samples += source->frame_len - (h->subsegment_samples % source->frame_len);
+        if((double)(h->subsegment_samples - source->frame_len) / ((double)h->subsegment_samples) < 0.85) {
+            /* reset */
+            h->subsegment_samples = (h->subsegment_duration * source->time_base / 1000);
+        }
+    }
 
     playlist_segments = (h->playlist_length / (h->target_duration / 1000)) + 1;
     TRYS(hls_playlist_open(&h->playlist, playlist_segments))
@@ -263,6 +298,15 @@ int hls_open(hls* h, const segment_source* source) {
       "#EXT-X-TARGETDURATION:%u\n",
       h->version,
       (h->target_duration / 1000)),LOG0("out of memory"));
+    if(source->sync_flag) {
+      TRY0(strbuf_sprintf(&h->header,
+        "#EXT-X-INDEPENDENT-SEGMENTS\n"), LOG0("out of memory"));
+    }
+    if(h->subsegment_duration) {
+        TRY0(strbuf_sprintf(&h->header,
+          "#EXT-X-PART-INF:PART-TARGET=%f\n", ((double)h->subsegment_samples) / ((double)source->time_base)),
+          LOG0("out of memory"));
+    }
 
     r = 0;
 
@@ -312,10 +356,53 @@ static int hls_update_playlist(hls* h) {
             init_id = s->init_id;
         }
 
-        TRYS(strbuf_cat(&h->txt,&s->tags))
+        if(len - i <= 3) {
+            TRYS(strbuf_cat(&h->txt,&s->subtags));
+        }
+        TRYS(strbuf_cat(&h->txt,&s->tags));
     }
 
     cleanup:
+    return r;
+}
+
+static int hls_flush_subsegment(hls* h, const segment* s) {
+    int r;
+    membuf tmp = MEMBUF_ZERO;
+
+    if(h->segment.meta == NULL) {
+        h->segment.meta = hls_playlist_push(&h->playlist);
+        hls_segment_meta_reset(h->segment.meta);
+
+        h->segment.meta->disc          = h->segment.disc;
+        h->segment.meta->init_id       = h->segment.init_id;
+    }
+
+    TRYS(strbuf_sprintf(&h->segment.meta->filename,(char*)h->subsegment_format.x,h->counter + 1, ++(h->subcounter)));
+    TRYS(hls_expire_file(h, &h->segment.meta->filename));
+
+    TRYS(strbuf_sprintf(&h->segment.meta->subtags,
+      "#EXT-X-PART:DURATION=%f,URI=\"%.*s%.*s\"",
+      (((double)s->samples) / ((double)h->time_base)),
+      (int)h->entry_prefix.len, (const char*)h->entry_prefix.x,
+      (int)h->segment.meta->filename.len, (const char*)h->segment.meta->filename.x));
+
+    if(s->independent) {
+        TRYS(strbuf_sprintf(&h->segment.meta->subtags,
+          ",INDEPENDENT=YES"));
+    }
+    TRYS(strbuf_sprintf(&h->segment.meta->subtags,"\n"));
+
+    tmp.x   = (uint8_t*)s->data;
+    tmp.len = s->len;
+    TRY0(h->callbacks.write(h->callbacks.userdata, &h->segment.meta->filename, &tmp, &h->segment_mimetype),
+      LOGS("error writing file %.*s", h->segment.meta->filename));
+
+    TRYS(hls_update_playlist(h));
+
+    cleanup:
+
+    strbuf_reset(&h->segment.meta->filename);
     return r;
 }
 
@@ -354,17 +441,20 @@ static int hls_flush_segment(hls* h) {
         }
     }
 
-    t = hls_playlist_push(&h->playlist);
-    hls_segment_meta_reset(t);
-
-    t->expired_files = h->segment.expired_files;
-    t->disc    = h->segment.disc;
-    t->init_id = h->segment.init_id;
-
     f.num = h->segment.samples;
     f.den = h->time_base;
 
-    TRYS(strbuf_sprintf(&t->filename,(char*)h->segment_format.x,++(h->counter)));
+    if(h->segment.meta == NULL) {
+        h->segment.meta = hls_playlist_push(&h->playlist);
+        hls_segment_meta_reset(h->segment.meta);
+
+        h->segment.meta->disc          = h->segment.disc;
+        h->segment.meta->init_id       = h->segment.init_id;
+    }
+
+    h->segment.meta->expired_files = h->segment.expired_files;
+
+    TRYS(strbuf_sprintf(&h->segment.meta->filename,(char*)h->segment_format.x,++(h->counter)));
 
     if(h->program_time) {
         if(h->program_time == 2) {
@@ -374,26 +464,27 @@ static int hls_flush_segment(hls* h) {
             ich_time_sub_frac(&h->now, &f);
         }
         ich_time_to_tm(&tm,&h->now);
-        TRYS(strbuf_sprintf(&t->tags,
+        TRYS(strbuf_sprintf(&h->segment.meta->tags,
           "#EXT-X-PROGRAM-DATE-TIME:%04u-%02u-%02uT%02u:%02u:%02u.%03uZ\n",
           tm.year,tm.month,tm.day,tm.hour,tm.min,tm.sec,tm.mill));
     }
 
-    TRYS(strbuf_sprintf(&t->tags,
+    TRYS(strbuf_sprintf(&h->segment.meta->tags,
       "#EXTINF:%f,\n"
       "%.*s%.*s\n",
       (((double)h->segment.samples) / ((double)h->time_base)),
       (int)h->entry_prefix.len, (const char*)h->entry_prefix.x,
-      (int)t->filename.len, (const char*)t->filename.x));
+      (int)h->segment.meta->filename.len, (const char*)h->segment.meta->filename.x));
 
-    TRY0(h->callbacks.write(h->callbacks.userdata, &t->filename, &h->segment.data, &h->segment_mimetype),
-      LOGS("error writing file %.*s", t->filename));
+    TRY0(h->callbacks.write(h->callbacks.userdata, &h->segment.meta->filename, &h->segment.data, &h->segment_mimetype),
+      LOGS("error writing file %.*s", h->segment.meta->filename));
 
     if(h->program_time == 1) {
         ich_time_add_frac(&h->now,&f);
     }
 
     hls_segment_reset(&h->segment);
+    h->subcounter = 0;
 
     TRYS(hls_update_playlist(h));
 
@@ -430,6 +521,7 @@ int hls_add_segment(hls* h, const segment* s) {
         return 0;
     }
 
+    /* TODO: segments of varying length */
     if(h->segment.samples + s->samples > h->target_samples) { /* time to flush! */
         TRY0(hls_flush_segment(h),LOG0("error flushing segment"));
         TRY0(hls_write_playlist(h),LOG0("error writing playlist"));
@@ -438,6 +530,11 @@ int hls_add_segment(hls* h, const segment* s) {
     TRYS(membuf_append(&h->segment.data,s->data,s->len));
     if(h->segment.samples == 0) h->segment.pts = s->pts;
     h->segment.samples += s->samples;
+
+    if(h->subsegment_duration) { /* we're sending out partial segments */
+        TRY0(hls_flush_subsegment(h, s), LOG0("error flushing subsegment"));
+        TRY0(hls_write_playlist(h),LOG0("error writing playlist"));
+    }
 
     cleanup:
     return r;
@@ -491,6 +588,20 @@ int hls_configure(hls* h, const strbuf* key, const strbuf* value) {
             return -1;
         }
         h->target_duration *= 1000;
+        return 0;
+    }
+
+    if(strbuf_ends_cstr(key,"partial-duration")) {
+        errno = 0;
+        h->subsegment_duration = strbuf_strtoul(value,10);
+        if(errno != 0) {
+            LOGS("error parsing partial-duration value %.*s",(*value));
+            return -1;
+        }
+        if(h->subsegment_duration == 0) {
+            LOGS("invalid partial-duration %.*s",(*value));
+            return -1;
+        }
         return 0;
     }
 

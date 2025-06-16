@@ -189,11 +189,15 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
         return r;
     }
 
+    if(ps_params.packets_per_subsegment == 0) ps_params.packets_per_subsegment = ps_params.packets_per_segment;
+
     logs_debug("opening");
     log_debug("  vbr = %u", userdata->vbr);
     log_debug("  sbr = %u", userdata->frame_len == 2048);
     log_debug("  samplerate = %u", source->sample_rate);
     log_debug("  channel layout = 0x%" PRIx64, source->channel_layout);
+    log_debug("  packets_per_segment = %u", ps_params.packets_per_segment);
+    log_debug("  packets_per_subsegment = %u", ps_params.packets_per_subsegment);
 
     /* it seems like exhale's tune-in period is really double what you intend.
      * I think the idea goes the tune_in_period allows you to technically start
@@ -222,10 +226,16 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     userdata->me.sample_rate = source->sample_rate;
     userdata->me.frame_len   = userdata->frame_len;
     userdata->me.padding     = userdata->frame_len == 2048 ? 2048 : 0;
-    userdata->me.sync_flag   = 0;
     userdata->me.roll_distance = userdata->frame_len == 2048 ? 2 : 1;
     userdata->me.roll_type   = 1;
     userdata->me.handle      = userdata;
+
+    /* we set our sync flag to 1, because we set a tune in
+     * period that should guarantee at least 1 tune-in frame per
+     * segment, meaning they're all independently decodable (though
+     * in some cases it may be only the last packet is a sync packet). */
+    userdata->me.sync_flag   = 1;
+
 
     /* simplifying some logic from the exhale app:
      * startLength = 1600 / 3200 (regular vs sbr)

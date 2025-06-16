@@ -30,8 +30,10 @@ static STRBUF_CONST(ext_eac3,".eac3");
 static STRBUF_CONST(key_mpegts,"PRIV:com.apple.streaming.transportStreamTimestamp");
 
 struct plugin_userdata {
-    uint64_t samplecount;
+    uint64_t segment_samplecount;
+    uint64_t subsegment_samplecount;
     uint64_t samples_per_segment;
+    uint64_t samples_per_subsegment;
     membuf samples;
     membuf segment;
     adts_mux adts_muxer;
@@ -39,6 +41,7 @@ struct plugin_userdata {
     id3 id3;
     taglist taglist;
     int (*append_packet)(struct plugin_userdata*, const packet*);
+    uint8_t newsegment;
 };
 typedef struct plugin_userdata plugin_userdata;
 
@@ -80,8 +83,11 @@ static int plugin_reset(void* ud) {
 
     userdata->append_packet = NULL;
     userdata->samples_per_segment = 0;
+    userdata->samples_per_subsegment = 0;
     userdata->ts = 0;
-    userdata->samplecount = 0;
+    userdata->segment_samplecount = 0;
+    userdata->subsegment_samplecount = 0;
+    userdata->newsegment = 1;
 
     return 0;
 }
@@ -131,8 +137,10 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     me.handle = userdata;
     me.time_base = 90000;
     me.frame_len = s_info.frame_len;
+    me.sync_flag = 1;
 
     userdata->samples_per_segment = (uint64_t)s_params.segment_length * 90000ULL / 1000ULL;
+    userdata->samples_per_subsegment = s_params.subsegment_length ? (uint64_t)s_params.subsegment_length * 90000ULL / 1000ULL : userdata->samples_per_segment;
 
     switch(source->codec) {
         case CODEC_TYPE_AAC: {
@@ -231,17 +239,20 @@ static int plugin_send(plugin_userdata* userdata, const segment_receiver* dest) 
         return r;
     }
 
-    if(taglist_len(&userdata->taglist) > 0) {
-        id3_reset(&userdata->id3);
+    if(userdata->newsegment) {
+        userdata->newsegment = 0;
+        if(taglist_len(&userdata->taglist) > 0) {
+            id3_reset(&userdata->id3);
 
-        if( (r = id3_add_taglist(&userdata->id3,&userdata->taglist)) != 0) {
-            LOGERRNO("error adding taglist");
-            return r;
-        }
+            if( (r = id3_add_taglist(&userdata->id3,&userdata->taglist)) != 0) {
+                LOGERRNO("error adding taglist");
+                return r;
+            }
 
-        if( (r = membuf_cat(&userdata->segment, &userdata->id3)) != 0) {
-            LOGERRNO("error concatenating segment");
-            return r;
+            if( (r = membuf_cat(&userdata->segment, &userdata->id3)) != 0) {
+                LOGERRNO("error concatenating segment");
+                return r;
+            }
         }
     }
 
@@ -253,8 +264,9 @@ static int plugin_send(plugin_userdata* userdata, const segment_receiver* dest) 
     s.type = SEGMENT_TYPE_MEDIA;
     s.data = userdata->segment.x;
     s.len  = userdata->segment.len;
-    s.samples = userdata->samplecount;
+    s.samples = userdata->subsegment_samplecount;
     s.pts = userdata->ts;
+    s.independent = 1;
 
     if( (r = dest->submit_segment(dest->handle,&s)) != 0) {
         logs_error("error submitting segment");
@@ -271,17 +283,26 @@ static int plugin_submit_packet(void* ud, const packet* packet, const segment_re
     int r;
     uint64_t rescaled_duration = ((uint64_t)packet->duration) * 90000ULL / ((uint64_t)packet->sample_rate);
 
-    if(userdata->samplecount + rescaled_duration > userdata->samples_per_segment) {
+
+    if(userdata->segment_samplecount + userdata->subsegment_samplecount + rescaled_duration > userdata->samples_per_segment) {
         if( (r = plugin_send(userdata,dest)) != 0) return r;
-        userdata->ts += (uint64_t)userdata->samplecount;
-        userdata->samplecount = 0;
+        userdata->ts += (uint64_t)userdata->subsegment_samplecount;
+        userdata->segment_samplecount = 0;
+        userdata->subsegment_samplecount = 0;
+        userdata->newsegment = 1;
+    } else {
+        if(userdata->subsegment_samplecount + rescaled_duration > userdata->samples_per_subsegment) {
+            if( (r = plugin_send(userdata,dest)) != 0) return r;
+            userdata->ts += (uint64_t)userdata->subsegment_samplecount;
+            userdata->segment_samplecount += userdata->subsegment_samplecount;
+            userdata->subsegment_samplecount = 0;
+        }
     }
 
     if( (r = userdata->append_packet(userdata,packet)) != 0) {
         return r;
     }
-
-    userdata->samplecount += rescaled_duration;
+    userdata->subsegment_samplecount += rescaled_duration;
 
     return r;
 }
@@ -290,7 +311,7 @@ static int plugin_flush(void* ud, const segment_receiver* dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
 
-    if(userdata->samplecount != 0) {
+    if(userdata->subsegment_samplecount != 0) {
         if( (r = plugin_send(userdata,dest)) != 0) return r;
     }
 
@@ -343,6 +364,15 @@ static int plugin_get_segment_info(const void* ud, const packet_source_info* s, 
 
     i->segment_length = s_params.segment_length;
     i->packets_per_segment = s_params.packets_per_segment;
+
+    if(s_params.subsegment_length) {
+        i->segment_length = s_params.subsegment_length;
+    }
+
+    if(s_params.packets_per_subsegment) {
+        i->packets_per_segment = s_params.packets_per_subsegment;
+    }
+
     return 0;
 }
 

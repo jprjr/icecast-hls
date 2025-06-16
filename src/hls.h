@@ -35,6 +35,7 @@ struct hls_segment_meta {
     strbuf tags; /* stores everything like #EXTINF, #PROGRAMDATETIME and
                  the actual filename portion, which may be prefixed
                  with a URL or something */
+    strbuf subtags; /* stores info on partial segments */
     strbuf expired_files; /* stores a list of strings that are considered expired when this chunk expires,
                              this is a list of NULL-separated c strings */
     uint8_t disc; /* a flag that, if sets, means this segment is discontinuous */
@@ -50,6 +51,7 @@ struct hls_segment {
     strbuf expired_files;
     size_t init_id;
     uint8_t disc; /* a flag that, if sets, means this segment is discontinuous */
+    hls_segment_meta* meta; /* pointer to the segment's playlist entry */
 };
 
 typedef struct hls_segment hls_segment;
@@ -83,18 +85,22 @@ struct hls {
     strbuf segment_format; /* generated snprintf-style format string for media segments */
     strbuf segment_mimetype;  /* the mimetype to use on media segments */
     strbuf entry_prefix; /* user-configurable prefix on playlist entries */
+    strbuf subsegment_format; /* generated snprintf-style format string for media subsegments */
 
     hls_playlist playlist;
     hls_segment segment;
     hls_callback_handler callbacks;
     unsigned int time_base;
-    unsigned int target_duration; /* in seconds */
+    unsigned int target_duration; /* in milliseconds */
+    unsigned int subsegment_duration; /* in milliseconds */
     unsigned int playlist_length; /* in seconds */
     unsigned int target_samples; /* target duration in samples */
+    unsigned int subsegment_samples;
     size_t media_sequence;        /* current media sequence number */
     size_t disc_sequence; /* current discontinuity sequence number */
     size_t init_counter;
     size_t counter;
+    size_t subcounter;
     unsigned int version;         /* reported HLS playlist version */
     ich_time now;
     uint8_t program_time;

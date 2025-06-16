@@ -28,6 +28,8 @@ typedef struct packet_source_info packet_source_info;
 struct packet_source_params {
     size_t segment_length; /* given in milliseconds */
     size_t packets_per_segment;
+    size_t subsegment_length; /* given in milliseconds */
+    size_t packets_per_subsegment;
 };
 typedef struct packet_source_params packet_source_params;
 
@@ -100,7 +102,7 @@ typedef struct packet_receiver packet_receiver;
 }
 
 #define PACKET_SOURCE_INFO_ZERO { .time_base = 0, .frame_len = 0 }
-#define PACKET_SOURCE_PARAMS_ZERO { .segment_length = 0, .packets_per_segment = 0 }
+#define PACKET_SOURCE_PARAMS_ZERO { .segment_length = 0, .packets_per_segment = 0, .subsegment_length = 0, .packets_per_subsegment = 0 }
 
 #define PACKET_RECEIVER_CAPS_ZERO { .has_global_header = 0 }
 
