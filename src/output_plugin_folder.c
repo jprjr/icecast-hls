@@ -34,28 +34,30 @@ struct plugin_userdata {
     strbuf foldername;
     strbuf initname;
     strbuf picture_filename; /* used to track the current out-of-band picture */
+    strbuf scratch;
+    strbuf wide;
     uint8_t init;
     int pictureflag;
 };
 
 typedef struct plugin_userdata plugin_userdata;
 
-static int directory_create(const strbuf* foldername) {
+static int directory_create(plugin_userdata* userdata, const strbuf* foldername) {
 #ifdef DR_WINDOWS
     DWORD last_error;
     int r = -1;
-    strbuf w = STRBUF_ZERO;
-    if(strbuf_wide(&w,foldername) != 0) goto cleanup;
-    r = CreateDirectoryW((wchar_t*)w.x,NULL) ? 0 : -1;
+    userdata->wide.len = 0;
+    if(strbuf_wide(&userdata->wide,foldername) != 0) goto cleanup;
+    r = CreateDirectoryW((wchar_t*)userdata->wide.x,NULL) ? 0 : -1;
     if(r == -1) {
         last_error = GetLastError();
         if(last_error == ERROR_ALREADY_EXISTS) r = 0;
     }
     cleanup:
-    strbuf_free(&w);
     return r;
 #else
     int r;
+    (void) userdata;
     errno = 0;
     r = mkdir((const char *)foldername->x,S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP | S_IROTH | S_IXOTH);
     if(r == -1) {
@@ -73,30 +75,55 @@ static int directory_create(const strbuf* foldername) {
 #endif
 }
 
-static int file_delete(const strbuf* filename) {
+static int file_delete(plugin_userdata* userdata, const strbuf* filename) {
 #ifdef DR_WINDOWS
     int r = -1;
-    strbuf w = STRBUF_ZERO;
-    if(strbuf_wide(&w,filename) != 0) goto cleanup;
-    r = DeleteFileW((wchar_t*)w.x) ? 0 : -1;
+    userdata->wide.len = 0;
+    if(strbuf_wide(&userdata->wide,filename) != 0) goto cleanup;
+    r = DeleteFileW((wchar_t*)userdata->wide.x) ? 0 : -1;
     cleanup:
-    strbuf_free(&w);
     return r;
 #else
+    (void)userdata;
     return unlink((const char*)filename->x);
 #endif
 }
 
-static FILE* file_open(const strbuf* filename) {
+static int file_rename(plugin_userdata* userdata, const strbuf* oldname, const strbuf* newname) {
+#ifdef DR_WINDOWS
+    int r = -1;
+    strbuf oldname_wide = STRBUF_ZERO;
+    strbuf newname_wide = STRBUF_ZERO;
+    userdata->wide.len = 0;
+    if(strbuf_wide(&userdata->wide,oldname) != 0) goto cleanup;
+    oldname_wide.len = userdata->wide.len;
+    if(strbuf_wide(&userdata->wide,newname) != 0) goto cleanup;
+    oldname_wide.x = userdata->wide.x;
+    newname_wide.x = userdata->wide.x + oldname_wide.len;
+    newname_wide.len = userdata->wide.len - oldname_wide.len;
+    r = MoveFileExW((wchar_t*)oldname_wide.x, (wchar_t*)newname_wide.x, MOVEFILE_REPLACE_EXISTING) ? 0 : -1;
+    return r
+#else
+    /* c standard states that renaming to an existing file is implementation-defined,
+     * POSIX clarifies that it should succeed and be an atomic operation (assuming no permissions
+     * issues etc).
+     */
+    (void)userdata;
+    return rename((const char*)oldname->x, (const char*)newname->x);
+#endif
+}
+
+static FILE* file_open(plugin_userdata* userdata, const strbuf* filename) {
     FILE* f = NULL;
 #ifdef DR_WINDOWS
-    strbuf w = STRBUF_ZERO;
+    userdata->wide.len = 0;
 
     /* since we'll include the terminating zero we don't
      * need to manually terminate this after calling strbuf_wide */
-    if(strbuf_wide(&w,filename) != 0) goto cleanup;
-    f = _wfopen((wchar_t *)w.x, L"wb");
+    if(strbuf_wide(&userdata->wide,filename) != 0) goto cleanup;
+    f = _wfopen((wchar_t *)userdata->wide.x, L"wb");
 #else
+    (void)userdata;
     f = fopen((const char *)filename->x,"wb");
 #endif
     if(f == NULL) {
@@ -105,7 +132,6 @@ static FILE* file_open(const strbuf* filename) {
 
 #ifdef DR_WINDOWS
     cleanup:
-    strbuf_free(&w);
 #endif
 
     return f;
@@ -116,6 +142,8 @@ static void plugin_close(void* userdata) {
     strbuf_free(&ud->foldername);
     strbuf_free(&ud->initname);
     strbuf_free(&ud->picture_filename);
+    strbuf_free(&ud->scratch);
+    strbuf_free(&ud->wide);
     hls_free(&ud->hls);
 }
 
@@ -135,14 +163,13 @@ static int plugin_get_segment_info(const void* ud, const segment_source_info* in
 static int plugin_open(void* ud, const segment_source* source) {
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
-    strbuf tmp = STRBUF_ZERO;
+    userdata->scratch.len = 0;
 
     if(userdata->foldername.len == 0) return -1;
 
-    if( (r = strbuf_append(&tmp,(char *)userdata->foldername.x,userdata->foldername.len-1)) != 0) return -1;
-    if( (r = strbuf_term(&tmp)) != 0) return -1;
-    if( (r = directory_create(&tmp)) != 0) return r;
-    strbuf_free(&tmp);
+    if( (r = strbuf_append(&userdata->scratch,(char *)userdata->foldername.x,userdata->foldername.len-1)) != 0) return -1;
+    if( (r = strbuf_term(&userdata->scratch)) != 0) return -1;
+    if( (r = directory_create(userdata, &userdata->scratch)) != 0) return r;
 
     return hls_open(&userdata->hls, source);
 }
@@ -179,8 +206,10 @@ static int plugin_config(void* ud, const strbuf* key, const strbuf* value) {
 static int plugin_hls_write(void* ud, const strbuf* filename, const membuf* data, const strbuf* mime) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
-    strbuf path = STRBUF_ZERO;
     FILE* f = NULL;
+    strbuf final  = STRBUF_ZERO;
+    strbuf tmp = STRBUF_ZERO;
+    userdata->scratch.len = 0;
 
     (void)mime;
 
@@ -196,38 +225,56 @@ static int plugin_hls_write(void* ud, const strbuf* filename, const membuf* data
         TRYS(strbuf_copy(&userdata->picture_filename,filename));
     }
 
-    TRYS(strbuf_copy(&path,&userdata->foldername));
-    TRYS(strbuf_cat(&path,filename));
-    TRYS(strbuf_term(&path))
+    /* when we append the string to itself we don't want any reallocs so
+     * get memory ahead of time */
+    TRYS(strbuf_ready(&userdata->scratch,
+        (userdata->foldername.len * 2) +
+        (filename->len * 2) +
+        (4) + /* for ".tmp" */
+        (2) /* for 2 null terminators */ ));
 
-    TRY( (f = file_open(&path)) != NULL);
+    TRYS(strbuf_copy(&userdata->scratch,&userdata->foldername));
+    TRYS(strbuf_cat(&userdata->scratch,filename));
+    TRYS(strbuf_term(&userdata->scratch));
+    final = userdata->scratch;
+
+    TRYS(strbuf_cat(&userdata->scratch,&final));
+    userdata->scratch.len--;
+    TRYS(strbuf_append(&userdata->scratch,".tmp",4));
+    TRYS(strbuf_term(&userdata->scratch));
+
+    final.x = userdata->scratch.x;
+    tmp.x  = final.x + final.len;
+    tmp.len = userdata->scratch.len - final.len;
+
+    r = -1;
+    TRY( (f = file_open(userdata, &tmp)) != NULL);
     TRY( fwrite(data->x,1,data->len,f) == data->len );
+    fclose(f); f = NULL;
+    TRYS(file_rename(userdata, &tmp, &final));
 #undef TRY
 
     r = 0;
     cleanup:
     if(f != NULL) fclose(f);
-    strbuf_free(&path);
     return r;
 }
 
 static int plugin_hls_delete(void* ud, const strbuf* filename) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
-    strbuf path = STRBUF_ZERO;
 
 #define TRY(x) if(!(x)) goto cleanup;
 #define TRYS(x) TRY( (r = (x)) == 0 )
-    TRYS(strbuf_copy(&path,&userdata->foldername));
-    TRYS(strbuf_cat(&path,filename));
-    TRYS(strbuf_term(&path))
+    TRYS(strbuf_copy(&userdata->scratch,&userdata->foldername));
+    TRYS(strbuf_cat(&userdata->scratch,filename));
+    TRYS(strbuf_term(&userdata->scratch))
 
-    file_delete(&path);
+    file_delete(userdata, &userdata->scratch);
 #undef TRY
 
     r = 0;
     cleanup:
-    strbuf_free(&path);
     return r;
 }
 
@@ -267,6 +314,7 @@ static int plugin_create(void* ud) {
     strbuf_init(&userdata->foldername);
     strbuf_init(&userdata->initname);
     strbuf_init(&userdata->picture_filename);
+    strbuf_init(&userdata->scratch);
     hls_init(&userdata->hls);
     userdata->pictureflag = 0;
 

@@ -168,6 +168,8 @@ void hls_init(hls* h) {
     thread_atomic_uint_store(&counter,0);
     strbuf_init(&h->txt);
     strbuf_init(&h->header);
+    strbuf_init(&h->trailer);
+    strbuf_init(&h->scratch);
     strbuf_init(&h->init_format);
     strbuf_init(&h->init_filename);
     strbuf_init(&h->init_mimetype);
@@ -183,7 +185,6 @@ void hls_init(hls* h) {
     h->callbacks.write = hls_write_default_callback;
     h->callbacks.userdata = NULL;
     h->time_base = 0;
-    h->target_samples = 0;
     h->target_duration = 2000;
     h->playlist_length = 60 * 15;
     h->media_sequence = 0;
@@ -195,12 +196,13 @@ void hls_init(hls* h) {
     h->now.nanoseconds = 0;
     h->program_time = 1; /* fixed program time */
     h->subsegment_duration = 0;
-    h->subsegment_samples = 0;
 }
 
 void hls_free(hls* h) {
     strbuf_free(&h->txt);
     strbuf_free(&h->header);
+    strbuf_free(&h->trailer);
+    strbuf_free(&h->scratch);
     membuf_free(&h->segment.data);
     strbuf_free(&h->segment.expired_files);
     strbuf_free(&h->playlist_filename);
@@ -273,21 +275,7 @@ int hls_open(hls* h, const segment_source* source) {
         TRYS(strbuf_copy(&h->segment_mimetype,source->media_mimetype));
     }
 
-    h->target_samples = (h->target_duration * source->time_base / 1000);
-    h->subsegment_samples = (h->subsegment_duration * source->time_base / 1000);
     h->time_base  = source->time_base;
-
-    if(h->subsegment_samples && (h->subsegment_samples % source->frame_len)) {
-        /* try to bump up if we can safely say most partials will be at least 85%
-         * of what we publish, otherwise bump down.
-         * This is for a future concept of having more flexible segments and partial segments,
-         * to allow for less clock drift over time. */
-        h->subsegment_samples += source->frame_len - (h->subsegment_samples % source->frame_len);
-        if((double)(h->subsegment_samples - source->frame_len) / ((double)h->subsegment_samples) < 0.85) {
-            /* reset */
-            h->subsegment_samples = (h->subsegment_duration * source->time_base / 1000);
-        }
-    }
 
     playlist_segments = (h->playlist_length / (h->target_duration / 1000)) + 1;
     TRYS(hls_playlist_open(&h->playlist, playlist_segments))
@@ -298,13 +286,18 @@ int hls_open(hls* h, const segment_source* source) {
       "#EXT-X-TARGETDURATION:%u\n",
       h->version,
       (h->target_duration / 1000)),LOG0("out of memory"));
+
     if(source->sync_flag) {
       TRY0(strbuf_sprintf(&h->header,
         "#EXT-X-INDEPENDENT-SEGMENTS\n"), LOG0("out of memory"));
     }
+
     if(h->subsegment_duration) {
         TRY0(strbuf_sprintf(&h->header,
-          "#EXT-X-PART-INF:PART-TARGET=%f\n", ((double)h->subsegment_samples) / ((double)source->time_base)),
+          "#EXT-X-SERVER-CONTROL:PART-HOLD-BACK=%u.%03u\n"
+          "#EXT-X-PART-INF:PART-TARGET=%u.%03u\n",
+          3 * h->subsegment_duration / 1000, 3 * h->subsegment_duration % 1000,
+          h->subsegment_duration / 1000, h->subsegment_duration % 1000),
           LOG0("out of memory"));
     }
 
@@ -362,6 +355,8 @@ static int hls_update_playlist(hls* h) {
         TRYS(strbuf_cat(&h->txt,&s->tags));
     }
 
+    TRYS(strbuf_cat(&h->txt,&h->trailer));
+
     cleanup:
     return r;
 }
@@ -378,7 +373,7 @@ static int hls_flush_subsegment(hls* h, const segment* s) {
         h->segment.meta->init_id       = h->segment.init_id;
     }
 
-    TRYS(strbuf_sprintf(&h->segment.meta->filename,(char*)h->subsegment_format.x,h->counter + 1, ++(h->subcounter)));
+    TRYS(strbuf_sprintf(&h->segment.meta->filename,(char*)h->subsegment_format.x, h->counter + 1, h->subcounter + 1));
     TRYS(hls_expire_file(h, &h->segment.meta->filename));
 
     TRYS(strbuf_sprintf(&h->segment.meta->subtags,
@@ -454,7 +449,7 @@ static int hls_flush_segment(hls* h) {
 
     h->segment.meta->expired_files = h->segment.expired_files;
 
-    TRYS(strbuf_sprintf(&h->segment.meta->filename,(char*)h->segment_format.x,++(h->counter)));
+    TRYS(strbuf_sprintf(&h->segment.meta->filename,(char*)h->segment_format.x,h->counter + 1));
 
     if(h->program_time) {
         if(h->program_time == 2) {
@@ -484,7 +479,6 @@ static int hls_flush_segment(hls* h) {
     }
 
     hls_segment_reset(&h->segment);
-    h->subcounter = 0;
 
     TRYS(hls_update_playlist(h));
 
@@ -521,18 +515,33 @@ int hls_add_segment(hls* h, const segment* s) {
         return 0;
     }
 
-    /* TODO: segments of varying length */
-    if(h->segment.samples + s->samples > h->target_samples) { /* time to flush! */
-        TRY0(hls_flush_segment(h),LOG0("error flushing segment"));
-        TRY0(hls_write_playlist(h),LOG0("error writing playlist"));
+    if(h->subsegment_duration) { /* we're sending out partial segments */
+        TRY0(hls_flush_subsegment(h, s), LOG0("error flushing subsegment"));
+        h->subcounter++;
     }
 
     TRYS(membuf_append(&h->segment.data,s->data,s->len));
     if(h->segment.samples == 0) h->segment.pts = s->pts;
     h->segment.samples += s->samples;
 
-    if(h->subsegment_duration) { /* we're sending out partial segments */
-        TRY0(hls_flush_subsegment(h, s), LOG0("error flushing subsegment"));
+    if(s->fin) { /* time to flush! */
+        TRY0(hls_flush_segment(h),LOG0("error flushing segment"));
+        if(h->subsegment_duration == 0) { /* we're about to write out again anyway if we're doing subsegments */
+            TRY0(hls_write_playlist(h),LOG0("error writing playlist"));
+        }
+        h->counter++;
+        h->subcounter = 0;
+    }
+
+    if(h->subsegment_duration) {
+        h->trailer.len = 0;
+        h->scratch.len = 0;
+        TRYS(strbuf_sprintf(&h->scratch,(char*)h->subsegment_format.x, h->counter + 1, h->subcounter + 1));
+        TRYS(strbuf_sprintf(&h->trailer,
+          "#EXT-X-PRELOAD-HINT:TYPE=PART,URI=\"%.*s%.*s\"\n",
+          (int)h->entry_prefix.len, (const char*)h->entry_prefix.x,
+          (int)h->scratch.len, (const char*)h->scratch.x));
+        TRYS(hls_update_playlist(h));
         TRY0(hls_write_playlist(h),LOG0("error writing playlist"));
     }
 
@@ -548,6 +557,8 @@ int hls_flush(hls* h) {
         TRY0(hls_flush_segment(h),LOG0("hls_flush: error flushing segment"));
     }
 
+    h->trailer.len = 0;
+    TRYS(hls_update_playlist(h));
     TRYS(strbuf_append_cstr(&h->txt,"#EXT-X-ENDLIST\n"));
     TRY0(hls_write_playlist(h),LOG0("error writing playlist"));
 

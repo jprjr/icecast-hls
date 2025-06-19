@@ -11,6 +11,7 @@
 #include "ts.h"
 #include "adts_mux.h"
 #include "pack_u16be.h"
+#include "chunker.h"
 
 #define LOG_PREFIX "[muxer:ts]"
 #include "logger.h"
@@ -44,45 +45,22 @@ struct muxer_plugin_ts_userdata {
     uint64_t samples_per_subsegment;
     uint64_t samples_per_packet;
     uint64_t subsegment_ts;
+    uint64_t packet_ts;
     uint8_t newsegment;
     id3 id3;
     taglist taglist;
+    chunker chunker;
     int (*submit_packet)(struct muxer_plugin_ts_userdata*, const packet*, const segment_receiver*);
 };
 typedef struct muxer_plugin_ts_userdata muxer_plugin_ts_userdata;
 
-static int muxer_plugin_ts_subsegment_send(muxer_plugin_ts_userdata* userdata, const segment_receiver *dest) {
-    int r;
-    segment s;
-
-    if(userdata->subsegment.len == 0) return -1;
-    if(userdata->subsegment_samplecount == 0) return -1;
-
-    s.type = SEGMENT_TYPE_MEDIA;
-    s.data = userdata->subsegment.x;
-    s.len = userdata->subsegment.len;
-    s.samples = userdata->subsegment_samplecount;
-    s.pts = userdata->subsegment_ts;
-
-    if( (r = dest->submit_segment(dest->handle, &s)) != 0) {
-        logs_error("error submitting subsegment");
-        return r;
-    }
-    membuf_reset(&userdata->subsegment);
-    userdata->subsegment_ts += userdata->subsegment_samplecount;
-    userdata->segment_samplecount += userdata->subsegment_samplecount;
-    userdata->subsegment_samplecount = 0;
-
-    return 0;
-}
-
-/* takes the current packet and appends it to the segment */
+/* takes the buffered packet data and appends it to the segment */
 static int muxer_plugin_ts_append_packet(muxer_plugin_ts_userdata* userdata) {
     int r;
     mpegts_pmt_params pmt_params;
 
+    if(userdata->packet_samplecount == 0) return 0;
     if(userdata->packet.len == 0) return -1;
-    if(userdata->packet_samplecount == 0) return -1;
 
     pmt_params.codec = userdata->codec;
     pmt_params.audio_pid = 0x0100;
@@ -114,10 +92,8 @@ static int muxer_plugin_ts_append_packet(muxer_plugin_ts_userdata* userdata) {
     userdata->audio_stream.adaptation.pcr_flag = 1;
     if( (r = mpegts_stream_encode_packet(&userdata->subsegment, &userdata->audio_stream, &userdata->packet)) != 0) return r;
 
-    userdata->audio_stream.pts += userdata->packet_samplecount;
-    userdata->audio_stream.pts &= 0x1FFFFFFFF;
-
-    userdata->subsegment_samplecount += userdata->packet_samplecount;
+    userdata->packet_ts += userdata->packet_samplecount;
+    userdata->audio_stream.pts = rescale_duration(userdata->packet_ts, userdata->chunker.src_rate, 90000ULL) & 0x1FFFFFFFF;
 
     userdata->packet_samplecount = 0;
     userdata->packet.len = 0;
@@ -125,55 +101,74 @@ static int muxer_plugin_ts_append_packet(muxer_plugin_ts_userdata* userdata) {
 }
 
 
+static int muxer_plugin_ts_subsegment_send(muxer_plugin_ts_userdata* userdata, const segment_receiver *dest, int reset) {
+    int r;
+    segment s = SEGMENT_ZERO;
+
+    if(userdata->subsegment_samplecount == 0) return -1;
+    if( (r = muxer_plugin_ts_append_packet(userdata)) != 0) return r;
+    if(userdata->subsegment.len == 0) return -1;
+
+    s.type = SEGMENT_TYPE_MEDIA;
+    s.data = userdata->subsegment.x;
+    s.len = userdata->subsegment.len;
+    s.samples = userdata->subsegment_samplecount;
+    s.pts = userdata->subsegment_ts;
+    s.fin = reset;
+
+    if( (r = dest->submit_segment(dest->handle, &s)) != 0) {
+        logs_error("error submitting subsegment");
+        return r;
+    }
+    membuf_reset(&userdata->subsegment);
+    userdata->subsegment_ts       += userdata->subsegment_samplecount;
+    userdata->subsegment_samplecount = 0;
+
+    if(reset) {
+        int syncsubseg = userdata->samples_per_segment == userdata->samples_per_subsegment;
+        userdata->newsegment = 1;
+        userdata->segment_samplecount = 0;
+        userdata->samples_per_segment = chunker_next(&userdata->chunker);
+        if(syncsubseg) userdata->samples_per_subsegment = userdata->samples_per_segment;
+    }
+
+    return 0;
+}
+
+
 static int muxer_plugin_submit_packet_passthrough(muxer_plugin_ts_userdata* userdata, const packet* packet, const segment_receiver *dest) {
     int r;
-    uint64_t rescaled_duration = ((uint64_t)packet->duration) * 90000ULL / ((uint64_t)packet->sample_rate);
-    uint64_t buffered_samples = userdata->subsegment_samplecount + userdata->packet_samplecount;
 
-    /* if this packet duration would push us over 100ms between PCR, or over max packet length we'll need to flush
-     * our buffered packet to the subsegment */
-    uint8_t flush_packet =
-      (userdata->packet_samplecount + rescaled_duration > userdata->samples_per_packet ||
-       userdata->packet.len + packet->data.len > TS_MAX_PACKET_SIZE);
-
-    uint8_t flush_subsegment = buffered_samples + rescaled_duration > userdata->samples_per_subsegment;
-    uint8_t flush_segment = userdata->segment_samplecount + buffered_samples + rescaled_duration > userdata->samples_per_segment;
-
-    if(flush_segment) {
-        uint64_t rem_samples = userdata->samples_per_segment - userdata->segment_samplecount;
-        /* if we have room to buffer our packet into our subsegment without going over the segment, go ahead and do it */
-        if(userdata->packet_samplecount > 0 && userdata->packet_samplecount + userdata->subsegment_samplecount <= rem_samples) {
-            if( (r = muxer_plugin_ts_append_packet(userdata)) != 0) return r;
-            flush_packet = 0;
+    if(userdata->segment_samplecount + ((uint64_t)packet->duration) > userdata->samples_per_segment) {
+        if( (r = muxer_plugin_ts_subsegment_send(userdata,dest,1)) != 0) {
+            return r;
         }
-        /* trigger a subsegment flush */
-        flush_subsegment = 1;
-    }
-
-    if(flush_subsegment) {
-        /* append the packet to the subsegment if there's room - unless this is a full flush (since
-         * in a full flush we've already moved packet samples into the subsegment) */
-        if(!flush_segment) {
-            if(userdata->packet_samplecount > 0 && buffered_samples <= userdata->samples_per_subsegment) {
-                if( (r = muxer_plugin_ts_append_packet(userdata)) != 0) return r;
-                flush_packet = 0;
+    } else {
+        if(userdata->subsegment_samplecount + ((uint64_t)packet->duration) > userdata->samples_per_subsegment) {
+            if( (r = muxer_plugin_ts_subsegment_send(userdata,dest,0)) != 0) {
+            return r;
             }
         }
-        if( (r = muxer_plugin_ts_subsegment_send(userdata,dest)) != 0) return r;
-
-        /* if this was a full flush, reset the segment samplecount and mark this as a new segment */
-        if(flush_segment) {
-            userdata->segment_samplecount = 0;
-            userdata->newsegment = 1;
-        }
     }
 
-    if(flush_packet) {
+    if((uint64_t)packet->duration + userdata->packet_samplecount > userdata->samples_per_packet) {
         if( (r = muxer_plugin_ts_append_packet(userdata)) != 0) return r;
     }
 
     if( (r = membuf_cat(&userdata->packet, &packet->data)) != 0) return r;
-    userdata->packet_samplecount += rescaled_duration;
+    userdata->packet_samplecount     += ((uint64_t)packet->duration);
+    userdata->segment_samplecount    += ((uint64_t)packet->duration);
+    userdata->subsegment_samplecount += ((uint64_t)packet->duration);
+
+    if(userdata->segment_samplecount == userdata->samples_per_segment) {
+        if( (r = muxer_plugin_ts_subsegment_send(userdata,dest,1)) != 0) {
+            return r;
+        }
+    } else if(userdata->subsegment_samplecount == userdata->samples_per_subsegment) {
+        if( (r = muxer_plugin_ts_subsegment_send(userdata,dest,0)) != 0) {
+            return r;
+        }
+    }
 
     return 0;
 }
@@ -280,12 +275,14 @@ static int muxer_plugin_ts_reset(void* ud) {
     userdata->samples_per_subsegment = 0;
     userdata->samples_per_packet = 0;
     userdata->subsegment_ts = 0;
+    userdata->packet_ts = 0;
     userdata->segment_samplecount = 0;
     userdata->subsegment_samplecount = 0;
     userdata->packet_samplecount = 0;
     userdata->codec = CODEC_TYPE_UNKNOWN;
     userdata->padding = 0;
     userdata->newsegment = 1;
+    userdata->chunker.i = 0;
 
     return 0;
 }
@@ -331,27 +328,27 @@ static int muxer_plugin_ts_open(void* ud, const packet_source* source, const seg
         log_warn("sample rate %u prevents MPEG-TS timestamps from aligning, consider resampling", source->sample_rate);
     }
 
-    s_info.time_base = 90000;
-    if(source->frame_len != 0) {
-        s_info.frame_len = source->frame_len * 90000 / source->sample_rate;
-    }
+    s_info.time_base = source->sample_rate;
+    s_info.frame_len = source->frame_len;
     dest->get_segment_info(dest->handle,&s_info, &s_params);
 
+    userdata->chunker = chunker_create(source->sample_rate,
+      rescale_duration(s_params.segment_length, 1000, source->sample_rate),
+      source->frame_len);
+    userdata->samples_per_segment = chunker_next(&userdata->chunker);
+    userdata->samples_per_subsegment = s_params.subsegment_length
+        ? rescale_duration(s_params.subsegment_length, 1000, s_info.time_base)
+        : userdata->samples_per_segment;
+
     me.handle = userdata;
-    me.time_base = 90000;
-    me.frame_len = s_info.frame_len;
+    me.time_base = source->sample_rate;
+    me.frame_len = source->frame_len;
     me.sync_flag = 1;
 
     me.media_ext = &ext_ts;
     me.media_mimetype = &mime_ts;
 
-    userdata->samples_per_segment = (uint64_t)s_params.segment_length * 90000ULL / 1000ULL;
-    if(s_params.subsegment_length) {
-        userdata->samples_per_subsegment = (uint64_t)s_params.subsegment_length * 90000ULL / 1000ULL;
-    } else {
-        userdata->samples_per_subsegment = userdata->samples_per_segment;
-    }
-    userdata->samples_per_packet  = 9000; /* max 100ms between re-sending PCR */
+    userdata->samples_per_packet  = rescale_duration(100,1000,source->sample_rate);
 
     switch(source->codec) {
         case CODEC_TYPE_AAC: {
@@ -443,12 +440,8 @@ static int muxer_plugin_ts_flush(void* ud, const segment_receiver* dest) {
     muxer_plugin_ts_userdata* userdata = (muxer_plugin_ts_userdata*)ud;
     int r;
 
-    if(userdata->packet_samplecount != 0) {
-        if( (r = muxer_plugin_ts_append_packet(userdata)) != 0) return r;
-    }
-
     if(userdata->subsegment_samplecount != 0) {
-        if( (r = muxer_plugin_ts_subsegment_send(userdata, dest)) != 0) return r;
+        if( (r = muxer_plugin_ts_subsegment_send(userdata, dest, 1)) != 0) return r;
     }
 
     userdata->segment_samplecount = 0;
@@ -472,8 +465,7 @@ static int muxer_plugin_ts_submit_tags(void* ud, const taglist* tags, const segm
         if(taglist_len(&userdata->taglist) > 0) {
             id3_reset(&userdata->id3);
             if( (r = id3_add_taglist(&userdata->id3, &userdata->taglist)) != 0) return r;
-            userdata->id3_stream.pts = userdata->audio_stream.pts + userdata->packet_samplecount;
-            userdata->id3_stream.pts &= 0x1ffffffff;
+            userdata->id3_stream.pts = rescale_duration(userdata->packet_ts + ((uint64_t)userdata->packet_samplecount), userdata->chunker.src_rate, 90000ULL) & 0x1FFFFFFFF;
             userdata->id3_stream.adaptation.pcr_flag = 0;
             if( (r = mpegts_stream_encode_packet(&userdata->subsegment, &userdata->id3_stream, &userdata->id3)) != 0) return r;
         }
@@ -508,13 +500,16 @@ static int muxer_plugin_ts_get_segment_info(const void* ud, const packet_source_
     segment_source_info s_info = SEGMENT_SOURCE_INFO_ZERO;
     segment_params s_params = SEGMENT_PARAMS_ZERO;
 
-    s_info.time_base = 90000;
-    s_info.frame_len = s->frame_len * 90000 / s->time_base;
+    s_info.time_base = s->time_base;
+    s_info.frame_len = s->frame_len;
 
     dest->get_segment_info(dest->handle,&s_info,&s_params);
 
     i->segment_length = s_params.segment_length;
     i->packets_per_segment = s_params.packets_per_segment;
+    i->segment_length = s_params.subsegment_length;
+    i->packets_per_segment = s_params.packets_per_subsegment;
+
     return 0;
 }
 

@@ -202,7 +202,17 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     /* it seems like exhale's tune-in period is really double what you intend.
      * I think the idea goes the tune_in_period allows you to technically start
      * decoding every (x) packets but what we really want are true sync packets */
+
+    /* TODO Apple guidelines regarding segmentation state:
+     *   "7.8. Each xHE-AAC segment SHOULD start with an Immediate Playout Frame (IPF)."
+     *   Unclear if this applies to partial segments as well or stricty segments.
+     *
+     *   Would prefer variable segment sizes, but a fixed tune-in period
+     *   means we can't guarantee every  segment will start on an IPF.
+     *
+     *   So, we'll just have fixed segment sizes. */
     userdata->tune_in_period = ps_params.packets_per_segment >> 1;
+    if(!userdata->tune_in_period) userdata->tune_in_period = 1;
     log_debug("  tune_in_period = %u", userdata->tune_in_period);
 
     userdata->buffer.format = SAMPLEFMT_S32P;
@@ -229,12 +239,7 @@ static int plugin_open(void* ud, const frame_source* source, const packet_receiv
     userdata->me.roll_distance = userdata->frame_len == 2048 ? 2 : 1;
     userdata->me.roll_type   = 1;
     userdata->me.handle      = userdata;
-
-    /* we set our sync flag to 1, because we set a tune in
-     * period that should guarantee at least 1 tune-in frame per
-     * segment, meaning they're all independently decodable (though
-     * in some cases it may be only the last packet is a sync packet). */
-    userdata->me.sync_flag   = 1;
+    userdata->me.sync_flag   = 0;
 
 
     /* simplifying some logic from the exhale app:

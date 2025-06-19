@@ -77,6 +77,8 @@ typedef struct hls_callback_handler hls_callback_handler;
 struct hls {
     strbuf txt; /* stores the actual, generated playlist */
     strbuf header; /* stores the header-type info */
+    strbuf trailer; /* stores end-of-playlist stuff */
+    strbuf scratch;
     strbuf playlist_filename;
     strbuf playlist_mimetype;
     strbuf init_format; /* snprintf-style format string for init segments */
@@ -94,8 +96,6 @@ struct hls {
     unsigned int target_duration; /* in milliseconds */
     unsigned int subsegment_duration; /* in milliseconds */
     unsigned int playlist_length; /* in seconds */
-    unsigned int target_samples; /* target duration in samples */
-    unsigned int subsegment_samples;
     size_t media_sequence;        /* current media sequence number */
     size_t disc_sequence; /* current discontinuity sequence number */
     size_t init_counter;

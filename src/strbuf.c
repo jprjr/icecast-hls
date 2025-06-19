@@ -243,14 +243,15 @@ int strbuf_unterm(strbuf* d) {
 int strbuf_wide(strbuf* d, const strbuf* s) {
     int wide_len;
     int r;
+    char* t;
 
     wide_len = MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,(char *)s->x,s->len,NULL,0);
     if(wide_len == 0) return -1;
 
-    if( (r = membuf_ready(d,sizeof(wchar_t)*wide_len)) != 0) return r;
-    d->len = 0;
-    if( MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,(char *)s->x,s->len,(wchar_t*)d->x,wide_len) != wide_len) return -1;
-    d->len = sizeof(wchar_t)*wide_len;
+    if( (r = membuf_readyplus(d,sizeof(wchar_t)*wide_len)) != 0) return r;
+    t = d->x + d->len;
+    if( MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,(char *)s->x,s->len,(wchar_t*)t,wide_len) != wide_len) return -1;
+    d->len += sizeof(wchar_t)*wide_len;
     return 0;
 }
 

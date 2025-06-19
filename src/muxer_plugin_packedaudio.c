@@ -9,6 +9,8 @@
 #include "id3.h"
 #include "adts_mux.h"
 #include "pack_u64be.h"
+#include "utils.h"
+#include "chunker.h"
 
 #define LOG_PREFIX "[muxer:packed-audio]"
 #include "logger.h"
@@ -37,11 +39,12 @@ struct plugin_userdata {
     membuf samples;
     membuf segment;
     adts_mux adts_muxer;
-    uint64_t ts; /* represents the 33-bit MPEG timestamp */
+    uint64_t ts; /* contains the raw timestamp, which is converted to a 33-bit 90kHz timestamp */
     id3 id3;
     taglist taglist;
     int (*append_packet)(struct plugin_userdata*, const packet*);
     uint8_t newsegment;
+    chunker chunker;
 };
 typedef struct plugin_userdata plugin_userdata;
 
@@ -88,6 +91,7 @@ static int plugin_reset(void* ud) {
     userdata->segment_samplecount = 0;
     userdata->subsegment_samplecount = 0;
     userdata->newsegment = 1;
+    userdata->chunker.i = 0;
 
     return 0;
 }
@@ -125,22 +129,25 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     unsigned int profile = source->profile;
 
     if( (source->frame_len * 90000) % source->sample_rate != 0) {
-        log_warn("sample rate %u prevents MPEG-TS timestamps from aligning, consider resampling", source->sample_rate);
+        log_warn("sample rate %u prevents packed audio timestamps from aligning, consider resampling", source->sample_rate);
     }
 
-    s_info.time_base = 90000;
-    if(source->frame_len != 0) {
-        s_info.frame_len = source->frame_len * 90000 / source->sample_rate;
-    }
+    s_info.time_base = source->sample_rate;
+    s_info.frame_len = source->frame_len;
     dest->get_segment_info(dest->handle,&s_info, &s_params);
 
-    me.handle = userdata;
-    me.time_base = 90000;
-    me.frame_len = s_info.frame_len;
-    me.sync_flag = 1;
+    userdata->chunker = chunker_create(source->sample_rate,
+      rescale_duration(s_params.segment_length,1000,source->sample_rate),
+      source->frame_len);
+    userdata->samples_per_segment = chunker_next(&userdata->chunker);
+    userdata->samples_per_subsegment = s_params.subsegment_length
+        ? rescale_duration(s_params.subsegment_length, 1000, s_info.time_base)
+        : userdata->samples_per_segment;
 
-    userdata->samples_per_segment = (uint64_t)s_params.segment_length * 90000ULL / 1000ULL;
-    userdata->samples_per_subsegment = s_params.subsegment_length ? (uint64_t)s_params.subsegment_length * 90000ULL / 1000ULL : userdata->samples_per_segment;
+    me.handle = userdata;
+    me.time_base = source->sample_rate;
+    me.frame_len = source->frame_len;
+    me.sync_flag = 1;
 
     switch(source->codec) {
         case CODEC_TYPE_AAC: {
@@ -215,14 +222,13 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
 }
 
 
-static int plugin_send(plugin_userdata* userdata, const segment_receiver* dest) {
+static int plugin_send(plugin_userdata* userdata, const segment_receiver* dest, int reset) {
     segment s;
     tag ts_tag;
     uint8_t val_enc[8];
     int r;
 
-    userdata->ts &= 0x1FFFFFFFFULL;
-    pack_u64be(val_enc,userdata->ts);
+    pack_u64be(val_enc,rescale_duration(userdata->ts,userdata->chunker.src_rate,90000ULL) & 0x1FFFFFFFFULL);
 
     ts_tag.key = key_mpegts;
     ts_tag.value.x = val_enc;
@@ -267,6 +273,7 @@ static int plugin_send(plugin_userdata* userdata, const segment_receiver* dest) 
     s.samples = userdata->subsegment_samplecount;
     s.pts = userdata->ts;
     s.independent = 1;
+    s.fin = reset;
 
     if( (r = dest->submit_segment(dest->handle,&s)) != 0) {
         logs_error("error submitting segment");
@@ -275,44 +282,52 @@ static int plugin_send(plugin_userdata* userdata, const segment_receiver* dest) 
 
     membuf_reset(&userdata->samples);
     membuf_reset(&userdata->segment);
+    userdata->ts += (uint64_t)userdata->subsegment_samplecount;
+    userdata->subsegment_samplecount = 0;
+    if(reset) {
+        int syncsubseg = userdata->samples_per_segment == userdata->samples_per_subsegment;
+        userdata->newsegment = 1;
+        userdata->segment_samplecount = 0;
+        userdata->samples_per_segment = chunker_next(&userdata->chunker);
+        if(syncsubseg) userdata->samples_per_subsegment = userdata->samples_per_segment;
+    }
     return r;
 }
 
 static int plugin_submit_packet(void* ud, const packet* packet, const segment_receiver* dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
-    uint64_t rescaled_duration = ((uint64_t)packet->duration) * 90000ULL / ((uint64_t)packet->sample_rate);
 
 
-    if(userdata->segment_samplecount + userdata->subsegment_samplecount + rescaled_duration > userdata->samples_per_segment) {
-        if( (r = plugin_send(userdata,dest)) != 0) return r;
-        userdata->ts += (uint64_t)userdata->subsegment_samplecount;
-        userdata->segment_samplecount = 0;
-        userdata->subsegment_samplecount = 0;
-        userdata->newsegment = 1;
+    if(userdata->segment_samplecount + ((uint64_t)packet->duration) > userdata->samples_per_segment) {
+        if( (r = plugin_send(userdata,dest,1)) != 0) return r;
     } else {
-        if(userdata->subsegment_samplecount + rescaled_duration > userdata->samples_per_subsegment) {
-            if( (r = plugin_send(userdata,dest)) != 0) return r;
-            userdata->ts += (uint64_t)userdata->subsegment_samplecount;
-            userdata->segment_samplecount += userdata->subsegment_samplecount;
-            userdata->subsegment_samplecount = 0;
+        if(userdata->subsegment_samplecount + ((uint64_t)packet->duration) > userdata->samples_per_subsegment) {
+            if( (r = plugin_send(userdata,dest,0)) != 0) return r;
         }
     }
 
     if( (r = userdata->append_packet(userdata,packet)) != 0) {
         return r;
     }
-    userdata->subsegment_samplecount += rescaled_duration;
+    userdata->segment_samplecount    += ((uint64_t)packet->duration);
+    userdata->subsegment_samplecount += ((uint64_t)packet->duration);
 
-    return r;
+    if(userdata->segment_samplecount == userdata->samples_per_segment) {
+        if( (r = plugin_send(userdata, dest, 1)) != 0) return r;
+    } else if(userdata->subsegment_samplecount == userdata->samples_per_subsegment) {
+        if( (r = plugin_send(userdata, dest, 0)) != 0) return r;
+    }
+
+    return 0;
 }
 
 static int plugin_flush(void* ud, const segment_receiver* dest) {
     plugin_userdata* userdata = (plugin_userdata*)ud;
     int r;
 
-    if(userdata->subsegment_samplecount != 0) {
-        if( (r = plugin_send(userdata,dest)) != 0) return r;
+    if(userdata->segment_samplecount != 0) {
+        if( (r = plugin_send(userdata,dest,1)) != 0) return r;
     }
 
     return 0;
@@ -357,21 +372,15 @@ static int plugin_get_segment_info(const void* ud, const packet_source_info* s, 
     segment_source_info s_info = SEGMENT_SOURCE_INFO_ZERO;
     segment_params s_params = SEGMENT_PARAMS_ZERO;
 
-    s_info.time_base = 90000;
-    s_info.frame_len = s->frame_len * 90000 / s->time_base;
+    s_info.time_base = s->time_base;
+    s_info.frame_len = s->frame_len;
 
     dest->get_segment_info(dest->handle,&s_info,&s_params);
 
     i->segment_length = s_params.segment_length;
     i->packets_per_segment = s_params.packets_per_segment;
-
-    if(s_params.subsegment_length) {
-        i->segment_length = s_params.subsegment_length;
-    }
-
-    if(s_params.packets_per_subsegment) {
-        i->packets_per_segment = s_params.packets_per_subsegment;
-    }
+    i->segment_length = s_params.subsegment_length;
+    i->packets_per_segment = s_params.packets_per_subsegment;
 
     return 0;
 }

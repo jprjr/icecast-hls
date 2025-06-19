@@ -3,6 +3,7 @@
 
 #include "minifmp4.h"
 #include "bitwriter.h"
+#include "chunker.h"
 
 #include <stdlib.h>
 #include <errno.h>
@@ -60,12 +61,15 @@ struct plugin_userdata {
     membuf expired_emsgs;
     uint64_t samples_per_segment;
     uint64_t samples_per_subsegment;
+
+    /* stores the combined amount of samples buffered in the mp4
+     * track, as well as stuff written out to disk */
     uint64_t segment_samplecount;
-    unsigned int segment_length;
     uint8_t configuring;
     uint8_t newsegment;
     uint8_t subsegment_has_sync;
     id3 id3;
+    chunker chunker;
 };
 
 typedef struct plugin_userdata plugin_userdata;
@@ -92,7 +96,6 @@ static int plugin_create(void* ud) {
         return -1;
     }
 
-    userdata->segment_length = 0;
     userdata->loudness = NULL;
     userdata->measurement = NULL;
     userdata->configuring = CONFIGURING_MAIN;
@@ -122,6 +125,7 @@ static int plugin_reset(void* ud) {
     userdata->track->dsi.len = 0;
 
     if(id3_ready(&userdata->id3) != 0) return -1;
+    userdata->chunker.i = 0;
 
     return 0;
 }
@@ -330,6 +334,7 @@ struct segment_wrapper {
     const segment_receiver* dest;
     int samples;
     uint64_t pts;
+    uint8_t fin;
 };
 
 typedef struct segment_wrapper segment_wrapper;
@@ -337,7 +342,7 @@ typedef struct segment_wrapper segment_wrapper;
 static size_t plugin_write_segment_callback(const void* src, size_t len, void* userdata) {
     const segment_wrapper* wrapper = (const segment_wrapper*)userdata;
     int r;
-    segment s;
+    segment s = SEGMENT_ZERO;
 
     s.type = SEGMENT_TYPE_MEDIA;
     s.data = src;
@@ -345,6 +350,7 @@ static size_t plugin_write_segment_callback(const void* src, size_t len, void* u
     s.samples = wrapper->samples;
     s.pts = wrapper->pts;
     s.independent = wrapper->userdata->subsegment_has_sync;
+    s.fin = wrapper->fin;
 
     r = wrapper->dest->submit_segment(wrapper->dest->handle,&s);
     wrapper->userdata->subsegment_has_sync = 0;
@@ -395,7 +401,7 @@ static int plugin_submit_tags(void* ud, const taglist* tags, const segment_recei
 
 /* used in both the flush and submit packet functions. The flush function
  * just also calls the segment_handler's flush */
-static int plugin_muxer_flush(plugin_userdata* userdata, const segment_receiver* dest) {
+static int plugin_muxer_flush(plugin_userdata* userdata, const segment_receiver* dest, int reset) {
     fmp4_result res;
     segment_wrapper wrapper;
 
@@ -403,6 +409,7 @@ static int plugin_muxer_flush(plugin_userdata* userdata, const segment_receiver*
     wrapper.userdata = userdata;
     wrapper.samples = userdata->track->trun_sample_count;
     wrapper.pts = userdata->track->base_media_decode_time;
+    wrapper.fin = reset;
 
     if(userdata->newsegment) {
         if(userdata->emsg != NULL) {
@@ -423,6 +430,14 @@ static int plugin_muxer_flush(plugin_userdata* userdata, const segment_receiver*
         expire_emsgs(userdata);
     }
 
+    if(reset) {
+        int syncsubseg = userdata->samples_per_segment == userdata->samples_per_subsegment;
+        userdata->newsegment = 1;
+        userdata->segment_samplecount = 0;
+        userdata->samples_per_segment = chunker_next(&userdata->chunker);
+        if(syncsubseg) userdata->samples_per_subsegment = userdata->samples_per_segment;
+    }
+
     return 0;
 }
 
@@ -430,7 +445,7 @@ static int plugin_flush(void* ud, const segment_receiver* dest) {
     int r;
     plugin_userdata* userdata = (plugin_userdata*)ud;
     if(userdata->track->trun_sample_count > 0) {
-        if( (r = plugin_muxer_flush(userdata,dest)) != 0) return r;
+        if( (r = plugin_muxer_flush(userdata,dest,1)) != 0) return r;
     }
     return 0;
 }
@@ -447,21 +462,43 @@ static int plugin_submit_packet(void* ud, const packet* packet, const segment_re
     info.flags.is_non_sync = !packet->sync;
     info.flags.depends_on = packet->sync ? 2 : 0;
 
+    /* if our source has non-sync samples, we take a different path to ensure we always
+     * start a segment with a sync sample */
+    if(userdata->default_info.flags.is_non_sync) {
+        if(packet->sync) {
+			if(userdata->track->trun_sample_count > 0) {
+            	if( (r = plugin_muxer_flush(userdata,dest, 1)) != 0) return r;
+			}
+        } else if(userdata->track->trun_sample_count + ((uint64_t)packet->duration) > userdata->samples_per_subsegment) {
+          if( (r = plugin_muxer_flush(userdata,dest,0)) != 0) return r;
+        }
+
+        if(fmp4_track_add_sample(userdata->track, packet->data.x, &info) != FMP4_OK) return -1;
+        userdata->subsegment_has_sync |= packet->sync;
+        return 0;
+    }
+
     /* if adding this sample would go over the total per segment, flush */
-    /* see if we need to flush the current segment */
-    if(userdata->segment_samplecount + userdata->track->trun_sample_count + ((uint64_t)packet->duration) > userdata->samples_per_segment) {
-        if( (r = plugin_muxer_flush(userdata,dest)) != 0) return r;
-        userdata->segment_samplecount = 0;
-        userdata->newsegment = 1;
+    if(userdata->segment_samplecount + ((uint64_t)packet->duration) > userdata->samples_per_segment) {
+        if( (r = plugin_muxer_flush(userdata,dest,1)) != 0) return r;
     } else {
+        /* if this would cause the current subsegment to go over - flush */
         if(userdata->track->trun_sample_count + ((uint64_t)packet->duration) > userdata->samples_per_subsegment) {
-          userdata->segment_samplecount += userdata->track->trun_sample_count;
-          if( (r = plugin_muxer_flush(userdata,dest)) != 0) return r;
+          if( (r = plugin_muxer_flush(userdata,dest,0)) != 0) return r;
         }
     }
 
     if(fmp4_track_add_sample(userdata->track, packet->data.x, &info) != FMP4_OK) return -1;
     userdata->subsegment_has_sync |= packet->sync;
+    userdata->segment_samplecount += ((uint64_t)packet->duration);
+
+    /* if we now have a full segment - flush */
+    if(userdata->segment_samplecount == userdata->samples_per_segment) {
+        if( (r = plugin_muxer_flush(userdata,dest,1)) != 0) return r;
+    } else if(userdata->track->trun_sample_count == userdata->samples_per_subsegment) {
+        if( (r = plugin_muxer_flush(userdata,dest,0)) != 0) return r;
+    }
+    
     return 0;
 }
 
@@ -494,7 +531,10 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     s_info.frame_len = source->frame_len;
     dest->get_segment_info(dest->handle,&s_info,&s_params);
 
-    userdata->samples_per_segment = s_params.segment_length * s_info.time_base / 1000;
+    userdata->chunker = chunker_create(source->sample_rate, 
+      s_params.segment_length * source->sample_rate / 1000,
+      source->frame_len);
+    userdata->samples_per_segment = chunker_next(&userdata->chunker);
     userdata->samples_per_subsegment = s_params.subsegment_length ? s_params.subsegment_length * s_info.time_base / 1000 : userdata->samples_per_segment;
 
     userdata->track->stream_type = FMP4_STREAM_TYPE_AUDIO;
@@ -506,7 +546,7 @@ static int plugin_open(void* ud, const packet_source* source, const segment_rece
     me.media_mimetype = &mime_m4s;
     me.time_base      = source->sample_rate;
     me.frame_len      = source->frame_len;
-    me.sync_flag      = source->sync_flag;
+    me.sync_flag      = 1; /* our fmp4 muxer will ensure every segment starts with a sync packet */
 
     switch(source->codec) {
         case CODEC_TYPE_AAC: {

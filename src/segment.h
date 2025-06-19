@@ -21,6 +21,7 @@ struct segment {
     unsigned int samples; /* will be 0 for init segments */
     uint64_t pts; /* pts of this segment, used to detect discontinuities */
     uint8_t independent;
+    uint8_t fin; /* this is the last subsegment */
 };
 
 typedef struct segment segment;
@@ -89,7 +90,7 @@ typedef struct segment_receiver segment_receiver;
 #define SEGMENT_SOURCE_INFO_ZERO { .time_base = 0, .frame_len = 0 }
 #define SEGMENT_PARAMS_ZERO { .segment_length = 0, .subsegment_length = 0, .packets_per_segment = 0, .packets_per_subsegment = 0 }
 
-#define SEGMENT_ZERO { .type = SEGMENT_TYPE_UNKNOWN, .data = NULL, .len = 0, .samples = 0, .independent = 0 }
+#define SEGMENT_ZERO { .type = SEGMENT_TYPE_UNKNOWN, .data = NULL, .len = 0, .samples = 0, .independent = 0, .fin = 0 }
 
 #ifdef __cplusplus
 extern "C" {
